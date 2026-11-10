@@ -1,0 +1,4 @@
+node_modules/
+*.osm
+.DS_Store
+tests/out/
