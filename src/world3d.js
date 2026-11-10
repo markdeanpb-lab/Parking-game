@@ -600,7 +600,7 @@ export function buildWorld(scene, track, quality) {
   }
 
   /** Reflect bay state changes and animate the indicators. */
-  out.update = (t, dt, phase) => {
+  out.update = (t, dt, phase, hint = null) => {
     for (const bay of track.bays) {
       const p = out.bayProps.get(bay.id);
       const key = bay.state + (bay.occupant ? '+occ' : '') + (bay.perfect ? '+perfect' : '');
@@ -619,7 +619,9 @@ export function buildWorld(scene, track, quality) {
         p.glow.material.color.setHex(colour); p.beam.material.color.setHex(colour);
         p.glow.material.opacity = bay.occupant ? 0.18 : 0.3 + 0.18 * Math.sin(t * 6 + bay.id);
         p.marker.position.y = 3.6 + Math.sin(t * 3 + bay.id) * 0.35 + p.pop * 2;
-        const sc = (bay.perfect ? 2.4 : 1.7) * (1 + p.pop * 0.8);
+        const mine = bay === hint && !bay.occupant;                 // the space the player is first in the queue for
+        const sc = (bay.perfect ? 2.4 : mine ? 2.6 + 0.3 * Math.sin(t * 8) : 1.7) * (1 + p.pop * 0.8);
+        p.beam.scale.set(mine ? 1.6 : 1, mine ? 1.5 : 1, mine ? 1.6 : 1); p.beam.material.opacity = mine ? 0.3 : 0.16;
         p.marker.scale.set(sc, sc, 1);
         p.marker.material.color.setHex(bay.perfect ? 0xffe27a : 0xffffff);
       }

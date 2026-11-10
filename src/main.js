@@ -71,12 +71,12 @@ const ui = new UI(track, {
 });
 const dj = new DJ((text) => ui.subtitle(text));
 function applySettings() {
-  dj.voiceOn = settings.voice; if (!settings.voice) dj.interrupt();
+  dj.voiceOn = settings.voice && !settings.muted; if (!dj.voiceOn) dj.interrupt();
   audio.setMusicOn(settings.music); audio.setMuted(settings.muted);
   ui.setToggle('voice', settings.voice); ui.setToggle('music', settings.music); ui.setToggle('mute', settings.muted);
 }
 applySettings();
-function toggleMute() { settings.muted = !settings.muted; saveSettings(); applySettings(); if (settings.muted) dj.interrupt(); dj.voiceOn = settings.voice && !settings.muted; }
+function toggleMute() { settings.muted = !settings.muted; saveSettings(); applySettings(); }
 
 function startGame(mode) {
   clearCelebration();
@@ -447,7 +447,7 @@ function tick(now) {
     if (celebration.next <= 0) { celebration.next = 0.55 + Math.random() * 0.5; firework(celebration.x + (Math.random() - 0.5) * 30, 12 + Math.random() * 10, celebration.z + (Math.random() - 0.5) * 30); confetti(celebration.x, celebration.z, 40); }
   }
   updateParticles(dt);
-  world.update(time, dt, game.phase);
+  world.update(time, dt, game.phase, game.phase === 'park' && !game.playerComp.parked && game.lastPick ? game.lastPick.duel.bay : null);
   updateCamera(dt, time);
 
   const pc = game.player.car, playing = ['music', 'park', 'free'].includes(game.phase);
