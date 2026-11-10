@@ -194,6 +194,9 @@ const LINES = {
   deliveryVan: [
     "There's a DELIVERY VAN in the space on {street}! He says he'll only be two minutes. He will not be two minutes.",
   ],
+  vanBlocked: [
+    "You're blocking the van in! Back off and let him out, or NOBODY's getting that space!",
+  ],
   vanGone: [
     "THE VAN'S GONE! That space on {street} is back in play!",
   ],
@@ -222,6 +225,10 @@ const LINES = {
   ],
   eliminatedMany: [
     "{names}: ALL OUT! It's CARNAGE out there!",
+  ],
+  lastSpace: [
+    "ONE SPACE LEFT! It's on {street}, and I'm cutting the clock! {t} SECONDS!",
+    "LAST SPACE! {street}! {t} seconds and counting! Somebody's going home!",
   ],
   whistle: ["ON THE WHISTLE! They're still reversing in! I'm allowing it!"],
   victory: [
@@ -399,6 +406,8 @@ export class DJ {
       case 'fooled': this.say('fooled', { ...who, street: d.street }, 1); break;
       case 'stall': this.say('stall', who, 1); break;
       case 'aborted': if (d.bay) this.say('aborted', { ...who, street: d.bay.street }, 1); break;
+      case 'vanBlocked': this.say('vanBlocked', d, 2); break;
+      case 'lastSpace': this.say('lastSpace', d, 3); break;
       case 'whistle': this.say('whistle', {}, 2); break;
       case 'cushion': if (d.speed > 9) this.say('cushion', {}, 1); break;
       case 'roundEnd': {

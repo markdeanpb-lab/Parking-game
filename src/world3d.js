@@ -159,7 +159,7 @@ export function buildWorld(scene, track, quality) {
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i], c = ring[(i + 1) % ring.length];
       const len = Math.hypot(c.x - a.x, c.z - a.z);
-      pushQuad(pos, uvs, [a.x, 0, a.z], [c.x, 0, c.z], [c.x, H, c.z], [a.x, H, a.z], [run / 2.6, 0, (run + len) / 2.6, H / 2.6]);
+      pushQuad(pos, uvs, [a.x, 0, a.z], [c.x, 0, c.z], [c.x, H, c.z], [a.x, H, a.z], [run / 1.4, 0, (run + len) / 1.4, H / 1.4]);
       run += len;
     }
     const wg = new THREE.BufferGeometry();
@@ -228,7 +228,7 @@ export function buildWorld(scene, track, quality) {
         const len = Math.hypot(c.x - a.x, c.z - a.z);
         if (len < 3.4) continue;
         const tx = (c.x - a.x) / len, tz = (c.z - a.z) / len;
-        const nx = tz, nz = -tx;                                // outward for a CCW ring in (x,z)... verified below
+        const nx = -tz, nz = tx;                                // outward normal (ring is wound clockwise in x,z)
         const mx = (a.x + c.x) / 2, mz = (a.z + c.z) / 2;
         const l2 = track.locate(mx, mz);
         if (l2.dist > 15) continue;
@@ -243,7 +243,7 @@ export function buildWorld(scene, track, quality) {
         for (let u = 0; u < units; u++) {
           const s0 = (u + 0.5) * ul;
           const at = (off, y, dOut) => [a.x + tx * (s0 + off) + nx * dOut, y, a.z + tz * (s0 + off) + nz * dOut];
-          const frame = col(0xf3f1ea), glass = col(0x27323d), door = col(rng.pick(DOORS));
+          const frame = col(0xf3f1ea), glass = col(rng.pick([0x3b4c5e, 0x455a6e, 0x34424f, 0x4d6072])), door = col(rng.pick(DOORS));
           const dOff = ul > 3.6 ? -ul * 0.22 : 0, wOff = ul * 0.2;
           if (ul > 3.6 || u % 2 === 0) {
             detailGeos.push(boxAt(1.2, 2.3, 0.1, ...at(dOff, 1.15, 0.03), hd, frame));
@@ -251,9 +251,9 @@ export function buildWorld(scene, track, quality) {
             detailGeos.push(boxAt(1.4, 0.16, 0.5, ...at(dOff, 0.08, 0.25), hd, col(0xa9a59c)));
           }
           if (ul > 3.6) {   // bay window
-            detailGeos.push(boxAt(1.7, 1.75, 0.45, ...at(wOff + 0.3, 1.55, 0.2), hd, frame));
-            detailGeos.push(boxAt(1.4, 1.3, 0.1, ...at(wOff + 0.3, 1.6, 0.4), hd, glass));
-            detailGeos.push(boxAt(1.9, 0.1, 0.6, ...at(wOff + 0.3, 2.47, 0.24), hd, col(0x565c66)));
+            detailGeos.push(boxAt(1.6, 1.7, 0.3, ...at(wOff + 0.3, 1.5, 0.12), hd, frame));
+            detailGeos.push(boxAt(1.3, 1.25, 0.08, ...at(wOff + 0.3, 1.55, 0.25), hd, glass));
+            detailGeos.push(boxAt(1.75, 0.09, 0.42, ...at(wOff + 0.3, 2.4, 0.15), hd, col(0x565c66)));
           }
           for (let fl = 1; fl < storeys; fl++) {
             for (const off of ul > 3.6 ? [dOff, wOff + 0.3] : [0]) {
@@ -270,7 +270,7 @@ export function buildWorld(scene, track, quality) {
     const g = new THREE.BufferGeometry();
     const p = [...tri[0], ...tri[1], ...tri[2], ...tri[0], ...tri[2], ...tri[1]];
     g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
-    const uv = []; for (let i = 0; i < 6; i++) uv.push(p[i * 3] / 2.6 + p[i * 3 + 2] / 2.6, p[i * 3 + 1] / 2.6);
+    const uv = []; for (let i = 0; i < 6; i++) uv.push(p[i * 3] / 1.4 + p[i * 3 + 2] / 1.4, p[i * 3 + 1] / 1.4);
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     const cArr = new Float32Array(18); for (let i = 0; i < 18; i += 3) { cArr[i] = tintC.r; cArr[i + 1] = tintC.g; cArr[i + 2] = tintC.b; }
     g.setAttribute('color', new THREE.BufferAttribute(cArr, 3));
@@ -456,9 +456,9 @@ export function buildWorld(scene, track, quality) {
     for (const e of Object.values(track.edges)) {
       if (!e.circuit) continue;
       for (let s = 20; s < e.len - 14; s += 46) { const p = e.path.offsetAt(s, e.laneOff); arrows.push({ x: p.x, z: p.z, h: p.h }); }
-      if (e.len > 60) { const p = e.path.offsetAt(13, e.laneOff); twenties.push({ x: p.x, z: p.z, h: p.h + Math.PI / 2 }); }
+      if (e.len > 60) { const p = e.path.offsetAt(13, e.laneOff); twenties.push({ x: p.x, z: p.z, h: p.h }); }
     }
-    decal(arrowTex, 0.9, 3.6, arrows.map((a) => ({ ...a, h: a.h + Math.PI })).map((a) => ({ x: a.x, z: a.z, h: a.h })));
+    decal(arrowTex, 0.9, 3.6, arrows);
     decal(twentyTex, 2.0, 2.0, twenties);
   }
 
@@ -653,9 +653,9 @@ export function buildSky(scene, renderer, quality) {
     g.position.set(Math.cos(a) * r, rng.range(150, 260), Math.sin(a) * r);
     sky.add(g);
   }
-  const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x8a8f78, 1.15);
+  const hemi = new THREE.HemisphereLight(0xd6e8ff, 0x9a9a84, 1.7);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff0d6, 2.5);
+  const sun = new THREE.DirectionalLight(0xfff0d6, 2.3);
   sun.position.set(-70, 90, -50);
   sun.castShadow = !quality.noShadows;
   const sz = quality.low ? 1024 : 2048;

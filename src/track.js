@@ -177,7 +177,7 @@ function layoutKerbside(track) {
       track.driveways.push({ edgeId: e.id, street: e.name, s: mid, len: d.s1 - d.s0, wid: BAY_WIDTH, x: p.x, z: p.z, h: p.h, side, kind: d.kind });
     }
 
-    let s = s0 + rng.range(0, 1.2), sinceBay = rng.int(2, 4), gapTarget = rng.int(5, 7);
+    let s = s0 + rng.range(0, 1.2), sinceBay = rng.int(1, 3), gapTarget = rng.int(3, 5);
     while (s < s1 - 3.6) {
       const drive = drives.find((d) => d.s1 > s);
       const wantBay = sinceBay >= gapTarget && s > s0 + 5 && s < s1 - 13;
@@ -208,7 +208,7 @@ function layoutKerbside(track) {
           state: 'closed', occupant: null, claimedBy: null,
           resident: { type: resType, colour: rng.pick(PARKED_COLOURS), h: p.h, ...parkedPose(e, mid, side, CAR_TYPES[resType], rng) },
         });
-        sinceBay = 0; gapTarget = rng.int(5, 8);
+        sinceBay = 0; gapTarget = rng.int(3, 6);
       } else {
         const spec = CAR_TYPES[item.type];
         const pose = parkedPose(e, mid, side, spec, rng);

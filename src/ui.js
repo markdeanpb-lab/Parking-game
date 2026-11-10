@@ -1,0 +1,332 @@
+// DOM user interface: HUD, minimap, DJ subtitles, screens, touch controls, high scores.
+
+import { DJ_NAME, STATION } from './dj.js';
+import { PERSONAS } from './ai.js';
+
+const $ = (id) => document.getElementById(id);
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const SCREENS = ['loading', 'title', 'tutorial', 'results', 'gameover', 'victory', 'pause'];
+
+const TUTORIAL = [
+  ['IT\'S MUSICAL CHAIRS. WITH CARS.', `
+    <p>Seven drivers circulate round four real St Albans streets while the radio plays. Along the kerb are bays the council has <b>coned off</b>.</p>
+    <ul>
+      <li><span class="tag" style="background:#7b2cbf">♪ MUSIC PLAYING</span> Keep moving, clockwise, and scout the coned bays.</li>
+      <li><span class="tag" style="background:#e63946">PARK!</span> When the music stops, some coned bays turn <b style="color:#18783c">green</b>. There is always <b>one fewer space than cars</b>.</li>
+      <li>Park in a green bay before the countdown ends, or you're out. The minimap rings your best bet in <b style="color:#b8860b">yellow</b>.</li>
+      <li>Every round another space disappears. Last driver parked wins the <b>Golden Parking Permit</b>.</li>
+    </ul>`],
+  ['DRIVING', `
+    <div class="keys">
+      <span><kbd>W</kbd> <kbd>↑</kbd></span><span>Accelerate</span>
+      <span><kbd>S</kbd> <kbd>↓</kbd></span><span>Brake, then reverse</span>
+      <span><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd></span><span>Steer</span>
+      <span><kbd>Space</kbd></span><span>Handbrake</span>
+      <span><kbd>C</kbd></span><span>Chase camera / overhead parking camera</span>
+      <span><kbd>H</kbd></span><span>Horn (achieves nothing, feels great)</span>
+      <span><kbd>M</kbd> <kbd>P</kbd></span><span>Mute / Pause</span>
+    </div>
+    <p style="margin-top:10px">On a phone or tablet, use the on-screen wheel and pedals. The streets are one car wide: there is no overtaking, only patience.</p>`],
+  ['PARKING PROPERLY', `
+    <p>Driving over the bay isn't enough. To count, your car must be:</p>
+    <ul>
+      <li><b>Inside the green bay</b>, between the cars either end</li>
+      <li><b>Roughly straight</b> and <b>not sticking out</b> into the road</li>
+      <li><b>Stopped</b> for a moment (handbrake!)</li>
+    </ul>
+    <p>The <b>Parking Assist</b> panel and the beeping sensors help. Reverse in like a grown-up, or dive in nose-first and shuffle.</p>
+    <p>Straight, central and tight to the kerb earns a <span class="badge perfect">SHOWROOM FINISH</span>. A wonky one is <span class="badge awful">ABANDONED</span>: you survive, but you're fined.</p>`],
+  ['RULES, AND WHAT GOES WRONG', `
+    <ul>
+      <li><b>No hovering</b> next to a bay while the music plays: your engine gets cut when it stops.</li>
+      <li><b>Church St and Bernard St are one-way</b> (they really are). Kerbs, parked cars and wrong-way driving cost points.</li>
+      <li><b>Driveways and double yellows</b> are not spaces, whatever the DJ shouts.</li>
+      <li>Rivals genuinely race you. A space is yours only once you've <b>stopped</b> in it. Miss it, and the car on your bumper will have it.</li>
+      <li>When only one space is left the DJ <b>cuts the clock</b>. Get on with it.</li>
+      <li>Expect the <b>bin lorry</b>, the <b>school run</b>, <b>delivery vans</b>, <b>surprise permit zones</b> and the occasional <b>Perfect Spot</b>.</li>
+    </ul>
+    <p>Good luck. You'll need it on Dalton Street.</p>`],
+];
+
+export class UI {
+  constructor(track, cb) {
+    this.track = track; this.cb = cb;
+    this.scores = this.loadScores();
+    this.tutPage = 0; this.tutThen = null;
+    this.touch = { left: false, right: false, gas: false, brake: false, horn: false };
+    this.flashT = 0; this.introT = 0; this.subText = null;
+    $('dj-name').textContent = `${DJ_NAME.toUpperCase()} · ${STATION.toUpperCase()}`;
+    this.setupMinimap();
+    this.bind();
+    this.renderScores();
+  }
+
+  // ---------------------------------------------------------------- wiring
+  bind() {
+    const cb = this.cb;
+    document.querySelectorAll('.mode').forEach((b) => b.addEventListener('click', () => cb.onMode(b.dataset.mode)));
+    $('btn-how').addEventListener('click', () => this.showTutorial(null));
+    $('btn-voice').addEventListener('click', () => cb.onToggle('voice'));
+    $('btn-music').addEventListener('click', () => cb.onToggle('music'));
+    $('tut-prev').addEventListener('click', () => this.tutStep(-1));
+    $('tut-next').addEventListener('click', () => this.tutStep(1));
+    $('res-continue').addEventListener('click', () => cb.onContinue());
+    $('go-retry').addEventListener('click', () => cb.onRetry());
+    $('go-menu').addEventListener('click', () => cb.onMenu());
+    $('vic-next').addEventListener('click', () => cb.onVictoryNext());
+    $('vic-menu').addEventListener('click', () => cb.onMenu());
+    $('pause-resume').addEventListener('click', () => cb.onPause(false));
+    $('pause-menu').addEventListener('click', () => cb.onMenu());
+    $('btn-cam').addEventListener('click', () => cb.onKey('cam'));
+    $('btn-mute').addEventListener('click', () => cb.onKey('mute'));
+    $('btn-pause').addEventListener('click', () => cb.onPause(true));
+    // touch buttons
+    const enableTouch = () => { document.body.classList.add('touch'); this.isTouch = true; };
+    window.addEventListener('touchstart', enableTouch, { once: true, passive: true });
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) enableTouch();
+    document.querySelectorAll('#touch button').forEach((b) => {
+      const k = b.dataset.k;
+      const set = (v) => (e) => { e.preventDefault(); this.touch[k] = v; b.classList.toggle('on', v); if (v && k === 'horn') cb.onKey('horn'); };
+      b.addEventListener('pointerdown', set(true)); b.addEventListener('pointerup', set(false));
+      b.addEventListener('pointercancel', set(false)); b.addEventListener('pointerleave', set(false));
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+    });
+  }
+
+  show(name) {
+    for (const s of SCREENS) $('screen-' + s).classList.toggle('hidden', s !== name);
+    this.screen = name;
+  }
+  hideScreens() { this.show(null); }
+  hideIntro() { clearTimeout(this.introTimer); $('screen-intro').classList.add('hidden'); }
+  setHud(on) {
+    $('hud').classList.toggle('hidden', !on);
+    $('touch').classList.toggle('hidden', !(on && this.isTouch));
+  }
+  setToggle(kind, on) {
+    if (kind === 'voice') $('btn-voice').textContent = 'DJ VOICE: ' + (on ? 'ON' : 'OFF');
+    if (kind === 'music') $('btn-music').textContent = 'MUSIC: ' + (on ? 'ON' : 'OFF');
+    if (kind === 'mute') $('btn-mute').textContent = on ? '🔇' : '🔊';
+  }
+
+  // ---------------------------------------------------------------- tutorial
+  showTutorial(then) {
+    this.tutThen = then; this.tutPage = 0; this.show('tutorial'); this.renderTut();
+  }
+  tutStep(d) {
+    this.tutPage += d;
+    if (this.tutPage < 0) { this.tutPage = 0; if (!this.tutThen) this.show('title'); return; }
+    if (this.tutPage >= TUTORIAL.length) {
+      try { localStorage.setItem('pp_tutorial', '1'); } catch (e) { /* private mode */ }
+      const then = this.tutThen; this.tutThen = null;
+      if (then) then(); else this.show('title');
+      return;
+    }
+    this.renderTut();
+  }
+  renderTut() {
+    const [t, body] = TUTORIAL[this.tutPage];
+    $('tut-title').textContent = t; $('tut-body').innerHTML = body;
+    $('tut-dots').innerHTML = TUTORIAL.map((_, i) => (i === this.tutPage ? '<b>●</b>' : '●')).join('');
+    $('tut-next').textContent = this.tutPage === TUTORIAL.length - 1 ? (this.tutThen ? "LET'S PARK!" : 'GOT IT') : 'NEXT';
+    $('tut-prev').textContent = this.tutPage === 0 && !this.tutThen ? 'CLOSE' : 'BACK';
+  }
+  seenTutorial() { try { return localStorage.getItem('pp_tutorial') === '1'; } catch (e) { return false; } }
+
+  // ---------------------------------------------------------------- high scores
+  loadScores() { try { return JSON.parse(localStorage.getItem('pp_scores') || '{}'); } catch (e) { return {}; } }
+  addScore(mode, score, won) {
+    if (score <= 0) return false;
+    const list = this.scores[mode] ||= [];
+    const entry = { score, won, date: new Date().toISOString().slice(0, 10) };
+    list.push(entry); list.sort((a, b) => b.score - a.score); list.length = Math.min(list.length, 5);
+    try { localStorage.setItem('pp_scores', JSON.stringify(this.scores)); } catch (e) { /* ignore */ }
+    this.renderScores();
+    return list[0] === entry;
+  }
+  renderScores() {
+    const names = { classic: 'MUSICAL CHAIRS', rush: 'RUSH HOUR', champ: 'CHAMPIONSHIP' };
+    const html = Object.keys(names).filter((k) => this.scores[k] && this.scores[k].length)
+      .map((k) => `<div><b>BEST · ${names[k]}</b>${this.scores[k].slice(0, 3).map((s) => `${s.won ? '🏆' : ''}${s.score}`).join(' &nbsp;·&nbsp; ')}</div>`).join('');
+    $('highscores').innerHTML = html;
+  }
+
+  // ---------------------------------------------------------------- notifications
+  subtitle(text) {
+    this.subText = text;
+    $('dj-panel').classList.toggle('quiet', !text);
+    if (text) $('dj-text').textContent = text;
+  }
+  toast(text, kind = 'info') {
+    const el = document.createElement('div');
+    el.className = 'toast ' + kind; el.textContent = text;
+    const box = $('toasts'); box.appendChild(el);
+    while (box.children.length > 4) box.removeChild(box.firstChild);
+    setTimeout(() => el.remove(), 1900);
+  }
+  flash(text, sub = '', cls = '') {
+    const f = $('flash');
+    f.className = ''; void f.offsetWidth;
+    f.innerHTML = text + (sub ? `<small>${sub}</small>` : '');
+    f.className = 'show ' + cls;
+  }
+  roundIntro(d) {
+    $('intro-mode').textContent = d.mode.label.toUpperCase();
+    $('intro-round').textContent = d.final ? 'THE FINAL' : 'ROUND ' + d.round;
+    $('intro-counts').textContent = `${d.cars} CARS · ${d.bays} SPACE${d.bays === 1 ? '' : 'S'}`;
+    $('intro-note').textContent = d.round === 1 ? 'Circulate clockwise while the music plays. Scout the coned-off bays: some will open when it stops.' : d.final ? 'Two drivers. One space. No pressure.' : 'One fewer space. Same number of egos.';
+    $('screen-intro').classList.remove('hidden');
+    clearTimeout(this.introTimer);
+    this.introTimer = setTimeout(() => $('screen-intro').classList.add('hidden'), 4300);
+  }
+  replay(on) { $('replay-badge').classList.toggle('hidden', !on); }
+
+  // ---------------------------------------------------------------- end screens
+  results(d, game) {
+    const rows = d.results.map((c) => {
+      const outNow = d.out.includes(c);
+      const status = c.alive
+        ? (c.rating ? `<span class="badge ${c.rating.key}">${c.rating.label}</span> in ${c.parkTime.toFixed(1)}s` : '')
+        : outNow ? '<span class="badge out">NO SPACE — ELIMINATED</span>' : `<span class="badge out">OUT · R${c.outRound}</span>`;
+      const pts = c.alive && c.roundPoints ? `+${c.roundPoints}` : '';
+      return `<tr class="${c.isPlayer ? 'me' : ''} ${!c.alive ? (outNow ? 'outnow' : 'out') : ''}"><td><i style="background:${hex(c.colour)}"></i>${c.isPlayer ? 'YOU' : c.name}</td><td>${c.title}</td><td>${status}</td><td class="pts">${pts}</td><td class="pts">${c.points}</td></tr>`;
+    }).join('');
+    $('res-table').innerHTML = `<tr><td><b>DRIVER</b></td><td></td><td><b>THIS ROUND</b></td><td class="pts"></td><td class="pts"><b>TOTAL</b></td></tr>` + rows;
+    const names = d.out.map((c) => (c.isPlayer ? 'You' : c.name)).join(', ');
+    $('res-title').textContent = d.result === 'victory' ? 'YOU WON THE FINAL!' : d.playerOut ? 'NO SPACE FOR YOU' : `ROUND ${d.round} — YOU'RE SAFE`;
+    $('res-sub').textContent = d.out.length ? `Eliminated: ${names}.` : 'Nobody eliminated?! The stewards are confused.';
+    $('res-continue').firstChild.textContent = d.result === 'next' ? 'NEXT ROUND ' : 'CONTINUE ';
+    this.show('results');
+  }
+  gameover(d, quote, best) {
+    $('go-quote').textContent = `"${quote}"`;
+    $('go-stats').innerHTML = `<div><b>${d.round}</b>ROUND REACHED</div><div><b>${d.score}</b>POINTS${best ? ' · NEW BEST!' : ''}</div><div><b>${d.stats.kerbs}</b>KERBS HIT</div><div><b>${d.stats.bumps}</b>BUMPS</div>`;
+    this.show('gameover');
+  }
+  victory(d, best) {
+    $('vic-title').textContent = d.champion ? 'PARKING CHAMPION OF ST ALBANS!' : d.champNext ? 'HEAT WON!' : 'CHAMPION OF THE KERB!';
+    $('vic-stats').innerHTML = `<div><b>${d.score}</b>POINTS${best ? ' · NEW BEST!' : ''}</div><div><b>+${d.bonus}</b>VICTORY BONUS</div><div><b>${d.stats.perfects}</b>SHOWROOM PARKS</div><div><b>${d.stats.kerbs}</b>KERBS HIT</div>`;
+    $('vic-next').textContent = d.champNext ? 'NEXT HEAT' : 'PLAY AGAIN';
+    this.show('victory');
+  }
+
+  // ---------------------------------------------------------------- minimap
+  setupMinimap() {
+    const cv = $('minimap'); this.mm = cv.getContext('2d');
+    const t = this.track, W = cv.width, H = cv.height;
+    let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+    for (const p of t.roadPolys[0].outer) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+    const pad = 16, sc = Math.min((W - pad * 2) / (maxX - minX), (H - pad * 2) / (maxZ - minZ));
+    const ox = (W - (maxX - minX) * sc) / 2 - minX * sc, oz = (H - (maxZ - minZ) * sc) / 2 - minZ * sc;
+    this.mmT = (x, z) => [x * sc + ox, z * sc + oz];
+    this.mmS = sc;
+    // static layer
+    const bg = document.createElement('canvas'); bg.width = W; bg.height = H;
+    const g = bg.getContext('2d');
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    for (const e of Object.values(t.edges)) {
+      g.beginPath();
+      e.path.pts.forEach((p, i) => { const [x, y] = this.mmT(p.x, p.z); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+      g.strokeStyle = e.circuit ? '#dfe3ea' : '#8791a3'; g.lineWidth = Math.max(5, e.width * sc); g.stroke();
+    }
+    g.font = 'bold 15px Arial'; g.fillStyle = '#ffc928'; g.textAlign = 'center';
+    const label = (id, s, txt, dx, dy) => { const e = t.edges[id], p = e.path.at(s); const [x, y] = this.mmT(p.x, p.z); g.save(); g.translate(x + dx, y + dy); let a = p.h; if (Math.cos(a) < 0) a += Math.PI; g.rotate(a); g.fillText(txt, 0, 0); g.restore(); };
+    label('dalton', 130, 'DALTON ST', -15, 4); label('grangeBC', 60, 'GRANGE ST', 13, -12); label('church', 100, 'CHURCH ST', 4, 22); label('bernard', 110, 'BERNARD ST', 16, 6);
+    // flow arrows
+    g.fillStyle = '#7b8496';
+    for (const e of Object.values(t.edges)) {
+      if (!e.circuit || e.len < 60) continue;
+      for (const f of [0.3, 0.7]) { const p = e.path.at(e.len * f); const [x, y] = this.mmT(p.x, p.z); g.save(); g.translate(x, y); g.rotate(p.h); g.beginPath(); g.moveTo(6, 0); g.lineTo(-4, -4); g.lineTo(-4, 4); g.fill(); g.restore(); }
+    }
+    this.mmBg = bg;
+  }
+  drawMinimap(game, t) {
+    const g = this.mm, W = g.canvas.width, H = g.canvas.height;
+    g.clearRect(0, 0, W, H); g.drawImage(this.mmBg, 0, 0);
+    const blink = Math.floor(t * 4) % 2 === 0;
+    for (const b of game.bays) {
+      if (b.state === 'closed') continue;
+      const [x, y] = this.mmT(b.x, b.z);
+      let c = '#ff9f1c', r = 5;
+      if (b.state === 'open') { c = b.occupant ? '#6b7686' : b.perfect ? '#ffe14d' : '#35e06a'; r = b.occupant ? 5 : blink ? 10 : 8; }
+      else if (b.state === 'permit') c = '#ff3344';
+      else if (b.state === 'blocked') { c = '#ffa51e'; r = 8; }
+      else if (game.phase === 'park') { c = '#5b4a2a'; r = 4; }
+      g.beginPath(); g.arc(x, y, r, 0, 7); g.fillStyle = c; g.fill(); g.lineWidth = 2; g.strokeStyle = '#0b1224'; g.stroke();
+      if (b.state === 'open' && !b.occupant && game.lastPick && game.lastPick.duel.bay === b && !game.playerComp.parked) { g.beginPath(); g.arc(x, y, r + 5 + (blink ? 2 : 0), 0, 7); g.strokeStyle = '#ffc928'; g.lineWidth = 3; g.stroke(); }
+      if (b.state === 'open' && !b.occupant) { g.fillStyle = '#0b1224'; g.font = 'bold 11px Arial'; g.textAlign = 'center'; g.fillText('P', x, y + 4); }
+    }
+    if (game.fakeTip && game.phase === 'park') { const [x, y] = this.mmT(game.fakeTip.x, game.fakeTip.z); g.fillStyle = blink ? '#ff7ad9' : '#fff'; g.font = 'bold 18px Arial'; g.textAlign = 'center'; g.fillText('?', x, y + 6); }
+    for (const c of game.world.cars) {
+      if (c.ghost || c.isPlayer) continue;
+      const [x, y] = this.mmT(c.x, c.z);
+      g.beginPath(); g.arc(x, y, c.type === 'lorry' ? 7 : 5, 0, 7); g.fillStyle = hex(c.colour ?? 0x999999); g.fill(); g.lineWidth = 2; g.strokeStyle = '#0b1224'; g.stroke();
+    }
+    const pc = game.player.car;
+    if (!pc.ghost) {
+      const [x, y] = this.mmT(pc.x, pc.z);
+      g.save(); g.translate(x, y); g.rotate(pc.h);
+      g.beginPath(); g.moveTo(11, 0); g.lineTo(-7, -7); g.lineTo(-3, 0); g.lineTo(-7, 7); g.closePath();
+      g.fillStyle = '#ffc928'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#0b1224'; g.stroke(); g.restore();
+    }
+  }
+
+  // ---------------------------------------------------------------- per-frame HUD
+  setRivals(game) {
+    $('rivals').innerHTML = game.competitors.map((c, i) => `<div class="chip ${c.isPlayer ? 'me' : ''}" id="chip${i}"><i style="background:${hex(c.colour)}"></i>${c.isPlayer ? 'YOU' : c.name} <em>${c.isPlayer ? '' : c.title.replace('The ', '')}</em></div>`).join('');
+  }
+  update(game, dt, time) {
+    const pc = game.player.car, ph = game.phase;
+    const mph = Math.round(Math.abs(pc.v) * 2.237);
+    $('mph').textContent = mph; $('mph').classList.toggle('over', mph > 24);
+    $('gear').textContent = pc.parked ? 'P' : pc.v < -0.3 ? 'R' : pc.stalled > 0 ? '!' : 'D';
+    if (game.playerLoc) $('street').textContent = game.playerLoc.edge.name;
+    $('score').textContent = game.score;
+    const banner = $('phase-banner'), txt = $('phase-text'), cd = $('countdown');
+    const free = ph === 'free';
+    $('round-label').textContent = free ? 'FREE DRIVE' : game.final ? 'THE FINAL' : `ROUND ${game.round}/${game.totalRounds}`;
+    $('counts').textContent = free ? 'no pressure' : `${game.alive().length} cars · ${ph === 'park' ? game.freeBays().length + ' free' : (game.nBays ?? 0) + ' spaces'}`;
+    let cls = '', label = '', count = '';
+    if (ph === 'intro') label = 'GET READY…';
+    else if (ph === 'music') { cls = 'music'; label = '♪ MUSIC PLAYING — KEEP MOVING ♪'; }
+    else if (ph === 'park') {
+      if (game.playerComp.parked) { cls = 'safe'; label = "YOU'RE IN! WATCHING THE CARNAGE…"; }
+      else { cls = 'park'; label = pc.stalled > 0 ? 'ENGINE CUT! (LOITERING PENALTY)' : 'PARK! PARK! PARK!'; }
+      count = Math.max(0, Math.ceil(game.timeLeft));
+    } else if (free) label = 'FREE DRIVE — PARK IN ANY GREEN BAY';
+    else if (ph === 'roundEnd') label = 'TIME!';
+    banner.className = cls; txt.textContent = label; txt.style.display = label ? '' : 'none';
+    cd.textContent = count; cd.classList.toggle('urgent', count !== '' && count <= 10);
+    const lo = $('loiter'); lo.classList.toggle('on', ph === 'music' && game.loiter > 0.15);
+    lo.querySelector('i').style.width = Math.round((game.loiter || 0) * 100) + '%';
+    // rival chips
+    game.competitors.forEach((c, i) => { const el = $('chip' + i); if (el) { el.classList.toggle('out', !c.alive); el.classList.toggle('parked', c.alive && c.parked); } });
+    // parking assist
+    const gd = (ph === 'park' || free) && game.guide && !game.playerComp.parked ? game.guide : null;
+    const panel = $('guide');
+    panel.classList.toggle('hidden', !gd);
+    if (gd) {
+      const ev = gd.ev, row = (id, ok, on = true) => { const r = $(id); r.className = 'g-row ' + (!on ? '' : ok ? 'ok' : 'no'); };
+      const legal = gd.state === 'open' && !gd.taken;
+      row('g-in', ev.inBay && ev.issue !== 'ends');
+      row('g-angle', ev.angle < 0.36, ev.inBay);
+      row('g-kerb', ev.overhang <= 0.75, ev.inBay);
+      row('g-stop', Math.abs(pc.v) < 0.18, ev.inBay);
+      let msg = '';
+      if (gd.state === 'permit') msg = 'PERMIT HOLDERS ONLY!';
+      else if (gd.state === 'blocked') msg = 'VAN IN THE WAY';
+      else if (gd.taken) msg = 'TAKEN!';
+      else if (!ev.inBay) msg = 'GET IN THE BAY';
+      else if (ev.issue === 'angle') msg = 'STRAIGHTEN UP!';
+      else if (ev.issue === 'overhang') msg = 'TUCK IN TO THE KERB!';
+      else if (ev.issue === 'ends') msg = 'TOO FAR ' + (ev.along > 0 !== ev.reversed ? 'FORWARD' : 'BACK') + '!';
+      else if (Math.abs(pc.v) >= 0.18) msg = 'NOW STOP! (SPACE)';
+      else msg = 'HOLD IT…';
+      $('guide-msg').textContent = msg;
+      panel.classList.toggle('bad', !legal || !!ev.issue || !ev.inBay);
+    }
+    this.drawMinimap(game, time);
+  }
+}
+
+export function personaFor(key) { return PERSONAS[key]; }

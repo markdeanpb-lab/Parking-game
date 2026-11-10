@@ -15,7 +15,7 @@ const RED = new THREE.Color(0xb3121a);
 const AMBER = new THREE.Color(0xff9b1a);
 const PLATE_Y = new THREE.Color(0xf2c21c);
 
-export const carMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.28 });
+export const carMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05 });
 const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
 const tailMat = new THREE.MeshBasicMaterial({ color: 0x7a0c10 });
 const tailOnMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });

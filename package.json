@@ -7,9 +7,10 @@
   "scripts": {
     "build": "esbuild src/main.js --bundle --minify --format=iife --target=es2019 --outfile=dist/game.js",
     "dev": "esbuild src/main.js --bundle --format=iife --target=es2019 --outfile=dist/game.js --servedir=. --watch",
-    "serve": "esbuild --servedir=. --serve=8080",
+    "serve": "node tools/serve.mjs",
     "test": "node tests/sim.test.mjs",
-    "test:browser": "node tests/browser.test.mjs"
+    "test:browser": "node tests/browser.test.mjs",
+    "balance": "node tests/balance.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

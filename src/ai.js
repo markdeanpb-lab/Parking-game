@@ -7,33 +7,33 @@ import { obbOverlap, evaluatePark } from './physics.js';
 export const PERSONAS = {
   mum: {
     key: 'mum', name: 'Arabella', title: 'The School Run Mum', car: 'bigsuv', carName: 'enormous SUV', colour: 0xf2f2f0,
-    cruise: 8.6, seek: 10.8, reaction: [0.3, 0.7], manSpeed: 2.3, skill: 0.55, shuffles: [0, 1], aggression: 0.9, gap: 2.2, pushy: true, indicates: true,
+    cruise: 8.0, seek: 10.8, reaction: [0.3, 0.7], manSpeed: 2.3, skill: 0.55, shuffles: [0, 1], aggression: 0.9, gap: 2.2, pushy: true, indicates: true,
     bio: 'Late for drop-off since 2019. Will not be giving way.',
   },
   major: {
     key: 'major', name: 'Geoffrey', title: 'The Retired Gentleman', car: 'saloon', carName: 'immaculate beige saloon', colour: 0xcdbb94,
-    cruise: 6.0, seek: 6.8, reaction: [1.2, 2.0], manSpeed: 1.6, skill: 0.98, shuffles: [0, 0], aggression: 0.15, gap: 4.0, pushy: false, indicates: true,
+    cruise: 6.9, seek: 7.2, reaction: [1.2, 2.0], manSpeed: 1.6, skill: 0.98, shuffles: [0, 0], aggression: 0.15, gap: 4.0, pushy: false, indicates: true,
     bio: 'Has never exceeded 14 mph. Parks like a Swiss watch.',
   },
   dazza: {
     key: 'dazza', name: 'Dazza', title: 'The Delivery Driver', car: 'van', carName: 'white van', colour: 0xfafafa,
-    cruise: 10.2, seek: 12.2, reaction: [0.15, 0.45], manSpeed: 3.1, skill: 0.42, shuffles: [0, 1], aggression: 0.8, gap: 1.6, pushy: true, indicates: true,
+    cruise: 8.6, seek: 12.2, reaction: [0.15, 0.45], manSpeed: 3.1, skill: 0.42, shuffles: [0, 1], aggression: 0.8, gap: 1.6, pushy: true, indicates: true,
     bio: '147 drops to do and you are in the way.',
   },
   tarquin: {
     key: 'tarquin', name: 'Tarquin', title: 'The BMW Driver', car: 'saloon', carName: 'BMW', colour: 0x1c2f55,
-    cruise: 9.6, seek: 11.8, reaction: [0.25, 0.6], manSpeed: 2.6, skill: 0.74, shuffles: [0, 0], aggression: 1.0, gap: 1.4, pushy: true, indicates: false,
+    cruise: 8.4, seek: 11.8, reaction: [0.25, 0.6], manSpeed: 2.6, skill: 0.74, shuffles: [0, 0], aggression: 1.0, gap: 1.4, pushy: true, indicates: false,
     bio: 'Indicators are an optional extra he did not tick.',
   },
   poppy: {
     key: 'poppy', name: 'Poppy', title: 'The Nervous Learner', car: 'mini', carName: 'learner car', colour: 0xd8332f,
-    cruise: 5.8, seek: 6.8, reaction: [1.2, 2.2], manSpeed: 1.45, skill: 0.3, shuffles: [1, 2], aggression: 0.0, gap: 4.5, pushy: false, indicates: true,
+    cruise: 6.7, seek: 6.8, reaction: [1.2, 2.2], manSpeed: 1.45, skill: 0.3, shuffles: [1, 2], aggression: 0.0, gap: 4.5, pushy: false, indicates: true,
     stalls: true, gullible: true, learner: true,
     bio: 'Third lesson. Has stalled eleven times. Today.',
   },
   sandra: {
     key: 'sandra', name: 'Sandra', title: 'The Local Expert', car: 'estate', carName: 'sensible estate', colour: 0x2f6b4f,
-    cruise: 8.0, seek: 9.6, reaction: [0.1, 0.3], manSpeed: 2.1, skill: 0.86, shuffles: [0, 0], aggression: 0.5, gap: 2.4, pushy: false, indicates: true,
+    cruise: 7.6, seek: 9.6, reaction: [0.1, 0.3], manSpeed: 2.1, skill: 0.86, shuffles: [0, 0], aggression: 0.5, gap: 2.4, pushy: false, indicates: true,
     anticipates: true,
     bio: 'Lived at No. 42 for thirty years. Knows every gap.',
   },
@@ -49,7 +49,7 @@ export const PERSONAS = {
   // used when the player car is on autopilot (tests / attract mode)
   auto: {
     key: 'auto', name: 'You', title: 'Autopilot', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
-    cruise: 8.5, seek: 10.5, reaction: [0.3, 0.5], manSpeed: 2.4, skill: 0.8, shuffles: [0, 0], aggression: 0.6, gap: 2.4, pushy: false, indicates: true,
+    cruise: 8.2, seek: 13, reaction: [0.05, 0.15], manSpeed: 3.2, skill: 0.9, shuffles: [0, 0], aggression: 1, gap: 2.0, pushy: false, indicates: true, greedy: true,
   },
 };
 export const RIVAL_ORDER = ['mum', 'major', 'dazza', 'tarquin', 'poppy', 'sandra'];
@@ -184,7 +184,7 @@ export class Driver {
     const g = this.game, track = g.track, me = this.loc();
     let best = null, bestCost = Infinity;
     for (const bay of g.bays) {
-      if (bay.state !== 'open' || bay.occupant) continue;
+      if ((bay.state !== 'open' && !(this.p.greedy && bay.state === 'blocked')) || bay.occupant) continue;
       if (bay.claimedBy && bay.claimedBy !== this) continue;
       if ((this.blacklist.get(bay.id) || 0) > g.time) continue;
       const dt = this.distTo(bay, me);
@@ -192,6 +192,8 @@ export class Driver {
       const { dist, rt, passed } = dt;
       const eta = dist / (this.p.seek * this.speedScale);
       let cost = eta;
+      if (this.p.greedy && g.lastPick && g.lastPick.duel.bay === bay) cost -= 1000;   // ...or the one ringed on the minimap
+      if (this.p.greedy) { if (cost < bestCost) { bestCost = cost; best = { bay, rt, passed }; } continue; }   // autopilot: just go for the nearest, like a person would
       // someone else will get there first?
       for (const d of g.drivers) {
         if (d === this || d.target !== bay || d.state === 'out') continue;
@@ -286,7 +288,7 @@ export class Driver {
           this.lorryT -= dt;
           if (g.phase === 'music') {
             if (this.lorryT <= 0) { this.lorryStop = 3.2; this.lorryT = g.rng.range(7, 10); }
-          } else if (!this.lorryDone) { this.lorryDone = true; this.lorryStop = 5.5; }   // one last bin, right when it matters
+          } else if (!this.lorryDone) { this.lorryDone = true; this.lorryStop = 4; }   // one last bin, right when it matters
           if (this.lorryStop > 0) { this.lorryStop -= dt; speed = 0; } else if (g.phase !== 'music') speed = 7.5;
           this.hazards = true;
         }
@@ -304,8 +306,9 @@ export class Driver {
           if (g.time > this.fooled.until) { this.fooled = null; g.emit('fooled', { driver: this, street: g.fakeTip.street }); }
           else { this.seekFake(dt); return; }
         }
-        if (!t || t.state !== 'open' || t.occupant || (t.claimedBy && t.claimedBy !== this) || this.thinkT <= 0) {
-          if (this.thinkT <= 0 || !t || t.state !== 'open' || t.occupant || (t.claimedBy && t.claimedBy !== this)) {
+        const gone = !t || (t.state !== 'open' && !(p.greedy && t.state === 'blocked')) || t.occupant || (t.claimedBy && t.claimedBy !== this);
+        if (gone || this.thinkT <= 0) {
+          if (this.thinkT <= 0 || gone) {
             const wasNear = t && this.stopR !== null && this.stopR - this.r < 9;
             // don't dither once we're right on top of our space
             if (!(wasNear && t.state === 'open' && !t.occupant && (!t.claimedBy || t.claimedBy === this))) this.retarget();
@@ -313,13 +316,14 @@ export class Driver {
           this.thinkT = 0.8 + g.rng.range(0, 0.5);
         }
         if (!this.target) { this.drive(dt, p.seek * 0.8); return; }
-        const remain = this.stopR - this.r;
+        let remain = this.stopR - this.r;
+        if (this.target.state === 'blocked') remain -= START_AHEAD + this.target.slotLen / 2 + 2 + car.len / 2;   // wait behind the van, not in its way
         if (remain < 14 && !this.target.claimedBy) this.target.claimedBy = this;
         if (remain < 30) this.indicator = p.indicates ? this.target.side : 0;
         let speed = Math.min(p.seek * this.speedScale, Math.sqrt(Math.max(0, 2 * 2.6 * (remain - 0.15))) + 0.25);
-        if (remain < -1.5) { this.blacklist.set(this.target.id, g.time + 20); this.retarget(); return; }   // overshot it
+        if (remain < -1.5 && this.target.state === 'open') { this.blacklist.set(this.target.id, g.time + 20); this.retarget(); return; }   // overshot it
         this.drive(dt, speed, remain < 12);
-        if (remain < 0.5 && Math.abs(car.v) < 0.4) this.beginManoeuvre();
+        if (remain < 0.5 && Math.abs(car.v) < 0.4 && this.target.state === 'open') this.beginManoeuvre();
         return;
       }
     }
@@ -334,7 +338,7 @@ export class Driver {
       const d = bay.s + START_AHEAD - me.s;
       if (d > 2 && d < near) near = d;
     }
-    return near < 38 ? 4.2 : speed * 1.15;
+    return near < 30 ? 6.2 : speed * 1.1;
   }
 
   seekFake(dt) {
@@ -391,14 +395,26 @@ export class Driver {
         speed = Math.min(speed, Math.sqrt(Math.max(0, 2 * 2.5 * (line - me.s))));
       }
     }
+    // ...and behind the player, when they are obviously lining up to reverse into one
+    const pl = g.player.car;
+    if (!g.playerComp.driver && pl !== car && pl.loc && pl.loc.edgeId === me.edge.id && pl.loc.s > me.s && Math.abs(pl.v) < 4.5 && !pl.parked && (g.phase === 'park' || g.phase === 'free')) {
+      for (const b of g.bays) {
+        if (b.state !== 'open' || b.occupant || b.edgeId !== me.edge.id) continue;
+        if (pl.loc.s > b.s - 3 && pl.loc.s < b.s + 13) {
+          const line = b.s - b.slotLen / 2 - 1.2 - car.len / 2;
+          if (me.s < line + 1.5) speed = Math.min(speed, Math.sqrt(Math.max(0, 2 * 2.5 * (line - me.s))));
+        }
+      }
+    }
     // traffic in front
-    const range = 7 + car.v * car.v / 5;
+    const range = (this.state === 'cruise' ? 17 : 7) + car.v * car.v / 5;
     const ob = obstacleAhead(car, g.world.cars, range, precise ? 0.15 : 0.3);
     let blocked = false;
     if (ob.other && this.ignoreT <= 0) {
       const o = ob.other;
       const along = Math.max(0, o.v * (o.fx * car.fx + o.fz * car.fz));
-      const lim = along * 0.9 + Math.sqrt(Math.max(0, 2 * 3.2 * (ob.gap - p.gap)));
+      // hang back a little while circulating, so the whole field doesn't end up nose to tail
+      const lim = along * 0.9 + Math.sqrt(Math.max(0, 2 * 3.2 * (ob.gap - p.gap - (this.state === 'cruise' && g.phase === 'music' ? 9 : 0))));
       if (lim < speed) { speed = lim; blocked = lim < 0.6; }
       if (blocked) {
         this.waitT += dt;
