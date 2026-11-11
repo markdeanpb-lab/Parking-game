@@ -636,3 +636,17 @@ button.toggle[aria-pressed="true"]::after { background-color: var(--green); back
 }
 body.screen-on #dj-panel, body.screen-on #toasts, body.screen-on #target { display: none; }
 #target.nolabel .tg-label { display: none; }
+
+/* ============================================================ cycle 3: navigator badge under the countdown */
+#tg-nav { display: flex; align-items: center; gap: 0; filter: drop-shadow(0 3px 0 rgba(0,0,0,.35)); }
+#tg-nav .tg-arrow { position: static; display: grid; width: 40px; height: 40px; flex: none; z-index: 1; }
+#tg-nav .tg-arrow svg { width: 22px; height: 22px; transition: transform .12s linear; }
+#tg-nav .tg-label { position: static; transform: none; margin-left: -8px; padding: 4px 9px 2px 14px; border-radius: 0 4px 4px 0; text-align: left; }
+#target .tg-pin { left: -17px; top: -50px; width: 34px; height: 34px; }
+#target .tg-p { font-size: 21px; }
+@media (max-height: 520px) {
+  #tg-nav .tg-arrow { width: 30px; height: 30px; } #tg-nav .tg-arrow svg { width: 17px; height: 17px; }
+  #tg-nav .tg-label { font-size: 9px; padding: 2px 7px 1px 12px; }
+  #toasts, body.touch #hud.pk #toasts { top: calc(var(--st) + 160px); }
+}
+@media (orientation: portrait) and (max-width: 600px) { #toasts { top: calc(var(--st) + 340px); } }

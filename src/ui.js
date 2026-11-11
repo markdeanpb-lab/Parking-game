@@ -528,63 +528,39 @@ export class UI {
     this.drawMinimap(game, time);
   }
 
-  /** Points the player at the ringed bay: a sign above it when visible, an edge arrow when not. */
+  /** Points the player at the ringed bay. A fixed navigator badge sits in the top-centre column under the countdown
+   *  (it never wanders into other HUD); within 25 m, where the world's big P billboard is hidden, a small P pin also
+   *  marks the bay itself unless it would land on HUD. */
   updateTarget(game, time) {
-    const el = $('target'), pc = game.player.car;
+    const pin = $('target'), nav = $('tg-nav'), pc = game.player.car;
     const bay = game.phase === 'park' && !game.playerComp.parked && game.lastPick && game.lastPick.duel ? game.lastPick.duel.bay : null;
     const cam = window.__pp && window.__pp.camera;
     const dist = bay ? Math.hypot(bay.x - pc.x, bay.z - pc.z) : 0;
-    if (!bay || !cam || bay.state !== 'open' || bay.occupant || dist < 7) { if (!this.targetHidden) { el.classList.add('hidden'); this.targetHidden = true; } return; }
-    if (this.targetHidden) { el.classList.remove('hidden'); this.targetHidden = false; }
+    const showNav = !!(bay && cam && bay.state === 'open' && !bay.occupant && dist >= 6);
+    if (showNav !== this.navOn) { this.navOn = showNav; nav.classList.toggle('hidden', !showNav); }
+    if (!showNav) { if (!this.targetHidden) { pin.classList.add('hidden'); this.targetHidden = true; } return; }
     const W = window.innerWidth, H = window.innerHeight;
     const me = cam.matrixWorldInverse.elements, pe = cam.projectionMatrix.elements;
-    const x = bay.x, y = 2.0, z = bay.z;
+    const x = bay.x, y = 1.2, z = bay.z;
     const vx = me[0] * x + me[4] * y + me[8] * z + me[12], vy = me[1] * x + me[5] * y + me[9] * z + me[13], vz = me[2] * x + me[6] * y + me[10] * z + me[14];
     const cx = pe[0] * vx + pe[4] * vy + pe[8] * vz + pe[12], cy = pe[1] * vx + pe[5] * vy + pe[9] * vz + pe[13], cw = pe[3] * vx + pe[7] * vy + pe[11] * vz + pe[15];
-    const small = H < 520 || W < 600;
-    const mx = small ? 46 : 70, top = small ? 120 : 150, bot = small ? 150 : 130, pinTop = top + (small ? 70 : 100);
-    let sx, sy, off = true;
-    if (cw > 0.1) {
-      sx = (cx / cw * 0.5 + 0.5) * W; sy = (0.5 - cy / cw * 0.5) * H;
-      off = sx < mx || sx > W - mx || sy < pinTop || sy > H - bot;
-    }
-    let ang = 0;
-    if (off) {
-      // direction on screen from the centre; points behind the camera use view-space x / y
-      let dx, dy;
-      if (cw > 0.1) { dx = sx - W / 2; dy = sy - H / 2; } else { dx = vx; dy = -vy; if (Math.abs(dy) < Math.abs(dx) * 0.2) dy = Math.abs(dx) * 0.2; }
-      const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
-      const hx = W / 2 - mx, hyTop = H / 2 - top, hyBot = H / 2 - bot;
-      const tx = Math.abs(dx) > 1e-4 ? hx / Math.abs(dx) : 1e9, ty = dy < 0 ? hyTop / -dy : dy > 0 ? hyBot / dy : 1e9;
-      const k = Math.min(tx, ty);
-      sx = W / 2 + dx * k; sy = H / 2 + dy * k;
-      ang = Math.atan2(dy, dx) * 180 / Math.PI + 90;
-    }
-    if (!this.avoid || time - this.avoidT > 0.5) { this.avoidT = time; this.avoid = ['hud-left', 'hud-right', 'phase-banner', 'dj-panel'].map((id) => $(id).getBoundingClientRect()).filter((r) => r.width > 0); }
-    if (off) {
-      // keep the edge arrow clear of the HUD corners (rects re-measured every half second)
-      const hw = Math.max(34, (this.labW || 120) / 2 + 8);
-      for (const r of this.avoid) {
-        if (sx > r.left - hw && sx < r.right + hw && sy > r.top - 34 && sy < r.bottom + 60) sy = Math.min(H - bot, r.bottom + 40);
-      }
-    }
-    let hideLab = false;
-    if (!off && this.avoid) {
-      const hw = (this.labW || 120) / 2;
-      hideLab = this.avoid.some((r) => sx + hw > r.left && sx - hw < r.right && sy - 84 > r.top - 4 && sy - 104 < r.bottom);
-    }
-    if (hideLab !== this.hideLab) { this.hideLab = hideLab; el.classList.toggle('nolabel', hideLab); }
-    el.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
-    const txt = `${Math.round(dist)} m\u2002·\u2002${bay.street.replace(' Street', ' St').toUpperCase()}`;
-    const lab = el.lastElementChild;
-    if (this.cache.tgTxt !== txt) { this.cache.tgTxt = txt; $('tg-dist').textContent = txt; this.labW = lab.offsetWidth || 120; }
-    const lw = this.labW;
-    const lx = Math.max(8 - sx, Math.min(W - 8 - sx - lw, -lw / 2));
-    if (Math.abs((this.labX ?? 1e9) - lx) > 0.5) { lab.style.left = lx.toFixed(1) + 'px'; this.labX = lx; }
-    if (off !== this.targetOff) { el.classList.toggle('off', off); this.targetOff = off; }
-    el.classList.toggle('below', off && sy > H / 2);
-    if (off) el.firstElementChild.style.transform = `rotate(${ang.toFixed(0)}deg)`;
+    let sx = 0, sy = 0, onScreen = false;
+    if (cw > 0.1) { sx = (cx / cw * 0.5 + 0.5) * W; sy = (0.5 - cy / cw * 0.5) * H; onScreen = sx > 20 && sx < W - 20 && sy > 60 && sy < H - 20; }
+    // navigator arrow: bearing of the bay relative to the view (up = straight ahead, down = behind you)
+    let dx, dy;
+    if (cw > 0.1) { dx = sx - W / 2; dy = sy - H * 0.62; } else { dx = vx; dy = Math.max(Math.abs(vx) * 0.3, -vy, 1); }
+    const ang = Math.round(Math.atan2(dy, dx) * 180 / Math.PI + 90);
+    if (ang !== this.navAng) { this.navAng = ang; nav.firstElementChild.firstElementChild.style.transform = `rotate(${ang}deg)`; }
+    const txt = `${Math.round(dist)} m · ${bay.street.replace(' Street', ' St').toUpperCase()}`;
+    if (this.cache.tgTxt !== txt) { this.cache.tgTxt = txt; $('tg-dist').textContent = txt; }
+    // the bay pin: close range only, and never on top of HUD
+    if (!this.avoid || time - this.avoidT > 0.5) { this.avoidT = time; this.avoid = ['hud-left', 'hud-right', 'phase-banner', 'dj-panel', 'guide', 'speedo'].map((id) => $(id).getBoundingClientRect()).filter((r) => r.width > 0); }
+    let showPin = onScreen && dist < 25;
+    if (showPin) showPin = !this.avoid.some((r) => sx + 26 > r.left && sx - 26 < r.right && sy > r.top && sy - 66 < r.bottom);
+    if (showPin === this.targetHidden) { pin.classList.toggle('hidden', !showPin); this.targetHidden = !showPin; }
+    if (showPin) pin.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
   }
+
 }
 
 export function personaFor(key) { return PERSONAS[key]; }
