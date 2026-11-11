@@ -23,7 +23,7 @@ const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !quality.low, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.low ? 1.5 : 2));
 renderer.shadowMap.enabled = !quality.noShadows;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = quality.low ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene();
@@ -455,9 +455,26 @@ game.on((type, d) => {
 
 // ------------------------------------------------------------------ main loop
 let last = performance.now(), time = 0, frame = 0, sensor = null;
+/**
+ * Adaptive resolution: if frames are slow, render fewer pixels; if there is headroom, render more.
+ * Checked every 2 s so the picture doesn't flicker between sizes.
+ */
+const MAX_DPR = Math.min(window.devicePixelRatio || 1, quality.low ? 1.5 : 2), MIN_DPR = 0.7;
+let dpr = MAX_DPR, frameSum = 0, frameN = 0;
+function adaptResolution(ms) {
+  if (document.hidden || ms > 250 || params.has('fixeddpr')) return;
+  frameSum += ms; frameN++;
+  if (frameSum < 2000) return;
+  const avg = frameSum / frameN; frameSum = 0; frameN = 0;
+  let next = dpr;
+  if (avg > 24) next = Math.max(MIN_DPR, dpr - 0.25);           // below ~42 fps
+  else if (avg < 15 && dpr < MAX_DPR) next = Math.min(MAX_DPR, dpr + 0.125);   // comfortably above 60 fps
+  if (next !== dpr) { dpr = next; renderer.setPixelRatio(dpr); resize(); }
+}
+
 function tick(now) {
   requestAnimationFrame(tick);
-  let dt = Math.min(0.05, (now - last) / 1000); last = now;
+  let dt = Math.min(0.05, (now - last) / 1000); adaptResolution(now - last); last = now;
   if (paused) { renderer.render(scene, camera); return; }
   time += dt; frame++;
   if (slowmo > 0) { slowmo -= dt; dt *= 0.3; }

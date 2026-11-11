@@ -21,7 +21,7 @@ const ff = (cond, max = 9000) => page.evaluate(([c, m]) => { const g = window.__
 let failures = 0;
 const check = (ok, msg) => { console.log((ok ? '  ok: ' : '  FAIL: ') + msg); if (!ok) failures++; };
 
-await page.goto(`http://localhost:${server.address().port}/index.html?seed=5&low`);
+await page.goto(`http://localhost:${server.address().port}/index.html?seed=5&low&fixeddpr`);
 await page.waitForFunction(() => window.__pp && window.__pp.ui.screen === 'title', null, { timeout: 30000 });
 await page.waitForTimeout(1500); await shot('1-title');
 check((await state()).screen === 'title', 'title screen is shown');

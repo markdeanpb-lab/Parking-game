@@ -699,10 +699,10 @@ function dropHidden(g) {
   return out;
 }
 
-// Period paints for campervans (whatever colour the street generator asks for, campers come out like this)
+// Fallback period paints for campervans given no colour
 const CAMPER_PAINTS = [0x8f9c52, 0xe4d9a6, 0xd9772d, 0x86b5c9, 0xb8432f, 0x6f8f7a];
 function paintFor(type, colour) {
-  if (CAR_TYPES[type].shape === 'camper') { const h = (colour * 2654435761) >>> 0; return CAMPER_PAINTS[(h >>> 7) % CAMPER_PAINTS.length]; }
+  if (CAR_TYPES[type].shape === 'camper' && colour == null) return CAMPER_PAINTS[0];   // campers honour the colour they are given
   return colour;
 }
 function tint(geo, colour) {

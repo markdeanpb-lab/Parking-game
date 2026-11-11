@@ -26,7 +26,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 const shot = async (n) => { await page.screenshot({ path: path.join(out, n + '.png') }); console.log('saved', path.join(out, n + '.png')); };
 const ff = (cond, max = 9000) => page.evaluate(([c, m]) => { const g = window.__pp.game; let n = 0; const f = new Function('g', 'return ' + c); while (!f(g) && n++ < m) g.update(1 / 60); return g.phase; }, [cond, max]);
 const cam = (pos, look) => page.evaluate(([p, l]) => { window.__pp.debugCam = p ? { pos: p, look: l } : null; }, [pos, look]);
-await page.goto(`http://localhost:${server.address().port}/index.html?seed=5&${extra}`);
+await page.goto(`http://localhost:${server.address().port}/index.html?seed=5&fixeddpr&${extra}`);
 await page.waitForFunction(() => window.__pp && window.__pp.ui.screen === 'title', null, { timeout: 60000 });
 await page.evaluate(() => { try { localStorage.setItem('pp_tutorial', '1'); } catch (e) {} });
 await page.waitForTimeout(1200);
@@ -65,7 +65,7 @@ async function play() {
   await ff("g.phase==='park' && g.phaseT>4"); await page.waitForTimeout(500); await shot('play-5-scramble');
   await page.keyboard.press('KeyC'); await page.waitForTimeout(1300); await shot('play-6-overhead'); await page.keyboard.press('KeyC');
   // watch a rival reverse in
-  const m = await page.evaluate(() => { const g = window.__pp.game; let n = 0; while (!g.drivers.some((d) => d.state === 'manoeuvre' && d.pi > 15) && n++ < 3000) g.update(1 / 60); const d = g.drivers.find((x) => x.state === 'manoeuvre'); if (!d) return null; const c = d.car; return [[c.x - Math.cos(c.h) * 9 + Math.sin(c.h) * 4, 4, c.z - Math.sin(c.h) * 9 - Math.cos(c.h) * 4], [c.x, 0.8, c.z]]; });
+  const m = await page.evaluate(() => { const g = window.__pp.game; let n = 0; while (!g.drivers.some((d) => d.state === 'manoeuvre' && d.pi > 15) && n++ < 3000) g.update(1 / 60); const d = g.drivers.find((x) => x.state === 'manoeuvre'); if (!d) return null; const c = d.car, b = d.target, k = b ? -b.side : 1; const e = window.__pp.track.edges[b.edgeId]; const p = e.path.offsetAt(Math.min(e.len, b.s + 11), k * 0.8); return [[p.x, 4.5, p.z], [c.x, 0.8, c.z]]; });
   if (m) { await cam(m[0], m[1]); await page.waitForTimeout(800); await shot('play-7-rival-parking'); await cam(null); }
   await ff("g.phase==='roundEnd'");
   for (let i = 0; i < 40 && (await page.evaluate(() => window.__pp.ui.screen)) !== 'results'; i++) { if (i === 3) await shot('play-8-replay'); await page.waitForTimeout(600); }
