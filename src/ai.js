@@ -544,10 +544,15 @@ export class Driver {
     if (!blocked) this.waitT = Math.max(0, this.waitT - dt * 2);
     // Something stopped dead in front (somebody reversing into a space, a stall, a car waiting): if there's room,
     // go round it rather than queueing for ever.
-    if (blocked && this.waitT > 1.2 && this.passT <= 0 && ob.other && !p.lorry && (this.passCheckT = (this.passCheckT || 0) - dt) <= 0) {
+    const atStop = this.state === 'seek' && this.stopR !== null && this.stopR - this.r < 3;
+    if (Math.abs(car.v) < 0.4 && !atStop && (this.state === 'seek' || this.state === 'cruise')) this.slowT = (this.slowT || 0) + dt; else this.slowT = 0;
+    if (this.slowT > 1.8 && this.passT <= 0 && !p.lorry && (this.passCheckT = (this.passCheckT || 0) - dt) <= 0) {
       this.passCheckT = 0.6;
-      const o = ob.other;
-      if (Math.abs(o.v) < 0.4 && !o.parked) {
+      const o = obstacleAhead(car, g.world.cars, 12, 0.3).other;
+      const od = o && g.drivers.find((q) => q.car === o);
+      // never cut round somebody still swinging into a space
+      const swinging = od && od.state === 'manoeuvre' && od.pi < od.poses.clearIdx;
+      if (o && !swinging && Math.abs(o.v) < 0.4 && !o.parked) {
         const lo = car.toLocal(o.x, o.z);
         for (const mag of [1.0, 1.4, 1.8, 2.2]) {
           const side = lo.r > 0 ? -1 : 1;
