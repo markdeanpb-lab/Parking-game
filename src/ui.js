@@ -217,7 +217,7 @@ export class UI {
     $('intro-of').textContent = d.total ? `OF ${d.total}` : '';
     $('intro-counts').innerHTML = `<span><i>${d.cars}</i>CARS</span><span><i class="ic-p">P</i>${d.bays} SPACE${d.bays === 1 ? '' : 'S'}</span>`;
     const g = this.game, out = g ? g.competitors.filter((c) => c.outRound === d.round - 1) : [];
-    $('intro-out').innerHTML = out.length ? `<span class="lbl">OUT LAST ROUND</span>` + out.map((c) => `<span><i style="background:${hex(c.colour)}"></i> <b>${c.isPlayer ? 'YOU' : esc(c.name)}</b> · ${esc(c.title.replace('The ', ''))}</span>`).join(' ') : '';
+    $('intro-out').innerHTML = out.length ? `<span class="lbl">OUT LAST ROUND</span>` + out.slice(0, 3).map((c) => `<span><i style="background:${hex(c.colour)}"></i> <b>${c.isPlayer ? 'YOU' : esc(c.name)}</b> · ${esc(c.title.replace('The ', ''))}</span>`).join(' ') + (out.length > 3 ? ` <span>+${out.length - 3} more</span>` : '') : '';
     $('intro-note').textContent = d.round === 1 ? 'Circulate clockwise while the music plays. Scout the coned-off bays: some open when it stops.' : out.length ? '' : 'One fewer space. Same number of egos.';
     const el = $('screen-intro');
     el.classList.remove('hidden');
