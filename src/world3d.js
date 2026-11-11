@@ -1275,16 +1275,17 @@ export function buildWorld(scene, track, quality) {
       g.fillStyle = '#111'; g.font = 'bold 58px "Arial Narrow", Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, w / 2, 50);
       g.font = '20px Arial'; g.fillStyle = '#1d5c3a'; g.fillText('CITY AND DISTRICT OF ST ALBANS', w / 2, 92);
     }, false);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.37), new THREE.MeshStandardMaterial({ map: nameTex[name], roughness: 0.6, side: THREE.DoubleSide }));
-    m.position.set(p.x, 0.95, p.z); m.rotation.y = -p.h + (side > 0 ? Math.PI : 0); scene.add(m);     // plate normal points at the carriageway
+    const g = new THREE.PlaneGeometry(1.7, 0.37); g.rotateY(-p.h + (side > 0 ? Math.PI : 0)); g.translate(p.x, 0.95, p.z);   // plate normal points at the carriageway
+    addSign(nameTex[name], g, 0.6);
     for (const k of [-0.7, 0.7]) props.boxH(0.06, 1.15, 0.06, p.x + Math.cos(p.h) * k, 0.57, p.z + Math.sin(p.h) * k, p.h, col(0x1c1d20));
   };
-  const signMat = {};
+  const signGeos = new Map();          // texture -> geometries, merged into one mesh per texture below
+  const addSign = (tex, g, rough) => { if (!signGeos.has(tex)) signGeos.set(tex, { rough, list: [] }); signGeos.get(tex).list.push(g.index ? g.toNonIndexed() : g); };
   const roundSign = (tex, e, s, side, faceAlong, y = 2.25, post = true, shape = 'circle') => {
     const p = e.path.offsetAt(s, side * (e.hw + 0.5));
     const geo = shape === 'circle' ? new THREE.CircleGeometry(0.34, 24) : new THREE.PlaneGeometry(0.5, 0.62);
-    const m = new THREE.Mesh(geo, signMat[tex.id] ||= new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, side: THREE.DoubleSide }));
-    m.position.set(p.x, y, p.z); m.rotation.y = -p.h + (faceAlong ? -Math.PI / 2 : Math.PI / 2); scene.add(m);
+    geo.rotateY(-p.h + (faceAlong ? -Math.PI / 2 : Math.PI / 2)); geo.translate(p.x, y, p.z);
+    addSign(tex, geo, 0.5);
     if (post) signPost(p.x - Math.cos(p.h) * 0.04 * (faceAlong ? -1 : 1), p.z - Math.sin(p.h) * 0.04 * (faceAlong ? -1 : 1), y + 0.3);
   };
   const noEntry = canvasTex(128, 128, (g) => { g.fillStyle = '#c8102e'; g.beginPath(); g.arc(64, 64, 62, 0, 7); g.fill(); g.fillStyle = '#fff'; g.fillRect(20, 50, 88, 28); }, false);
@@ -1305,6 +1306,8 @@ export function buildWorld(scene, track, quality) {
       for (const sd of [-1, 1]) roundSign(noEntry, e, e.len - 6.5, sd, false);   // you may not drive in from this end
     } else if (e.circuit && e.len > 60) roundSign(zone20, e, 9, side, true);
   }
+
+  for (const [tex, { rough, list }] of signGeos) scene.add(new THREE.Mesh(mergeGeometries(list), new THREE.MeshStandardMaterial({ map: tex, roughness: rough, side: THREE.DoubleSide })));
 
   // ------------------------------------------------------------ open ground inside the map: copses and allotment plots
   const fillTrees = [];
@@ -1410,13 +1413,13 @@ export function buildWorld(scene, track, quality) {
     const all = [...track.parked, ...decoCars];
     for (const dc of decoCars) blobs.push({ x: dc.x, z: dc.z, h: dc.h, l: CAR_TYPES[dc.type].len + 0.3, w: CAR_TYPES[dc.type].wid + 0.3, a: 0.85, y: dc.y });
     const cells = new Map();
-    for (const p of all) { const k = Math.floor(p.x / 48) + ',' + Math.floor(p.z / 48); (cells.get(k) || cells.set(k, []).get(k)).push(p); }
+    for (const p of all) { const k = Math.floor(p.x / 110) + ',' + Math.floor(p.z / 110); (cells.get(k) || cells.set(k, []).get(k)).push(p); }
     for (const list of cells.values()) {
       const cx = list.reduce((a, p) => a + p.x, 0) / list.length, cz = list.reduce((a, p) => a + p.z, 0) / list.length;
       const mk = (lod) => { const g = mergeGeometries(list.map((p) => carGeo(p, lod))); g.translate(-cx, 0, -cz); const m = new THREE.Mesh(g, carMaterial); m.castShadow = true; m.receiveShadow = true; return m; };
       if (quality.low) { const m = mk(true); m.position.set(cx, 0, cz); scene.add(m); continue; }
       const lodObj = new THREE.LOD(); lodObj.position.set(cx, 0, cz);
-      lodObj.addLevel(mk(false), 0); lodObj.addLevel(mk(true), 40);
+      lodObj.addLevel(mk(false), 0); lodObj.addLevel(mk(true), 75);
       scene.add(lodObj);
     }
     for (const p of track.parked) { const sp = CAR_TYPES[p.type]; blobs.push({ x: p.x, z: p.z, h: p.h, l: sp.len + 0.35, w: sp.wid + 0.35, a: 0.9 }); }
@@ -1524,8 +1527,14 @@ export function buildWorld(scene, track, quality) {
     return G.geometry();
   })();
   const workerMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 });
+  const resInst = {}, resMesh = {};
+  const resMatrix = (r, show) => {
+    const b2 = r.bay.resident;
+    m4.compose(v1.set(b2.x, 0, b2.z), qq.setFromAxisAngle(v1b.set(0, 1, 0), -b2.h), show ? one : zero3);
+    resMesh[r.inst].setMatrixAt(r.idx, m4); resMesh[r.inst].instanceMatrix.needsUpdate = true;
+  };
   const conePos = (bay) => [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1]].map(([fx, fz]) => [fx * (bay.len / 2 - 0.5), fz * -bay.side * 0.75]);
-  const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), eul = new THREE.Euler(), v1 = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), eul = new THREE.Euler(), v1 = new THREE.Vector3(), v1b = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero3 = new THREE.Vector3(0, 0, 0);
   const setCones = (p, bay, t, tell) => {
     conePos(bay).forEach(([x, z], i) => {
       const wob = tell > 0 ? Math.sin(t * (13 + i * 2.3) + i * 1.7) * 0.16 * tell : 0;
@@ -1556,16 +1565,27 @@ export function buildWorld(scene, track, quality) {
     beam.position.y = 3.5;
     // resident's car (closed state): one merged mesh
     const sp = CAR_TYPES[bay.resident.type];
-    const resident = new THREE.Mesh(parkedCarGeometry(bay.resident.type, bay.resident.colour, 0, 0, 0, quality.low ? { lod: 'low' } : {}), carMaterial);
-    resident.position.set(bay.resident.x, 0, bay.resident.z); resident.rotation.y = -bay.resident.h;
-    resident.castShadow = true; resident.receiveShadow = true;
+    // residents are instanced per car type (one draw each); hiding one zeroes its instance matrix
+    const rk = bay.resident.type;
+    if (!resInst[rk]) resInst[rk] = [];
+    const resident = { inst: rk, idx: resInst[rk].length, bay, _v: true };
+    resInst[rk].push(resident);
     blobs2.push({ x: bay.resident.x, z: bay.resident.z, h: bay.resident.h, l: sp.len + 0.35, w: sp.wid + 0.35 });
-    scene.add(resident);
     grp.add(conesGrp, permit, glow, marker, beam);
     scene.add(grp);
     const p = { grp, cones, conesGrp, permit, glow, marker, beam, resident, worker: null, state: null, pop: 0, tell: 0 };
     setCones(p, bay, 0, 0);
     out.bayProps.set(bay.id, p);
+  }
+  for (const type in resInst) {
+    const list = resInst[type];
+    const g = parkedCarGeometry(type, 0xffffff, 0, 0, 0, quality.low ? { lod: 'low' } : {});
+    // per-instance paint: colour the instance (geometry white parts get the paint, glass/trim are darker already)
+    const im = new THREE.InstancedMesh(g, carMaterial, list.length);
+    im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
+    resMesh[type] = im;
+    list.forEach((r) => { resMatrix(r, true); im.setColorAt(r.idx, col(r.bay.resident.colour)); });
+    scene.add(im);
   }
   function makeWorker(bay, p) {
     const w = new THREE.Group();
@@ -1588,7 +1608,8 @@ export function buildWorld(scene, track, quality) {
       if (p.state !== key) {
         if (p.state && p.state.startsWith('coned') && bay.state === 'open') p.pop = 1;
         p.state = key;
-        p.resident.visible = bay.state === 'closed';
+        const rv = bay.state === 'closed';
+        if (p.resident._v !== rv) { p.resident._v = rv; resMatrix(p.resident, rv); }
         p.conesGrp.visible = bay.state === 'coned';
         p.permit.visible = bay.state === 'permit';
       }
