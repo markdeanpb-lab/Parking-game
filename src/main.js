@@ -108,8 +108,8 @@ function nameTag(text, sub, colour) {
   const g = c.getContext('2d');
   g.fillStyle = 'rgba(11,18,36,0.85)'; g.beginPath(); g.roundRect(6, 14, 500, 100, 50); g.fill();
   g.lineWidth = 6; g.strokeStyle = '#' + colour.toString(16).padStart(6, '0'); g.stroke();
-  g.fillStyle = '#fff'; g.font = 'bold 50px Arial'; g.textAlign = 'center'; g.fillText(text, 256, 62);
-  g.fillStyle = '#ffc928'; g.font = 'bold 26px Arial'; g.fillText(sub.toUpperCase(), 256, 98);
+  g.fillStyle = '#fff'; g.font = '800 50px Overpass, Arial, sans-serif'; g.textAlign = 'center'; g.fillText(text, 256, 62);
+  g.fillStyle = '#ffc928'; g.font = '700 26px Overpass, Arial, sans-serif'; g.fillText(sub.toUpperCase(), 256, 98);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
   s.scale.set(3.2, 0.8, 1);
@@ -179,9 +179,9 @@ function startCelebration() {
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 512, 320); grad.addColorStop(0, '#fff3b0'); grad.addColorStop(0.5, '#ffc928'); grad.addColorStop(1, '#b8860b');
   g.fillStyle = grad; g.beginPath(); g.roundRect(6, 6, 500, 308, 28); g.fill(); g.lineWidth = 10; g.strokeStyle = '#6b4e00'; g.stroke();
-  g.fillStyle = '#3d2c00'; g.textAlign = 'center'; g.font = 'bold 40px Impact, Arial'; g.fillText('GOLDEN PARKING PERMIT', 256, 62);
+  g.fillStyle = '#3d2c00'; g.textAlign = 'center'; g.font = '40px Anton, Impact, Arial, sans-serif'; g.fillText('GOLDEN PARKING PERMIT', 256, 62);
   g.fillStyle = '#1560d4'; g.beginPath(); g.roundRect(196, 84, 120, 120, 18); g.fill(); g.fillStyle = '#fff'; g.font = 'bold 100px Arial'; g.fillText('P', 256, 180);
-  g.fillStyle = '#3d2c00'; g.font = 'bold 26px Arial'; g.fillText('ZONE: ALL OF THEM', 256, 246); g.fillText('ST ALBANS · VALID FOREVER', 256, 284);
+  g.fillStyle = '#3d2c00'; g.font = '700 26px Overpass, Arial, sans-serif'; g.fillText('ZONE: ALL OF THEM', 256, 246); g.fillText('ST ALBANS · VALID FOREVER', 256, 284);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const permit = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
   permit.position.set(pc.x, 4.6, pc.z); scene.add(permit);

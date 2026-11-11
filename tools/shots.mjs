@@ -71,7 +71,7 @@ async function play() {
   for (let i = 0; i < 40 && (await page.evaluate(() => window.__pp.ui.screen)) !== 'results'; i++) { if (i === 3) await shot('play-8-replay'); await page.waitForTimeout(600); }
   await shot('play-9-results');
   // jump to a final: knock everyone but the player and one rival out, keep the player alive
-  await page.evaluate(() => { const g = window.__pp.game; g.pendingResult = 'next'; g.competitors.forEach((c, i) => { if (!c.isPlayer && i > 1) { c.alive = false; c.outRound = 1; } }); g.playerComp.alive = true; window.__pp.ui.hideScreens(); g.continue(); });
+  await page.evaluate(() => { const g = window.__pp.game; g.pendingResult = 'next'; const keep = g.competitors.find((c) => !c.isPlayer && c.alive) || g.competitors.find((c) => !c.isPlayer); g.competitors.forEach((c) => { if (!c.isPlayer && c !== keep) { c.alive = false; c.outRound = c.outRound || 1; } }); keep.alive = true; keep.outRound = null; if (keep.driver) keep.driver.state = 'idle'; g.playerComp.alive = true; window.__pp.ui.hideScreens(); g.continue(); });
   await page.waitForTimeout(1500); await shot('play-10-final-intro');
   await ff("g.phase==='park' && g.phaseT>1"); await page.waitForTimeout(800); await shot('play-11-final-scramble');
   await page.evaluate(() => { const g = window.__pp.game; for (const c of g.competitors) if (!c.isPlayer) { c.alive = false; c.outRound = 2; } g.playerComp.parked = true; g.endRound(); });
