@@ -203,8 +203,13 @@ export class Driver {
   }
   onMusicStop() {
     if (this.p.civilian || this.state === 'out') return;
-    this.reactT = this.game.rng.range(this.p.reaction[0], this.p.reaction[1]);
+    const g = this.game;
+    this.reactT = g.rng.range(this.p.reaction[0], this.p.reaction[1]);
     this.state = 'react';
+    // the learner panics when the music stops and stalls it
+    if (this.p.stalls && g.rng.chance(0.4) && Math.abs(this.car.v) > 1) { this.car.stalled = 1.8; this.hazards = true; g.emit('stall', { driver: this }); }
+    // the delivery driver comes in far too hot, now and again, and sails straight past the space
+    this.hotshot = this.p.key === 'dazza' && g.rng.chance(0.3);
   }
   eliminate() { this.state = 'out'; this.car.kinematic = false; this.hazards = true; this.indicator = 0; this.releaseClaim(); }
   releaseClaim() { if (this.target && this.target.claimedBy === this) this.target.claimedBy = null; }
@@ -359,8 +364,8 @@ export class Driver {
         if (this.target.state === 'blocked') remain -= START_AHEAD + this.target.slotLen / 2 + 2 + car.len / 2;   // wait behind the van, not in its way
         if (remain < 14 && !this.target.claimedBy) { this.target.claimedBy = this; g.noteClaim(this, this.target); }
         if (remain < 30) this.indicator = p.indicates ? this.target.side : 0;
-        let speed = Math.min(p.seek * this.speedScale, Math.sqrt(Math.max(0, 2 * 2.6 * (remain - 0.15))) + 0.25);
-        if (remain < -1.5 && this.target.state === 'open') { this.blacklist.set(this.target.id, g.time + 20); this.retarget(); return; }   // overshot it
+        let speed = Math.min(p.seek * this.speedScale, Math.sqrt(Math.max(0, 2 * (this.hotshot ? 0.9 : 2.6) * (remain - 0.15))) + 0.25);
+        if (remain < -1.5 && this.target.state === 'open') { this.hotshot = false; this.blacklist.set(this.target.id, g.time + 20); g.emit('aborted', { driver: this, bay: this.target, overshot: true }); this.retarget(); return; }   // overshot it
         this.drive(dt, speed, remain < 12);
         if (remain < 0.5 && Math.abs(car.v) < 0.4 && this.target.state === 'open') this.beginManoeuvre();
         return;
