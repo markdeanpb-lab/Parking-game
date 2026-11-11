@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeRng, pointInRing, clamp } from './util.js';
-import { parkedCarGeometry, carMaterial, createCarMesh, textTexture } from './carmodels.js';
+import { parkedCarGeometry, carMaterial, textTexture } from './carmodels.js';
 import { CAR_TYPES } from './cartypes.js';
 
 const V2 = (p) => new THREE.Vector2(p[0], p[1]);
@@ -330,14 +330,17 @@ export function buildWorld(scene, track, quality) {
   const forecourtAt = (edgeId, side, s) => (track.forecourts || []).find((f) => f.edgeId === edgeId && f.side === side && s > f.s0 - 0.5 && s < f.s1 + 0.5);
 
   const shopSigns = [];
-  const walls = new GB(1 / 1.4);      // brick masses + brick facades (brick texture)
+  const wallsNear = new GB(1 / 1.4), wallsFar = new GB(1 / 1.4);     // brick (near the drivable streets: casts shadows)
+  let walls = wallsNear;              // brick masses + brick facades (brick texture)
   const render = new GB(1 / 2);       // painted render facades
-  const roofs = new GB();             // slate (explicit UVs)
-  roofs.uv = []; roofs.us = 1;
+  const roofsNear = new GB(), roofsFar = new GB();
+  roofsNear.uv = []; roofsNear.us = 1; roofsFar.uv = []; roofsFar.us = 1;
+  let roofs = roofsNear;              // slate (explicit UVs)
   const det = new GB();               // white joinery, doors, sills, gutters, chimneys
   const glass = new GB();             // window glass (glossy)
   const props = new GB();             // walls, fences, bins, poles, signs posts, scaffolding
   const blobs = [];                   // contact shadow decals: {x, z, h, l, w, a}
+  const blobs2 = [];                  // under the bays' resident cars
   const wires = [];                   // telegraph wires: pairs of [x,y,z]
   walls.shade = (x, y) => wallAO(y, 99);
 
@@ -359,6 +362,8 @@ export function buildWorld(scene, track, quality) {
     const storeys = small ? 1 : bd.t === 'apartments' ? 3 : 2;
     const H = small ? 2.5 + rng() * 0.4 : storeys * 2.85 + 0.25 + rng() * 0.35;
     const loc = track.locate(cx, cz);
+    const far = loc.dist > 26;
+    walls = far ? wallsFar : wallsNear; roofs = far ? roofsFar : roofsNear;
     const key = streetKey(loc.dist < 22 ? loc.edge : null);
     const pal = PALETTES[key];
     const spec = small ? ['brick', rng.pick([0x8d8478, 0x9c5b3e, 0xb9b3a6])] : rng.pick(pal.houses);
@@ -432,6 +437,7 @@ export function buildWorld(scene, track, quality) {
     // background chimneys for buildings that don't face one of our streets get added later if needed
   });
 
+  walls = wallsNear; roofs = roofsNear;
   // ------------------------------------------------------------ street facades
   const facadeSegs = [];
   bInfo.forEach((bi, idx) => {
@@ -694,8 +700,10 @@ export function buildWorld(scene, track, quality) {
   // background buildings: a few chimneys so the skyline isn't bald
   roofInfo.forEach((info, i) => {
     if (!info || info.flat || facadeSegs.some((s) => s.bi === i)) return;
+    walls = wallsFar;
     for (let uu = info.mnU + 2.4; uu < info.mxU - 1; uu += 9.5) { const p = info.P(uu, info.mid, 0); chimney(p[0], p[2], info.H + info.rh, Math.atan2(info.uz, info.ux), makeRng(i * 13 + uu)); }
   });
+  walls = wallsNear;
 
   function chimney(x, z, ridgeY, h, r) {
     const F = frameH(x, z, h);
@@ -705,7 +713,7 @@ export function buildWorld(scene, track, quality) {
     walls.box(F, -0.32, 0.32, ridgeY - 0.6, top, -0.48, 0.48, brickC, 'fblrt');
     walls.shade = null;
     det.box(F, -0.38, 0.38, top, top + 0.12, -0.54, 0.54, brickC.clone().multiplyScalar(0.85), 'fblrt');      // corbel cap
-    const pots = r.int(2, 4);
+    const pots = quality.low && walls === wallsFar ? 0 : r.int(2, 4);
     for (let k = 0; k < pots; k++) {
       const pz = -0.36 + (k + 0.5) * (0.72 / pots), pp = F.p(0, 0, pz);
       const potC = col(r.pick([0xb5653f, 0xc27a4c, 0xa95a3a, 0xc9b28a]));
@@ -737,7 +745,7 @@ export function buildWorld(scene, track, quality) {
   }
   function picketRun(G, F, xa, xb, hgt) {
     const white = col(0xf2f1ec);
-    for (let x = xa + 0.04; x < xb - 0.03; x += 0.16) G.box(F, x, x + 0.075, 0.05, hgt - 0.05 + ((x * 7) % 1 > 0.5 ? 0.02 : 0), -0.02, 0.02, white, 'fblrt');
+    for (let x = xa + 0.04; x < xb - 0.03; x += quality.low ? 0.24 : 0.16) G.box(F, x, x + 0.075, 0.05, hgt - 0.05 + ((x * 7) % 1 > 0.5 ? 0.02 : 0), -0.02, 0.02, white, 'fbt');
     for (const y of [0.25, hgt - 0.25]) G.box(F, xa, xb, y, y + 0.07, -0.05, -0.02, white, 'fbt');
   }
   /** Lean-to slate canopy against the facade: x range, z from wall (zw) to front (zf), eaves y0 at the front, y1 at the wall. */
@@ -792,7 +800,7 @@ export function buildWorld(scene, track, quality) {
     props.shade = (x, y) => (y < y0 + 0.1 ? 0.7 : 1);
     props.box(F, xa, xb, y0, y0 + hgt, -0.03, 0.03, t1, 'fblrt');
     props.shade = null;
-    for (let x = xa; x < xb; x += 0.14) props.box(F, x, x + 0.02, y0 + 0.02, y0 + hgt - 0.02, 0.03, 0.045, t2, 'fb');
+    if (!quality.low) for (let x = xa; x < xb; x += 0.14) props.box(F, x, x + 0.02, y0 + 0.02, y0 + hgt - 0.02, 0.03, 0.045, t2, 'f');
     for (let x = xa; x <= xb + 0.01; x += 1.8) props.box(F, x - 0.05, x + 0.05, y0, y0 + hgt + 0.08, -0.07, 0.07, t2, 'fblrt');
     props.box(F, xa, xb, y0 + hgt - 0.02, y0 + hgt + 0.04, -0.05, 0.05, t2, 'fbt');
   }
@@ -817,6 +825,7 @@ export function buildWorld(scene, track, quality) {
   }
 
   // ------------------------------------------------------------ boundaries along the back of the pavement
+  const railStep = quality.low ? 0.26 : 0.14;
   const hedgeC = [col(0x3f6b3a), col(0x4a7a41), col(0x35592f), col(0x456f3b)];
   const churchTrees = [];
   {
@@ -879,7 +888,7 @@ export function buildWorld(scene, track, quality) {
               props.box(F, -hw - 0.01, hw + 0.01, top, top + 0.08, ...zr(-0.02, 0.34), coping, 'fblrt');
               if (style === 'railtall') {
                 props.box(F, -hw, hw, 1.62, 1.67, ...zr(0.14, 0.18), iron, 'fbt');
-                for (let q = -hw + 0.06; q < hw; q += 0.13) props.box(F, q - 0.013, q + 0.013, top + 0.08, 1.78, ...zr(0.145, 0.175), iron, 'fb');
+                for (let q = -hw + 0.06; q < hw; q += railStep) props.box(F, q - 0.013, q + 0.013, top + 0.08, 1.78, ...zr(0.145, 0.175), iron, 'fb');
               }
               if (Math.abs(((l.s % 2.6) + 2.6) % 2.6 - 1.3) < pl / 2) props.box(F, -0.22, 0.22, 0.13, (style === 'gardenwall' ? 1.75 : 1.85) + 0.12, ...zr(-0.03, 0.36), brickW, 'fblrt');   // pier
             } else if (style === 'gate') {
@@ -894,13 +903,13 @@ export function buildWorld(scene, track, quality) {
               props.box(F, -hw, hw, 0.13, 0.5, ...zr(0.02, 0.24), brickW2, 'fblr');
               props.box(F, -hw - 0.01, hw + 0.01, 0.5, 0.56, ...zr(0, 0.26), coping, 'fblrt');
               props.box(F, -hw, hw, 1.12, 1.16, ...zr(0.11, 0.15), iron, 'fbt');
-              for (let q = -hw + 0.06; q < hw; q += 0.14) { props.box(F, q - 0.012, q + 0.012, 0.56, 1.22, ...zr(0.115, 0.145), iron, 'fblr'); }
+              for (let q = -hw + 0.06; q < hw; q += railStep) { props.box(F, q - 0.012, q + 0.012, 0.56, 1.22, ...zr(0.115, 0.145), iron, 'fb'); }
             } else if (style === 'picket') {
               picketRun(props, frame(px - tx * hw + ox * 0.12, pz - tz * hw + oz * 0.12, tx, tz), 0, 2 * hw, 1.0);
               props.box(F, -hw, hw, 0.13, 0.3, ...zr(0.02, 0.24), brickW2, 'fblrt');
             } else if (style === 'fence') {
               props.box(F, -hw, hw, 0.13, 1.8, ...zr(0.04, 0.1), rr() < 0.5 ? timber : timber2, 'fblrt');
-              for (let q = -hw; q < hw; q += 0.15) props.box(F, q, q + 0.02, 0.15, 1.78, ...zr(0.0, 0.04), timber.clone().multiplyScalar(0.8), 'fb');
+              if (!quality.low) for (let q = -hw; q < hw; q += 0.15) props.box(F, q, q + 0.02, 0.15, 1.78, ...zr(0.0, 0.04), timber.clone().multiplyScalar(0.8), flip > 0 ? 'b' : 'f');
               props.box(F, -0.05, 0.05, 0.13, 1.9, ...zr(0.0, 0.14), timber.clone().multiplyScalar(0.7), 'fblrt');
             } else {     // hedge, chunky and a bit lumpy
               const hc = rr.pick(hedgeC), hh = (key === 'church' ? 1.7 : 1.1) + rr() * 0.3;
@@ -1255,9 +1264,12 @@ export function buildWorld(scene, track, quality) {
   }
 
   // ------------------------------------------------------------ merged static meshes
-  walls.mesh(scene, new THREE.MeshStandardMaterial({ map: brick, vertexColors: true, roughness: 0.92 }));
+  walls = wallsNear;
+  const brickMat = new THREE.MeshStandardMaterial({ map: brick, vertexColors: true, roughness: 0.92 });
+  wallsNear.mesh(scene, brickMat); wallsFar.mesh(scene, brickMat, false, true);
   render.mesh(scene, new THREE.MeshStandardMaterial({ map: renderTex, vertexColors: true, roughness: 0.88 }));
-  roofs.mesh(scene, new THREE.MeshStandardMaterial({ map: slate, vertexColors: true, roughness: 0.75, side: THREE.DoubleSide }));
+  const slateMat = new THREE.MeshStandardMaterial({ map: slate, vertexColors: true, roughness: 0.75, side: THREE.DoubleSide });
+  roofsNear.mesh(scene, slateMat); roofsFar.mesh(scene, slateMat, false, true);
   det.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), !quality.low, true);
   glass.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.3 }), false, false);
   props.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
@@ -1270,16 +1282,28 @@ export function buildWorld(scene, track, quality) {
 
   // ------------------------------------------------------------ resident parked cars (one draw call) + contact shadows
   {
-    const geos = track.parked.map((p) => {
-      if (!p.roll) return parkedCarGeometry(p.type, p.colour, p.x, p.z, p.h);
-      const g = parkedCarGeometry(p.type, p.colour, 0, 0, 0);       // two wheels up on the kerb
+    // Chunked by 48 m cells; each chunk is a THREE.LOD: full cars near the camera, the ~140-triangle version beyond 40 m.
+    // quality.low: low-poly everywhere, no LOD switching.
+    const carGeo = (p, lod) => {
+      const o = lod ? { lod: 'low' } : {};
+      if (!p.roll) { const g = parkedCarGeometry(p.type, p.colour, p.x, p.z, p.h, o); if (p.y) g.translate(0, p.y, 0); return g; }
+      const g = parkedCarGeometry(p.type, p.colour, 0, 0, 0, o);       // two wheels up on the kerb
       g.applyMatrix4(new THREE.Matrix4().makeRotationX(p.roll)); g.translate(0, 0.075, 0);
       g.applyMatrix4(new THREE.Matrix4().makeRotationY(-p.h)); g.translate(p.x, 0, p.z);
       return g;
-    });
-    for (const dc of decoCars) { const g = parkedCarGeometry(dc.type, dc.colour, dc.x, dc.z, dc.h); g.translate(0, dc.y, 0); geos.push(g); blobs.push({ x: dc.x, z: dc.z, h: dc.h, l: CAR_TYPES[dc.type].len + 0.3, w: CAR_TYPES[dc.type].wid + 0.3, a: 0.85, y: dc.y }); }
-    const m = new THREE.Mesh(mergeGeometries(geos), carMaterial);
-    m.castShadow = true; m.receiveShadow = true; scene.add(m);
+    };
+    const all = [...track.parked, ...decoCars];
+    for (const dc of decoCars) blobs.push({ x: dc.x, z: dc.z, h: dc.h, l: CAR_TYPES[dc.type].len + 0.3, w: CAR_TYPES[dc.type].wid + 0.3, a: 0.85, y: dc.y });
+    const cells = new Map();
+    for (const p of all) { const k = Math.floor(p.x / 48) + ',' + Math.floor(p.z / 48); (cells.get(k) || cells.set(k, []).get(k)).push(p); }
+    for (const list of cells.values()) {
+      const cx = list.reduce((a, p) => a + p.x, 0) / list.length, cz = list.reduce((a, p) => a + p.z, 0) / list.length;
+      const mk = (lod) => { const g = mergeGeometries(list.map((p) => carGeo(p, lod))); g.translate(-cx, 0, -cz); const m = new THREE.Mesh(g, carMaterial); m.castShadow = true; m.receiveShadow = true; return m; };
+      if (quality.low) { const m = mk(true); m.position.set(cx, 0, cz); scene.add(m); continue; }
+      const lodObj = new THREE.LOD(); lodObj.position.set(cx, 0, cz);
+      lodObj.addLevel(mk(false), 0); lodObj.addLevel(mk(true), 40);
+      scene.add(lodObj);
+    }
     for (const p of track.parked) { const sp = CAR_TYPES[p.type]; blobs.push({ x: p.x, z: p.z, h: p.h, l: sp.len + 0.35, w: sp.wid + 0.35, a: 0.9 }); }
   }
   // decals: soft contact shadows (one mesh) + gradient AO strips at wall feet and in the gutters (one mesh)
@@ -1351,47 +1375,98 @@ export function buildWorld(scene, track, quality) {
     g.fillStyle = '#fff'; g.font = 'bold 86px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('P', 64, 68);
   }, false);
   const glowGeo = new THREE.PlaneGeometry(1, 1); glowGeo.rotateX(-Math.PI / 2);
-  const residentShadowGeo = new THREE.PlaneGeometry(1, 1); residentShadowGeo.rotateX(-Math.PI / 2);
-  const residentShadowMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  const beamGeo = new THREE.CylinderGeometry(0.5, 0.9, 7, 14, 1, true);
+  // shared materials (one per colour state) instead of one per bay
+  const boardGeo = (() => {          // sign board + its leg in one geometry (leg samples the black border of the texture)
+    const b = new THREE.PlaneGeometry(0.62, 0.78); b.translate(0, 1.15, 0);
+    const l = new THREE.BoxGeometry(0.05, 0.8, 0.05); l.translate(0, 0.4, -0.01);
+    const uv = l.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.05, 0.05);
+    return mergeGeometries([b.toNonIndexed(), l.toNonIndexed()]);
+  })();
+  const permitGeo = (() => {
+    const b = new THREE.PlaneGeometry(0.9, 1.12); b.translate(0, 1.6, 0);
+    const l = new THREE.BoxGeometry(0.07, 1.1, 0.07); l.translate(0, 0.55, -0.02);
+    const uv = l.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.02, 0.02);
+    return mergeGeometries([b.toNonIndexed(), l.toNonIndexed()]);
+  })();
+  const boardMat = new THREE.MeshStandardMaterial({ map: suspendedTex, roughness: 0.6, side: THREE.DoubleSide });
+  const permitMat = new THREE.MeshStandardMaterial({ map: permitTex, roughness: 0.6, side: THREE.DoubleSide });
+  const glowMats = {}, beamMats = {};
+  const glowMat = (c) => (glowMats[c] ||= new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  const beamMat = (c, mine) => (beamMats[c + (mine ? 'm' : '')] ||= new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: mine ? 0.3 : 0.16, side: THREE.DoubleSide, depthWrite: false }));
+  const markerMats = [false, true].map((perfect) => new THREE.SpriteMaterial({ map: pTex, transparent: true, depthTest: false, color: perfect ? 0xffe27a : 0xffffff }));
+  // council worker in hi-vis (bay "tell": this bay is about to open)
+  const workerGeo = (() => {
+    const G = new GB(), F = frameH(0, 0, 0);
+    const navy = col(0x1f2a44), vis = col(0xd9ef1c), band = col(0xd8dde0), skin = col(0xe0b08c), hat = col(0xf2f2ee), boots = col(0x1b1b1d);
+    for (const z of [-0.12, 0.12]) { G.box(F, -0.09, 0.09, 0, 0.1, z - 0.08, z + 0.08, boots, 'fblrt'); G.box(F, -0.07, 0.07, 0.1, 0.85, z - 0.07, z + 0.07, navy, 'fblr'); }
+    G.box(F, -0.13, 0.13, 0.85, 1.45, -0.22, 0.22, vis, 'fblrt');
+    for (const y of [1.0, 1.2]) G.box(F, -0.135, 0.135, y, y + 0.05, -0.225, 0.225, band, 'fblr');
+    for (const z of [-0.29, 0.29]) G.box(F, -0.05, 0.25, 1.05, 1.42, z - 0.06, z + 0.06, vis, 'fblrt');      // arms reaching forward
+    G.box(F, -0.1, 0.1, 1.48, 1.7, -0.1, 0.1, skin, 'fblrt');
+    G.box(F, -0.14, 0.14, 1.7, 1.8, -0.14, 0.14, hat, 'fblrt');
+    G.box(F, 0.1, 0.2, 1.7, 1.73, -0.12, 0.12, hat, 'fblrt');
+    return G.geometry();
+  })();
+  const workerMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 });
+  const conePos = (bay) => [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1]].map(([fx, fz]) => [fx * (bay.len / 2 - 0.5), fz * -bay.side * 0.75]);
+  const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), eul = new THREE.Euler(), v1 = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const setCones = (p, bay, t, tell) => {
+    conePos(bay).forEach(([x, z], i) => {
+      const wob = tell > 0 ? Math.sin(t * (13 + i * 2.3) + i * 1.7) * 0.16 * tell : 0;
+      eul.set(wob, 0, wob * 0.7); qq.setFromEuler(eul);
+      const lifted = tell > 0 && i === 4;       // the worker has this one
+      m4.compose(v1.set(x, 0.02, z), qq, lifted ? v1.clone().set(0, 0, 0) : one);
+      p.cones.setMatrixAt(i, m4);
+    });
+    p.cones.instanceMatrix.needsUpdate = true;
+  };
   for (const bay of track.bays) {
     const grp = new THREE.Group();
     grp.position.set(bay.x, 0, bay.z); grp.rotation.y = -bay.h;
-    // cones + sign (coned state)
-    const cones = new THREE.Group();
-    for (const [fx, fz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1]]) {
-      const cm = new THREE.Mesh(coneGeo, coneMat); cm.position.set(fx * (bay.len / 2 - 0.5), 0.02, fz * -bay.side * 0.75); cm.castShadow = true; cones.add(cm);
-    }
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.78), new THREE.MeshStandardMaterial({ map: suspendedTex, roughness: 0.6, side: THREE.DoubleSide }));
-    board.position.set(0, 1.15, bay.side * 0.55); board.rotation.y = bay.side > 0 ? Math.PI : 0;
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.8, 0.05), coneMat); leg.position.set(0, 0.4, bay.side * 0.56);
-    cones.add(board, leg);
-    // permit sign
-    const permit = new THREE.Group();
-    const pb = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.12), new THREE.MeshStandardMaterial({ map: permitTex, roughness: 0.6, side: THREE.DoubleSide }));
-    pb.position.set(0, 1.6, bay.side * 0.5); pb.rotation.y = bay.side > 0 ? Math.PI : 0;
-    const pl = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.1, 0.07), coneMat); pl.position.set(0, 0.55, bay.side * 0.52);
-    permit.add(pb, pl);
+    // cones (one instanced draw) + suspended sign
+    const cones = new THREE.InstancedMesh(coneGeo, coneMat, 5);
+    cones.castShadow = !quality.low;
+    const board = new THREE.Mesh(boardGeo, boardMat);
+    board.position.set(0, 0, bay.side * 0.55); board.rotation.y = bay.side > 0 ? Math.PI : 0;
+    const conesGrp = new THREE.Group(); conesGrp.add(cones, board);
+    const permit = new THREE.Mesh(permitGeo, permitMat);
+    permit.position.set(0, 0, bay.side * 0.5); permit.rotation.y = bay.side > 0 ? Math.PI : 0;
     // glowing floor + floating P
-    const glow = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color: 0x35e06a, transparent: true, opacity: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+    const glow = new THREE.Mesh(glowGeo, glowMat(0x35e06a));
     glow.scale.set(bay.len, 1, bay.wid - 0.1); glow.position.y = 0.045;
-    const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: pTex, transparent: true, depthTest: false }));
+    const marker = new THREE.Sprite(markerMats[0]);
     marker.scale.set(1.6, 1.6, 1); marker.position.y = 4;
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 7, 14, 1, true), new THREE.MeshBasicMaterial({ color: 0x35e06a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
+    const beam = new THREE.Mesh(beamGeo, beamMat(0x35e06a, false));
     beam.position.y = 3.5;
-    // resident's car (closed state)
-    const resident = createCarMesh(bay.resident.type, bay.resident.colour);
+    // resident's car (closed state): one merged mesh
+    const sp = CAR_TYPES[bay.resident.type];
+    const resident = new THREE.Mesh(parkedCarGeometry(bay.resident.type, bay.resident.colour, 0, 0, 0, quality.low ? { lod: 'low' } : {}), carMaterial);
     resident.position.set(bay.resident.x, 0, bay.resident.z); resident.rotation.y = -bay.resident.h;
-    const rs = new THREE.Mesh(residentShadowGeo, residentShadowMat);
-    rs.scale.set(CAR_TYPES[bay.resident.type].len + 0.35, 1, CAR_TYPES[bay.resident.type].wid + 0.35); rs.position.y = 0.046; rs.renderOrder = 1;
-    resident.add(rs);
+    resident.castShadow = true; resident.receiveShadow = true;
+    blobs2.push({ x: bay.resident.x, z: bay.resident.z, h: bay.resident.h, l: sp.len + 0.35, w: sp.wid + 0.35 });
     scene.add(resident);
-    grp.add(cones, permit, glow, marker, beam);
+    grp.add(conesGrp, permit, glow, marker, beam);
     scene.add(grp);
-    out.bayProps.set(bay.id, { grp, cones, permit, glow, marker, beam, resident, state: null, pop: 0 });
+    const p = { grp, cones, conesGrp, permit, glow, marker, beam, resident, worker: null, state: null, pop: 0, tell: 0 };
+    setCones(p, bay, 0, 0);
+    out.bayProps.set(bay.id, p);
+  }
+  function makeWorker(bay, p) {
+    const w = new THREE.Group();
+    const body = new THREE.Mesh(workerGeo, workerMat); body.castShadow = true;
+    const carried = new THREE.Mesh(coneGeo, coneMat);
+    w.add(body, carried);
+    // stands at the kerb end of the bay, facing along it
+    w.position.set(-(bay.len / 2 - 0.2), 0, bay.side * 0.35);
+    p.grp.add(w);
+    return { w, body, carried };
   }
 
   /** Reflect bay state changes and animate the indicators. */
   out.update = (t, dt, phase, hint = null) => {
+    const pulse = 0.3 + 0.18 * Math.sin(t * 6);
+    for (const c in glowMats) glowMats[c].opacity = +c === 0x7a8894 ? 0.18 : pulse;
     for (const bay of track.bays) {
       const p = out.bayProps.get(bay.id);
       const key = bay.state + (bay.occupant ? '+occ' : '') + (bay.perfect ? '+perfect' : '');
@@ -1399,26 +1474,54 @@ export function buildWorld(scene, track, quality) {
         if (p.state && p.state.startsWith('coned') && bay.state === 'open') p.pop = 1;
         p.state = key;
         p.resident.visible = bay.state === 'closed';
-        p.cones.visible = bay.state === 'coned';
+        p.conesGrp.visible = bay.state === 'coned';
         p.permit.visible = bay.state === 'permit';
+      }
+      // "tell": a council worker in hi-vis turns up and starts lifting a cone, the others wobble
+      const tell = bay.state === 'coned' ? clamp(bay.tell || 0, 0, 1) : 0;
+      if (tell > 0.02 || p.tell > 0) {
+        if (tell > 0.02 && !p.worker) p.worker = makeWorker(bay, p);
+        if (p.worker) {
+          p.worker.w.visible = tell > 0.02;
+          const lift = clamp(tell * 1.4, 0, 1), bob = Math.sin(t * 9) * 0.04 * tell;
+          p.worker.carried.position.set(0.42, 0.25 + lift * 0.95 + bob, 0);
+          p.worker.carried.rotation.z = -0.5 * lift;
+          p.worker.body.rotation.z = -0.12 * lift;
+        }
+        setCones(p, bay, t, tell);
+        p.tell = tell;
       }
       const live = (bay.state === 'open' || bay.state === 'blocked') && !bay.occupant;
       const showGlow = live || bay.state === 'permit' || (bay.state === 'open' && bay.occupant);
       p.glow.visible = showGlow; p.marker.visible = live && bay.state === 'open'; p.beam.visible = live && bay.state === 'open';
       if (showGlow) {
         const colour = bay.state === 'permit' ? 0xff3344 : bay.state === 'blocked' ? 0xffa51e : bay.occupant ? 0x7a8894 : bay.perfect ? 0xffd23c : 0x35e06a;
-        p.glow.material.color.setHex(colour); p.beam.material.color.setHex(colour);
-        p.glow.material.opacity = bay.occupant ? 0.18 : 0.3 + 0.18 * Math.sin(t * 6 + bay.id);
-        p.marker.position.y = 3.6 + Math.sin(t * 3 + bay.id) * 0.35 + p.pop * 2;
         const mine = bay === hint && !bay.occupant;                 // the space the player is first in the queue for
+        p.glow.material = glowMat(colour); p.beam.material = beamMat(colour, mine);
+        p.marker.position.y = 3.6 + Math.sin(t * 3 + bay.id) * 0.35 + p.pop * 2;
         const sc = (bay.perfect ? 2.4 : mine ? 2.6 + 0.3 * Math.sin(t * 8) : 1.7) * (1 + p.pop * 0.8);
-        p.beam.scale.set(mine ? 1.6 : 1, mine ? 1.5 : 1, mine ? 1.6 : 1); p.beam.material.opacity = mine ? 0.3 : 0.16;
+        p.beam.scale.set(mine ? 1.6 : 1, mine ? 1.5 : 1, mine ? 1.6 : 1);
         p.marker.scale.set(sc, sc, 1);
-        p.marker.material.color.setHex(bay.perfect ? 0xffe27a : 0xffffff);
+        p.marker.material = markerMats[bay.perfect ? 1 : 0];
       }
       p.pop = Math.max(0, p.pop - dt * 2.5);
     }
   };
+  // contact shadows under the bays' resident cars (one mesh; they read as oil-stained bays when the car has gone)
+  {
+    const pos = [], uv = [];
+    for (const s of blobs2) {
+      const c = Math.cos(s.h), sn = Math.sin(s.h);
+      const P = (f, r) => [s.x + c * f - sn * r, 0.046, s.z + sn * f + c * r];
+      const q = [P(-s.l / 2, -s.w / 2), P(s.l / 2, -s.w / 2), P(s.l / 2, s.w / 2), P(-s.l / 2, s.w / 2)];
+      pos.push(...q[0], ...q[2], ...q[1], ...q[0], ...q[3], ...q[2]);
+      uv.push(0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+    m.renderOrder = 1; scene.add(m);
+  }
   return out;
 }
 
