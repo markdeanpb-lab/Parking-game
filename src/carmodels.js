@@ -473,7 +473,17 @@ function buildCar(type) {
   }
   // tail glow quads (live cars only)
   const plateRear = { x: R, y: plateRY }, plateFront = { x: Fx + 0.02, y: d.gc + 0.16 };
-  return { body: M.build(), lights, wheelPos: wheels, r, tw: s.shape === 'van' ? 0.24 : 0.22, plateRear, plateFront, roofY: H };
+  // facts the low-LOD builder and the competitor livery need
+  const topOf = (q) => q.yt + q.crown, maxTop = Math.max(...st.map(topOf));
+  const roofSt = st.filter((q) => topOf(q) > maxTop - 0.09);
+  const cabSt = st.filter((q) => q.k !== 'body');
+  const info = {
+    shape: s.shape, L: D.L, W: D.W, H, hw, gc: d.gc, yb: d.yb, R, Fx, wt: d.wt, roofY: maxTop,
+    roofX0: roofSt[0].x, roofX1: roofSt[roofSt.length - 1].x,
+    cabX0: cabSt.length ? cabSt[0].x : R, cabX1: cabSt.length ? st[st.indexOf(cabSt[cabSt.length - 1]) + 1].x : Fx,
+    pal, wheels, r,
+  };
+  return { body: M.build(), lights, wheelPos: wheels, r, tw: s.shape === 'van' ? 0.24 : 0.22, plateRear, plateFront, roofY: H, info };
 }
 
 // ------------------------------------------------------------------ the bin lorry
@@ -547,6 +557,99 @@ function buildLorry(type) {
   return { body: M.build(), lights, wheelPos, r, tw: 0.32, plateRear: { x: R - 0.08, y: 0.72 }, plateFront: { x: Fx, y: 0.66 }, roofY: H, beaconPos: [Fx - 0.6, H - 0.06] };
 }
 
+// ------------------------------------------------------------------ low LOD (far parked cars / phones), ~150-300 tris
+function frustum(M, x0, x1, y0, w0, tx0, tx1, y1, w1, sideD, endD, topD) {
+  const b = [V(x0, y0, -w0), V(x1, y0, -w0), V(x1, y0, w0), V(x0, y0, w0)];
+  const t = [V(tx0, y1, -w1), V(tx1, y1, -w1), V(tx1, y1, w1), V(tx0, y1, w1)];
+  const ref = V((x0 + x1) / 2, (y0 + y1) / 2, 0);
+  M.quad(b[0], b[1], t[1], t[0], sideD, ref); M.quad(b[2], b[3], t[3], t[2], sideD, ref);
+  M.quad(b[1], b[2], t[2], t[1], endD, ref); M.quad(b[3], b[0], t[0], t[3], endD, ref);
+  M.quad(t[0], t[1], t[2], t[3], topD, ref);
+}
+function buildLow(type, p) {
+  const f = p.info, M = new Mesher([f.yb, f.H]);
+  const { R, Fx, hw, gc, yb, H } = f, up = f.pal.upper, lower = f.pal.lower;
+  // lower body: chamfered slab (sill band + main side), nose/tail pulled in a touch
+  frustum(M, R + 0.06, Fx - 0.06, gc, hw - 0.06, R, Fx, gc + 0.14, hw, lower, lower, P(1));
+  frustum(M, R, Fx, gc + 0.14, hw, R + 0.04, Fx - 0.08, yb, hw - 0.03, P(1), P(1), P(1));
+  if (f.shape === 'van' || f.shape === 'camper') {
+    frustum(M, R + 0.02, Fx - (f.shape === 'van' ? 0.55 : 0.12), yb, hw - 0.03, R + 0.06, Fx - (f.shape === 'van' ? 1.1 : 0.4), H - 0.02, f.wt, up, up, up);
+    const gx0 = f.shape === 'van' ? Fx - 1.45 : R + 0.6, gx1 = f.shape === 'van' ? Fx - 1.0 : Fx - 0.5;
+    for (const z of [-1, 1]) M.decal('z', z, (gx0 + gx1) / 2, yb + 0.33, z * (hw - 0.0), gx1 - gx0, 0.4, G);
+    M.box(0.05, 0.42, (hw - 0.15) * 2, Fx - (f.shape === 'van' ? 0.8 : 0.27), yb + 0.35, 0, G, 0, 0, f.shape === 'van' ? 0.75 : 0.25);
+  } else {
+    // glasshouse: glass sides/ends, painted roof
+    frustum(M, f.cabX0, f.cabX1, yb, hw - 0.08, f.roofX0, f.roofX1, f.roofY - 0.04, f.wt - 0.04, G, G, P(1));
+    M.box(f.roofX1 - f.roofX0 + 0.05, 0.04, (f.wt - 0.05) * 2, (f.roofX0 + f.roofX1) / 2, f.roofY - 0.03, 0, f.pal.roof);
+  }
+  // wheels: hexagonal stubs, outer face only
+  for (const w of f.wheels) {
+    const sz = Math.sign(w.z), zo = w.z + sz * 0.11;
+    const pt = (i, zz) => { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; return V(w.x + Math.cos(a) * f.r, w.y + Math.sin(a) * f.r, zz); };
+    for (let i = 0; i < 8; i++) {
+      M.tri(V(w.x, w.y, zo + sz * 0.01), pt(i, zo), pt(i + 1, zo), F(TYRE), V(w.x, w.y, w.z));
+      M.quad(pt(i, w.z - sz * 0.05), pt(i + 1, w.z - sz * 0.05), pt(i + 1, zo), pt(i, zo), F(TYRE), V(w.x, w.y, zo - sz * 0.5));
+    }
+  }
+  // lamps + plates as end decals
+  for (const z of [-1, 1]) {
+    M.decal('x', 1, Fx + 0.004, yb - 0.12, z * (hw - 0.24), 0.3, 0.1, F(LAMP));
+    M.decal('x', -1, R - 0.004, yb - 0.08, z * (hw - 0.22), 0.3, 0.13, F(RED));
+  }
+  M.decal('x', 1, Fx + 0.004, gc + 0.17, 0, 0.45, 0.11, F(PLATE_W));
+  M.decal('x', -1, R - 0.004, gc + 0.3, 0, 0.45, 0.11, F(PLATE_Y));
+  return dropHidden(M.build());
+}
+
+// ------------------------------------------------------------------ competitor livery
+const SHOW_ACCENTS = [0xffc928, 0xd8232a, 0x1f8fe0, 0x111418];
+function lum(c) { const k = new THREE.Color(c); return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b; }
+function accentFor(body, wanted) {
+  const tries = [wanted, ...SHOW_ACCENTS];
+  return tries.find((c) => c != null && Math.abs(lum(c) - lum(body)) > 0.22) ?? 0xd8232a;
+}
+const _numTex = {};
+function numberTexture(n, bg, fg, ring) {
+  const key = `${n}|${bg}|${fg}|${ring}`;
+  if (_numTex[key]) return _numTex[key];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const hex = (v) => '#' + v.toString(16).padStart(6, '0');
+  if (ring) { g.clearRect(0, 0, 128, 128); g.fillStyle = hex(ring); g.beginPath(); g.arc(64, 64, 62, 0, 7); g.fill(); g.fillStyle = hex(bg); g.beginPath(); g.arc(64, 64, 50, 0, 7); g.fill(); }
+  else { g.fillStyle = hex(bg); g.fillRect(0, 0, 128, 128); }
+  g.fillStyle = hex(fg); g.font = '900 84px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(String(n), 64, 70);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return (_numTex[key] = t);
+}
+function addLivery(chassis, p, type, body, comp, opts) {
+  const f = p.info; if (!f) return;
+  const acc = accentFor(body, comp.colour);
+  const accMat = new THREE.MeshStandardMaterial({ color: acc, roughness: 0.45 });
+  const ink = lum(acc) > 0.45 ? 0x111418 : 0xffffff;
+  // twin racing stripes over the roof
+  if (f.shape !== 'camper') for (const z of [-0.17, 0.17]) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(f.roofX1 - f.roofX0 + 0.1, 0.012, 0.16), accMat);
+    st.position.set((f.roofX0 + f.roofX1) / 2, f.roofY + 0.004, z); chassis.add(st);
+  }
+  // side flash along the doors
+  for (const z of [-1, 1]) {
+    const len = Math.min(f.L * 0.62, f.L - 1.6);
+    const sf = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.09), accMat);
+    sf.position.set(0, f.yb - 0.05, z * (f.hw + 0.012)); sf.rotation.y = z > 0 ? 0 : Math.PI; chassis.add(sf);
+    const rm = new THREE.Mesh(new THREE.CircleGeometry(0.27, 20), new THREE.MeshStandardMaterial({ map: numberTexture(comp.number, 0xffffff, 0x111418, acc), transparent: true, roughness: 0.5 }));
+    rm.position.set(f.shape === 'van' ? -0.6 : -0.05, (f.gc + f.yb) / 2 + 0.06, z * (f.hw + 0.016)); rm.rotation.y = z > 0 ? 0 : Math.PI; chassis.add(rm);
+  }
+  // roof board (magnetic game-show sign), readable from the chase camera
+  const numMat = new THREE.MeshStandardMaterial({ map: numberTexture(comp.number, acc, ink, 0), roughness: 0.5 });
+  const board = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.62), [numMat, numMat, accMat, accMat, accMat, accMat]);
+  const bx = opts.learner ? f.roofX0 + 0.3 : opts.roofBox ? f.roofX1 - 0.25 : (f.roofX0 + f.roofX1) / 2 - 0.1;
+  board.position.set(bx, f.roofY + 0.19, 0); board.castShadow = true; chassis.add(board);
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.5), new THREE.MeshStandardMaterial({ color: 0x1e2024 }));
+  foot.position.set(bx, f.roofY + 0.015, 0); chassis.add(foot);
+  return board;
+}
+
 // ------------------------------------------------------------------ cache + public API
 const cache = {};
 function parts(type) {
@@ -611,8 +714,10 @@ function tint(geo, colour) {
 }
 
 /** Single merged, world-transformed geometry for a parked car (body + wheels + lamps baked as colours). */
-export function parkedCarGeometry(type, colour, x, z, h) {
-  const g = tint(parts(type).baked, paintFor(type, colour));
+export function parkedCarGeometry(type, colour, x, z, h, opts = {}) {
+  const p = parts(type);
+  if (opts.lod === 'low' && p.info && !p.low) p.low = buildLow(type, p);
+  const g = tint(opts.lod === 'low' && p.low ? p.low : p.baked, paintFor(type, colour));
   g.applyMatrix4(new THREE.Matrix4().makeRotationY(-h).setPosition(x, 0, z));
   return g;
 }
@@ -652,7 +757,7 @@ export function createCarMesh(type, colour, opts = {}) {
   if (opts.roofBox) {
     const g = new THREE.CapsuleGeometry(0.16, 1.5, 3, 10); g.rotateZ(Math.PI / 2); g.scale(1, 1, 2.4);
     const rb = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x25272b, roughness: 0.35, metalness: 0.2 }));
-    rb.position.set(-0.3, p.roofY + 0.3, 0); rb.castShadow = true; chassis.add(rb);
+    rb.position.set(-0.45, p.roofY + 0.3, 0); rb.castShadow = true; chassis.add(rb);
   }
   if (opts.beacon) {
     const b = new THREE.Group();
@@ -668,6 +773,7 @@ export function createCarMesh(type, colour, opts = {}) {
       d.position.set(-0.75, 1.52, z * (spec.wid / 2 + 0.008)); d.rotation.y = z > 0 ? 0 : Math.PI; chassis.add(d);
     }
   }
+  if (opts.competitor) group.userData.board = addLivery(chassis, p, type, paintFor(type, colour), opts.competitor, opts);
   group.userData = { ...group.userData, chassis, wheels, tail, tailGlow, indL, indR, type, r: p.r };
   return group;
 }

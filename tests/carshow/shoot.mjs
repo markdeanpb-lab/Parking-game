@@ -25,4 +25,6 @@ for (const t of types) {
 }
 await shot('parked-row', [8, 3.5, -4], [14, 0.6, 14]);
 await shot('parked-row-rear', [20, 3.5, -4], [14, 0.6, 14]);
+await shot('lod-low-row', [28, 3.5, -4], [22, 0.6, 14]);
+await shot('lod-compare', [18, 9, -6], [18, 0, 10]);
 await browser.close(); server.close();

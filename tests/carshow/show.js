@@ -18,13 +18,14 @@ const types = Object.keys(CAR_TYPES);
 const COLS = { hatch: 0xffc928, mini: 0xd8332f, saloon: 0x1c2f55, estate: 0x2f6b4f, suv: 0xe9ebee, bigsuv: 0xf2f2f0, van: 0xfafafa, camper: 0x123, lorry: 0x2e7d4a };
 const cars = {};
 types.forEach((t, i) => {
-  const m = createCarMesh(t, COLS[t], { learner: t === 'mini', roofBox: t === 'bigsuv', beacon: t === 'lorry' });
+  const m = createCarMesh(t, COLS[t], { learner: t === 'mini', roofBox: t === 'bigsuv', beacon: t === 'lorry', competitor: ['lorry', 'camper', 'suv'].includes(t) ? null : { number: i + 1, colour: COLS[t] } });
   m.position.set(0, 0, i * 6 + (t === 'lorry' ? 3 : 0)); m.rotation.y = 0; scene.add(m); cars[t] = m;
   syncCarMesh(m, { x: 0, z: i * 6 + (t === 'lorry' ? 3 : 0), h: 0, v: 0, steer: 0.35, wheelSpin: 0.3, braking: i % 2 === 0, bump: 0, stalled: 0, indicator: 1 }, 0, null);
 });
 // a parked (baked) row across the way with mixed colours
 const pc = [0x8d9299, 0xb9bec4, 0x2d3036, 0xe9ebee, 0x1f3a63, 0x7a1f24, 0x2f5d48, 0xc7b79a, 0x445566];
 const geos = types.map((t, i) => parkedCarGeometry(t, pc[i], 14, i * 6 + (t === 'lorry' ? 3 : 0), Math.PI));
+geos.push(...types.filter((t) => t !== 'lorry').map((t, i) => parkedCarGeometry(t, pc[i], 22, i * 6, Math.PI, { lod: 'low' })));
 for (const g of geos) { const m = new THREE.Mesh(g, carMaterial); m.castShadow = m.receiveShadow = true; scene.add(m); }
 window.view = (pos, look) => { camera.position.set(...pos); camera.lookAt(...look); renderer.render(scene, camera); };
 window.types = types;

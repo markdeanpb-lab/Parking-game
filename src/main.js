@@ -11,7 +11,7 @@ import { buildWorld, buildSky } from './world3d.js';
 import { createCarMesh, syncCarMesh } from './carmodels.js';
 import { DJ } from './dj.js';
 import { AudioEngine } from './audio.js';
-import { UI } from './ui.js';
+import { UI, idColour } from './ui.js';
 import { clamp, lerp, wrapAngle } from './util.js';
 
 const params = new URLSearchParams(location.search);
@@ -103,25 +103,48 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && !ga
 
 // ------------------------------------------------------------------ vehicle meshes
 const meshes = new Map();   // car -> { mesh, driver, tag }
+// Contestant name tags: one small canvas per state (racing / parked / out), swapped on change; a ground ring in the
+// contestant's identity colour so rivals stand out from resident cars at a glance.
+const TAG_FONT = "'Overpass', 'Helvetica Neue', Arial, sans-serif";
+function tagTexture(text, sub, colour, state) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160;
+  const g = c.getContext('2d'), col = '#' + colour.toString(16).padStart(6, '0');
+  const bg = state === 'parked' ? '#00703c' : state === 'out' ? '#3a3f4b' : '#0b1530';
+  g.fillStyle = bg; g.beginPath(); g.roundRect(8, 8, 496, 112, 18); g.fill();
+  g.fillStyle = col; g.beginPath(); g.roundRect(8, 8, 30, 112, [18, 0, 0, 18]); g.fill();
+  g.lineWidth = 8; g.strokeStyle = state === 'out' ? '#888' : '#ffffff'; g.beginPath(); g.roundRect(8, 8, 496, 112, 18); g.stroke();
+  g.beginPath(); g.moveTo(236, 120); g.lineTo(256, 152); g.lineTo(276, 120); g.closePath(); g.fillStyle = state === 'out' ? '#888' : '#ffffff'; g.fill();
+  g.textAlign = 'center'; g.fillStyle = '#fff';
+  g.font = `900 58px ${TAG_FONT}`; g.fillText(text.toUpperCase(), 272, 70);
+  g.fillStyle = state === 'parked' ? '#b9ffcf' : state === 'out' ? '#ff9aa4' : '#ffd21f'; g.font = `800 28px ${TAG_FONT}`;
+  g.fillText(state === 'parked' ? '✔ PARKED' : state === 'out' ? 'OUT' : sub.toUpperCase(), 272, 106);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return tex;
+}
 function nameTag(text, sub, colour) {
-  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = 'rgba(11,18,36,0.85)'; g.beginPath(); g.roundRect(6, 14, 500, 100, 50); g.fill();
-  g.lineWidth = 6; g.strokeStyle = '#' + colour.toString(16).padStart(6, '0'); g.stroke();
-  g.fillStyle = '#fff'; g.font = '800 50px Overpass, Arial, sans-serif'; g.textAlign = 'center'; g.fillText(text, 256, 62);
-  g.fillStyle = '#ffc928'; g.font = '700 26px Overpass, Arial, sans-serif'; g.fillText(sub.toUpperCase(), 256, 98);
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  s.scale.set(3.2, 0.8, 1);
+  const maps = { race: tagTexture(text, sub, colour, 'race'), parked: null, out: null };
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: maps.race, transparent: true, depthWrite: false }));
+  s.center.set(0.5, 0); s.scale.set(3.2, 1.0, 1); s.renderOrder = 5;
+  s.userData = { maps, state: 'race', make: (st) => tagTexture(text, sub, colour, st) };
   return s;
 }
-function addMesh(car, persona, driver, tagged) {
+function setTagState(tag, st) {
+  const u = tag.userData; if (u.state === st) return;
+  u.state = st; tag.material.map = u.maps[st] ||= u.make(st); tag.material.needsUpdate = true;
+}
+const ringGeo = new THREE.RingGeometry(2.45, 2.85, 40); ringGeo.rotateX(-Math.PI / 2);
+function addMesh(car, persona, driver, tagged, comp) {
   if (meshes.has(car)) return;
   const mesh = createCarMesh(car.type, car.colour ?? persona.colour, { learner: persona.learner, roofBox: persona.key === 'mum', beacon: persona.lorry });
-  let tag = null;
-  if (tagged) { tag = nameTag(persona.name, persona.title.replace('The ', ''), persona.colour); tag.position.y = CAR_TYPES[car.type].hgt + 1.25; mesh.add(tag); }
+  let tag = null, ring = null;
+  if (tagged) {
+    const col = comp ? idColour(comp) : persona.colour;
+    tag = nameTag(persona.name, persona.title.replace('The ', ''), col); tag.position.y = CAR_TYPES[car.type].hgt + 0.9; mesh.add(tag);
+    ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.9, depthWrite: false }));
+    ring.position.y = 0.06; ring.renderOrder = 2; mesh.add(ring);
+  }
   scene.add(mesh);
-  meshes.set(car, { mesh, driver, tag });
+  meshes.set(car, { mesh, driver, tag, ring, baseY: tag ? tag.position.y : 0 });
 }
 function removeMesh(car) {
   const m = meshes.get(car);
@@ -265,6 +288,26 @@ function applyInput() {
 const cam = { mode: 'chase', h: 0, park: 0, shake: 0, pos: new THREE.Vector3(0, 60, 80), look: new THREE.Vector3(), lift: 0, orbit: 0 };
 function toggleCam() { cam.mode = cam.mode === 'chase' ? 'top' : 'chase'; ui.toast(cam.mode === 'top' ? 'OVERHEAD PARKING CAM' : 'CHASE CAM', 'info'); }
 const vTmp = new THREE.Vector3(), vLook = new THREE.Vector3();
+/**
+ * Stop the camera ending up inside a house or a van: pull it back towards the carriageway
+ * (houses stand ~2 m beyond the kerb) unless it is high enough to clear the roofs, and lift it
+ * over any vehicle it would otherwise sit inside.
+ */
+const ROOF_CLEAR = 13;
+function keepCameraClear(p) {
+  const d = track.sdf.sample(p.x, p.z);
+  if (d < -1.4 && p.y < ROOF_CLEAR) {
+    const g = track.sdf.grad(p.x, p.z), push = (-1.4 - d) * clamp((ROOF_CLEAR - p.y) / 4, 0, 1);
+    p.x += g.x * push; p.z += g.z * push;
+  }
+  for (const c of game.world.cars) {
+    if (c.ghost || c === game.player.car) continue;
+    if (Math.abs(c.x - p.x) > 4 || Math.abs(c.z - p.z) > 4) continue;
+    const l = c.toLocal(p.x, p.z);
+    if (Math.abs(l.f) < c.len / 2 + 0.6 && Math.abs(l.r) < c.wid / 2 + 0.6) p.y = Math.max(p.y, CAR_TYPES[c.type].hgt + 1.2);
+  }
+}
+
 function updateCamera(dt, time) {
   const pc = game.player.car;
   cam.shake = Math.max(0, cam.shake - dt * 2.2);
@@ -305,6 +348,7 @@ function updateCamera(dt, time) {
       cam.pos.lerp(vTmp, 1 - Math.exp(-dt * 7)); cam.look.lerp(vLook, 1 - Math.exp(-dt * 12));
     }
   }
+  if (!(game.phase === 'title' || pc.ghost)) keepCameraClear(cam.pos);
   camera.position.copy(cam.pos);
   if (cam.shake > 0) { camera.position.x += (Math.random() - 0.5) * cam.shake * 0.5; camera.position.y += (Math.random() - 0.5) * cam.shake * 0.4; }
   camera.lookAt(cam.look);
@@ -322,13 +366,15 @@ game.on((type, d) => {
   switch (type) {
     case 'gameStart':
       for (const [car] of meshes) removeMesh(car);
-      for (const c of d.competitors) addMesh(c.car, c.isPlayer ? { ...PERSONAS.auto } : c.persona, c.driver || null, !c.isPlayer);
+      for (const c of d.competitors) addMesh(c.car, c.isPlayer ? { ...PERSONAS.auto } : c.persona, c.driver || null, !c.isPlayer, c);
       ui.setRivals(game); history.length = 0;
       cam.h = pc.h;
       break;
     case 'carAdded': addMesh(d.car, d.persona, game.drivers.find((x) => x.car === d.car) || null, false); break;
     case 'carRemoved': { const m = meshes.get(d.car); if (m) puff(d.car.x, d.car.z, 14); removeMesh(d.car); break; }
     case 'roundIntro':
+      if (replay) endReplay();
+      pendingResults = null; ui.replay(false);
       ui.hideScreens(); ui.roundIntro(d); audio.jingle(d); history.length = 0;
       cam.h = pc.h; cam.pos.set(pc.x - Math.cos(pc.h) * 14, 9, pc.z - Math.sin(pc.h) * 14);
       break;
@@ -437,9 +483,13 @@ function tick(now) {
   // name tags: grey out the eliminated
   for (const c of game.competitors) {
     const m = meshes.get(c.car); if (!m || !m.tag) continue;
-    m.tag.material.color.setHex(c.alive ? (c.parked ? 0x9dffb8 : 0xffffff) : 0xff6b6b);
+    setTagState(m.tag, !c.alive ? 'out' : c.parked ? 'parked' : 'race');
     const dc = Math.hypot(c.car.x - camera.position.x, c.car.z - camera.position.z);
-    m.tag.material.opacity = clamp((dc - 7) / 6, 0, 1);      // don't shove a label in the player's face
+    // grow with distance so a name stays readable down the street; only fade when right on top of the camera
+    const k = clamp(dc / 16, 1, 2.6);
+    m.tag.scale.set(3.2 * k, 1.0 * k, 1); m.tag.position.y = m.baseY + (k - 1) * 0.35;
+    m.tag.material.opacity = replay ? 0 : clamp((dc - 3.5) / 2.5, 0, 1);
+    if (m.ring) { m.ring.visible = c.alive && !replay; m.ring.material.opacity = c.parked ? 0.45 : 0.6 + 0.3 * Math.sin(time * 6); }
   }
 
   if (celebration) {
@@ -466,5 +516,5 @@ function tick(now) {
 
 // ------------------------------------------------------------------ boot
 ui.show('title');
-window.__pp = { game, track, ui, audio, dj, camera, cam, meshes, startGame, THREE };
+window.__pp = { game, track, ui, audio, dj, camera, cam, meshes, startGame, THREE, scene, renderer };
 requestAnimationFrame(tick);

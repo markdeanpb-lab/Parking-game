@@ -16,6 +16,8 @@ export const CHAMPIONSHIP = [
   { key: 'champ', heat: 2, label: 'Heat 2: The Semi-Final', rivals: ['major', 'poppy', 'sandra', 'mum', 'dazza'], traffic: 1, countdownK: 0.92, music: [10, 18], eventsFrom: 1, aiBoost: 1.04 },
   { key: 'champ', heat: 3, label: 'Heat 3: The Grand Final', rivals: RIVAL_ORDER, traffic: 2, countdownK: 0.82, music: [8, 16], eventsFrom: 1, aiBoost: 1.12 },
 ];
+const TELL_LEAD = 6;          // s of warning (wobbling cones, council worker) before the music stops
+const LOOP_ORDER = ['dalton', 'grangeAB', 'grangeBC', 'church', 'bernard', 'bernardS', 'catherine'];
 const EVENTS = ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 'perfectSpot'];
 
 /**
@@ -46,6 +48,7 @@ function cacheRoutes(track) {
 export class Game {
   constructor(track, opts = {}) {
     this.track = track;
+    this.tells = [];
     this.rng = makeRng(opts.seed ?? (Date.now() & 0xffffff));
     this.world = new PhysicsWorld(track);
     this.listeners = [];
@@ -96,6 +99,7 @@ export class Game {
     }
     if (box) { this.residentBoxes.set(bay.id, box); this.world.addStatic(box); }
     bay.state = state;
+    bay.tell = 0;
     if (state === 'closed' || state === 'coned') { bay.occupant = null; bay.claimedBy = null; bay.perfect = false; bay.contestedSaid = false; bay.robbedSaid = false; bay.overshotSaid = false; }
   }
   openBays() { return this.bays.filter((b) => b.state === 'open' || b.state === 'blocked'); }
@@ -311,6 +315,7 @@ export class Game {
 
     this.phase = 'intro'; this.phaseT = 0; this.timeScale = 1;
     this.fakeTip = null; this.eventDone = false; this.eventT = 0; this.van = null; this.lastPick = null;
+    this.release = null; this.tells = []; this.tellSaid = false; this.tellNear = null;
     this.loiter = 0; this.loiterPenalty = false; this.gearChanges = 0; this.lastGear = 0; this.struggleSaid = 0;
     this.stopHold = 0; this.illegalHold = 0; this.wrongWayT = 0; this.speedT = 0; this.cooldowns = {};
     this.trail = []; this.passes = new Map(); this.approachRing = null; this.revT = 0; this.revD = 0; this.revSaid = false;
@@ -436,16 +441,89 @@ export class Game {
     this.banterT -= dt;
     if (this.banterT <= 0) { this.banterT = 7.5; this.emit('banter', this.banterContext()); }
 
-    if (this.phaseT >= this.stopAt) {
-      // wait (briefly) for a moment when the spaces can be reached and the player has a fighting chance
+    // A few seconds before the music stops, the spaces that are about to open give themselves away (a council
+    // worker eyeing up the cones, cones wobbling: bay.tell 0..1 for the renderer). Whoever is watching and
+    // positions well is first in line. The choice does not revolve around the player and nobody is promised a seat.
+    if (!this.release && this.phaseT >= this.stopAt - TELL_LEAD) {
       this.fairT = (this.fairT || 0) - dt;
       if (this.fairT <= 0) {
         this.fairT = 0.35;
-        const pick = this.pickRelease(this.nBays);
-        const fair = pick && pick.fair;
-        if (pick && pick.bays.length && (fair || this.phaseT > this.stopAt + 18)) this.stopMusic(pick);
+        let pick = null;
+        if (this.final) { const p = this.pickRelease(1); if (p && p.bays.length && (p.fair || this.phaseT > this.stopAt + 12)) pick = p; }
+        else pick = this.planRelease(this.nBays);
+        if (pick) { this.release = pick; this.tellT0 = this.phaseT; this.tells = pick.bays.slice(); }
       }
     }
+    if (this.release) {
+      const k = clamp((this.phaseT - this.tellT0) / TELL_LEAD, 0, 1);
+      for (const b of this.tells) b.tell = k;
+      if (!this.tellSaid && k > 0.25) {
+        this.tellSaid = true;
+        const pc2 = this.player.car;
+        const b = this.tells.reduce((a, c) => (Math.hypot(a.x - pc2.x, a.z - pc2.z) < Math.hypot(c.x - pc2.x, c.z - pc2.z) ? a : c));
+        this.emit('tell', { bay: b, street: b.street, bays: this.tells.slice() });
+      }
+      if (k >= 1) this.stopMusic(this.final ? this.release : this.assignRelease(this.release.bays));
+    }
+  }
+
+  /**
+   * Choose which coned bays will open: a spread round the streets, picked at random, not arranged around anyone.
+   * Only guarantee: every bay can be reached, and they are not all bunched in one place.
+   */
+  planRelease(n) {
+    // Every driver (the player no more and no less than anyone) gets a space marked out somewhere up the road,
+    // far enough ahead that it is still ahead when the music actually stops. Then one of those is withheld at
+    // random: that driver has to out-race somebody else. Watching the tells is how you find out it was yours.
+    const cands = this.bays.filter((b) => b.state === 'coned' && !b.stub);
+    if (cands.length < n) return null;
+    const me = this.playerComp, pc = this.player.car, l = this.track.locate(pc.x, pc.z), pp = l.edge.path.at(l.s);
+    const withFlow = Math.cos(pc.h) * pp.tx + Math.sin(pc.h) * pp.tz > -0.2;
+    const distOf = (c, b) => { if (c.driver) { const q = c.driver.distTo(b); return q ? q.dist : Infinity; } return this.playerDistTo(b, l, withFlow); };
+    const chosen = [];
+    for (const c of this.rng.shuffle(this.alive())) {
+      const opts = cands.filter((b) => !chosen.includes(b) && chosen.every((o) => Math.hypot(o.x - b.x, o.z - b.z) > 14))
+        .map((b) => ({ b, d: distOf(c, b) })).filter((o) => Number.isFinite(o.d)).sort((x, y) => x.d - y.d);
+      const inWindow = opts.filter((o) => o.d > 75 && o.d < 210);
+      const pool = inWindow.length ? inWindow.slice(0, 3) : opts.filter((o) => o.d > 40).slice(0, 2);
+      const pick = pool.length ? this.rng.pick(pool) : opts[0];
+      if (pick) chosen.push(pick.b);
+    }
+    const bays = this.rng.shuffle(chosen).slice(0, n);
+    for (const b of this.rng.shuffle(cands)) { if (bays.length >= n) break; if (!bays.includes(b)) bays.push(b); }
+    void me;
+    return bays.length === n ? { bays } : null;
+  }
+
+  /**
+   * The music has stopped: who is realistically first in line for which space (nearest pairing first, the player
+   * judged at a human pace)? That sets the clock (enough for everyone but the odd one out) and the minimap ring.
+   */
+  assignRelease(bays) {
+    const alive = this.alive();
+    const me = this.playerComp, pc = this.player.car, l = this.track.locate(pc.x, pc.z), pp = l.edge.path.at(l.s);
+    const withFlow = Math.cos(pc.h) * pp.tx + Math.sin(pc.h) * pp.tz > -0.2;
+    const etaOf = (c, b) => {
+      if (c.driver) return c.driver.parkEta(b);
+      const d = this.playerDistTo(b, l, withFlow);
+      return Number.isFinite(d) ? d / 8.5 + 9 : Infinity;
+    };
+    const pairs = [];
+    for (const c of alive) for (const b of bays) pairs.push({ c, b, eta: etaOf(c, b) });
+    pairs.sort((x, y) => x.eta - y.eta);
+    const gotC = new Set(), gotB = new Set(), assigned = [];
+    for (const p of pairs) {
+      if (gotC.has(p.c) || gotB.has(p.b) || !Number.isFinite(p.eta)) continue;
+      gotC.add(p.c); gotB.add(p.b); assigned.push(p);
+    }
+    let makespan = 0;
+    for (const a of assigned) makespan = Math.max(makespan, a.eta);
+    const mine = assigned.find((a) => a.c === me);
+    let ring = mine ? mine.b : null, pd = Infinity;
+    if (!ring) { let bd = Infinity; for (const b of bays) { const d = this.playerDistTo(b, l, withFlow); if (d < bd) { bd = d; ring = b; } } }
+    if (ring) pd = this.playerDistTo(ring, l, withFlow);
+    const oddOne = alive.find((c) => !gotC.has(c));
+    return { bays, makespan: Math.min(makespan, 45), pd, pEta: 0, assigned: true, duel: { bay: ring, rival: null }, fair: true, oddOne: oddOne ? oddOne.name : null, playerFirst: !!mine };
   }
 
   banterContext() {
@@ -466,11 +544,15 @@ export class Game {
     const d = Number.isFinite(pick.pd) ? pick.pd : 150;
     // the clock gets meaner as the field shrinks: generous while you learn the streets, tight by the end
     const roundK = clamp(1.08 - 0.045 * (this.round - 1), 0.82, 1.08);
-    this.countdown = clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, pick.pd > 220 ? 70 : 55) * (0.5 + 0.5 * this.mode.countdownK);
+    this.countdown = pick.assigned
+      ? clamp((pick.makespan * 1.2 + 8) * roundK, 22, 55) * (0.5 + 0.5 * this.mode.countdownK)
+      : clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, pick.pd > 220 ? 70 : 55) * (0.5 + 0.5 * this.mode.countdownK);
+    for (const b of this.tells) b.tell = 0;
+    this.tells = [];
     this.lastSpace = false;
     if (this.extras.some((x) => x.kind === 'lorry')) this.countdown += 10;
     else if (this.extras.length) this.countdown += 5;
-    if (this.event === 'deliveryVan') this.countdown += 10;
+    if (this.event === 'deliveryVan') this.countdown += 5;
     this.timeLeft = this.countdown; this.lastTick = Math.ceil(this.timeLeft) + 1;
     this.parkOrder = 0; this.endHold = 0; this.grace = 0; this.whistled = false; this.overtime = false;
     if (this.loiterPenalty && !this.playerComp.driver) { this.player.car.stalled = 2.2; this.emit('falseStart', {}); }
@@ -519,9 +601,11 @@ export class Game {
   }
 
   spawnVan() {
-    // a delivery van is sitting in the space nearest the player
-    const target = this.playerBayDistance().bay;
-    if (!target) return;
+    // a delivery van is sitting in one of the spaces (never the one the player is best placed for), and goes soon
+    const mineBay = this.lastPick && this.lastPick.duel.bay;
+    const opts = this.bays.filter((b) => b.state === 'open' && !b.occupant && b !== mineBay);
+    if (!opts.length) return;
+    const target = this.rng.pick(opts);
     const car = new Car('van', { persona: 'traffic', colour: 0xf4f4f2, livery: 'delivery' });
     const d = new Driver(this, car, { ...PERSONAS.traffic, car: 'van', carName: 'delivery van', cruise: 9 });
     d.pullOutOf(target);
@@ -530,7 +614,7 @@ export class Game {
     if (this.world.cars.some((o) => !o.ghost && obbOverlap(car, o))) return;   // somebody is already in there
     d.state = 'parked'; d.hazards = true;
     this.world.addCar(car); this.drivers.push(d);
-    const x = { car, driver: d, kind: 'van', bay: target, leaveAt: this.rng.range(8, 11) };
+    const x = { car, driver: d, kind: 'van', bay: target, leaveAt: this.rng.range(4, 6.5) };
     this.extras.push(x); this.van = x;
     target.state = 'blocked';
     this.emit('carAdded', { car, persona: d.p });
@@ -788,7 +872,7 @@ export class Game {
     }
     this.parkOrder++;
     this.emit('parked', { comp, bay, ev, rating, isPlayer: comp.isPlayer, timeLeft: this.timeLeft, order: this.parkOrder, speedBonus, points: comp.roundPoints, final: this.final, baysLeft: this.freeBays().length });
-    if (this.phase === 'park' && this.timeLeft < 3) this.emit('lastGasp', { comp, timeLeft: Math.max(0, this.timeLeft), street: bay.street });
+    if (this.phase === 'park' && this.timeLeft < 3 && this.cool('lastGasp', 3)) this.emit('lastGasp', { comp, timeLeft: Math.max(0, this.timeLeft), street: bay.street });
     if (this.final && this.phase === 'park') {
       // the Golden Permit: was it close?
       const loser = this.alive().find((c) => c !== comp && !c.parked);
@@ -977,7 +1061,7 @@ export class Game {
     } else this.wrongWayT = Math.max(0, this.wrongWayT - dt);
     if (Math.abs(pc.v) > 12.2) {
       this.speedT += dt;
-      if (this.speedT > 1.5 && this.cool('speeding', 25)) this.emit('speeding', { mph: Math.round(Math.abs(pc.v) * 2.237), street: l.edge.name });
+      if (this.speedT > 1.5 && this.cool('speeding', 25)) { if (this.phase !== 'free') this.penalise('speeding', 20); this.emit('speeding', { mph: Math.round(Math.abs(pc.v) * 2.237), street: l.edge.name, pts: 20 }); }
     } else this.speedT = 0;
   }
 

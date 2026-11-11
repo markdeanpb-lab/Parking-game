@@ -22,9 +22,9 @@ function seedRandom(seed) { let s = seed >>> 0; Math.random = () => { s = (s * 1
 const NATIVE = new Set();
 const SYNTH = ['contested', 'rivalRobbed', 'lastGasp', 'photoFinish', 'leader', 'nearMiss', 'overshot', 'longReverse'];
 
-function runGame(seed, mode, track) {
+function runGame(seed, mode, track, persona = 'auto') {
   seedRandom(seed * 7 + 3);
-  const game = new Game(track, { seed, autoplay: true, autoContinue: false });
+  const game = new Game(track, { seed, autoplay: true, autoContinue: false, autoPersona: persona });
   const dj = new DJ(() => {});
   dj.log = [];
   const events = [];
@@ -123,12 +123,13 @@ function transcript(r) {
 
 const track = buildTrack(map);
 const plan = [];
-for (let i = 0; i < N; i++) plan.push([2000 + i * 131, i % 6 === 5 ? 'rush' : i % 6 === 4 ? 'champ' : 'classic']);
+for (let i = 0; i < N; i++) plan.push([2000 + i * 131, i % 6 === 5 ? 'rush' : i % 6 === 4 ? 'champ' : 'classic', i % 2 ? 'human' : 'auto']);
 const tally = { lines: 0, repeats: 0, errors: 0, cuts: 0, stale: 0, critStale: 0, minutes: 0, airtime: 0, byKey: {}, nothing: {} };
 let sample = null;
-for (const [seed, mode] of plan) {
-  const r = runGame(seed, mode, track);
-  if (!sample && mode === 'classic' && r.events.filter((e) => e.type === 'roundIntro').length >= 4) sample = { r, seed, mode };
+for (const [seed, mode, persona] of plan) {
+  const r = runGame(seed, mode, track, persona);
+  r.dj.closeTalk(); tally.airtime += r.dj.talkTotal || 0;
+  if (!sample && persona === 'human' && mode === 'classic' && r.events.filter((e) => e.type === 'roundIntro').length >= 4) sample = { r, seed, mode };
   const seen = new Map();
   for (const l of r.dj.log) {
     if (l.kind === 'error') { tally.errors++; fail(`DJ threw on ${l.key}: ${l.text.split('\n')[0]}`); }
@@ -139,7 +140,6 @@ for (const [seed, mode] of plan) {
     if (l.kind !== 'say') continue;
     tally.lines++;
     tally.byKey[l.key] = (tally.byKey[l.key] || 0) + 1;
-    tally.airtime += 0.5 + l.text.split(/\s+/).length * 0.32;
     const bank = DJ_LINES[l.key];
     const repeatOk = bank && !Array.isArray(bank) && bank.repeat;
     if (seen.has(l.id) && !repeatOk && !l.reused) { tally.repeats++; fail(`repeated line in one game (seed ${seed}): ${l.text}`); }
@@ -153,7 +153,7 @@ for (const [seed, mode] of plan) {
   if (said(/^musicStop/) < rounds) fail(`seed ${seed}: a music stop went unannounced (${said(/^musicStop/)}/${rounds})`);
   if (said(/^(roundIntro|finalIntro|gameStart|rushStart|champStart)/) < rounds) fail(`seed ${seed}: a round intro was lost (${said(/^(roundIntro|finalIntro|gameStart|rushStart|champStart)/)}/${rounds})`);
 }
-console.log(`DJ: ${N} games, ${tally.minutes.toFixed(1)} min of play, ${tally.lines} lines (${(tally.lines / tally.minutes).toFixed(1)}/min, ~${(100 * tally.airtime / 60 / tally.minutes).toFixed(0)}% airtime)`);
+console.log(`DJ: ${N} games, ${tally.minutes.toFixed(1)} min of play, ${tally.lines} lines (${(tally.lines / tally.minutes).toFixed(1)}/min, ${(100 * tally.airtime / 60 / tally.minutes).toFixed(0)}% airtime)`);
 console.log(`    repeats ${tally.repeats}, critical reuses ${tally.reuse || 0}, errors ${tally.errors}, cut ${tally.cuts}, stale ${tally.stale} (critical ${tally.critStale})`);
 console.log('    natively emitted new events:', [...NATIVE].join(', ') || 'none (synthesised)');
 const keys = Object.entries(tally.byKey).sort((a, b) => b[1] - a[1]);
@@ -163,7 +163,7 @@ if (tally.critStale > tally.lines * 0.03) fail('too many critical lines went sta
 if ((tally.reuse || 0) > tally.lines * 0.01) fail('too many critical lines had to be reused (banks too small)');
 if (sample) {
   fs.mkdirSync('tests/out/dj', { recursive: true });
-  const head = `Snorbens FM transcript: ${sample.mode} seed ${sample.seed}, ${(sample.r.time / 60).toFixed(1)} min, result ${sample.r.ended}\n` +
+  const head = `Snorbens FM transcript: ${sample.mode} seed ${sample.seed}, 'typical human' autopilot, ${(sample.r.time / 60).toFixed(1)} min, result ${sample.r.ended}\n` +
     `Columns: time, priority (4 result / 3 critical / 2 important / 1 colour), bank, line. [brackets] are game events.\n\n`;
   fs.writeFileSync('tests/out/dj/transcript.txt', head + transcript(sample.r) + '\n');
   console.log('    transcript: tests/out/dj/transcript.txt');

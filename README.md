@@ -119,8 +119,9 @@ graphics settings), `?noshadows`.
   adjusting to taste (`pickRelease`, `stopMusic` and `evaluatePark` are the places to look).
 - The streets are a single lane wide and there is no overtaking, so a slow rival in front of you stays in
   front of you. That is deliberate, and also quite annoying.
-- More than one rival is often eliminated in a round (they block each other), so a full competition usually
-  takes four or five rounds rather than six.
+- Balance comes from simulated players (`npm run balance`), not from people. Expect to retune the countdown
+  and how often rivals nip into your space once real players have tried it.
+- Nobody has listened to the synthesised music and sound effects on real speakers yet.
 - Below roughly 20 frames per second the game slows down rather than skipping physics steps.
 - The DJ's voice depends on what speech voices your browser and operating system provide.
 

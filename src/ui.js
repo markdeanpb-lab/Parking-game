@@ -53,6 +53,10 @@ const TUTORIAL = [
     </ul>
     <p>Good luck. You'll need it on Dalton Street.</p>`],
 ];
+/** Identity colours for the contestants: the car paint is often white or grey, so chips, minimap dots,
+ *  name tags and ground rings all use these instead. */
+export const RIVAL_COLOURS = { player: 0xffd21f, mum: 0xff4fa3, major: 0xb98cff, dazza: 0xff8a1c, tarquin: 0x3d8bff, poppy: 0xff3b4e, sandra: 0x22d36b };
+export const idColour = (c) => RIVAL_COLOURS[c.key] ?? c.colour;
 const CONFETTI = ['#ffd21f', '#d7142f', '#1fbf5b', '#4cc9f0', '#f72585', '#ffffff', '#1a56b0'];
 
 export class UI {
@@ -98,18 +102,38 @@ export class UI {
     const enableTouch = () => { document.body.classList.add('touch'); this.isTouch = true; if (!$('hud').classList.contains('hidden')) $('touch').classList.remove('hidden'); };
     window.addEventListener('touchstart', enableTouch, { once: true, passive: true });
     if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) enableTouch();
-    document.querySelectorAll('#touch button').forEach((b) => {
-      const k = b.dataset.k;
-      const set = (v) => (e) => { e.preventDefault(); this.touch[k] = v; b.classList.toggle('on', v); if (v && k === 'horn') cb.onKey('horn'); };
-      b.addEventListener('pointerdown', set(true)); b.addEventListener('pointerup', set(false));
-      b.addEventListener('pointercancel', set(false)); b.addEventListener('pointerleave', set(false));
-      b.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Each finger is tracked by pointer id and re-targeted as it slides, so a thumb can roll from ◀ to ▶ (or GO to BRAKE)
+    // without a control sticking on. Buttons are looked up with elementFromPoint, which ignores pointer capture.
+    this.pointers = new Map();
+    const pad = $('touch');
+    const keyAt = (x, y) => { const el = document.elementFromPoint(x, y); const b = el && el.closest && el.closest('#touch button'); return b ? b.dataset.k : null; };
+    const sync = () => {
+      const held = new Set(this.pointers.values());
+      for (const k of Object.keys(this.touch)) this.touch[k] = held.has(k);
+      pad.querySelectorAll('button').forEach((b) => b.classList.toggle('on', held.has(b.dataset.k)));
+    };
+    const assign = (id, k) => {
+      if (this.pointers.get(id) === k) return;
+      if (k) { this.pointers.set(id, k); if (k === 'horn') cb.onKey('horn'); } else this.pointers.delete(id);
+      sync();
+    };
+    pad.addEventListener('pointerdown', (e) => {
+      const b = e.target.closest && e.target.closest('#touch button'); if (!b) return;
+      e.preventDefault();
+      try { if (b.hasPointerCapture(e.pointerId)) b.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      assign(e.pointerId, b.dataset.k);
     });
+    window.addEventListener('pointermove', (e) => { if (this.pointers.has(e.pointerId)) assign(e.pointerId, keyAt(e.clientX, e.clientY)); }, { passive: true });
+    const up = (e) => { if (this.pointers.has(e.pointerId)) assign(e.pointerId, null); };
+    window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    window.addEventListener('blur', () => { this.pointers.clear(); sync(); });
+    pad.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   show(name) {
     for (const s of SCREENS) $('screen-' + s).classList.toggle('hidden', s !== name);
     this.screen = name;
+    document.body.classList.toggle('screen-on', !!name && name !== 'loading');
     // keyboard users land on the main action
     const focus = { title: '[data-mode="classic"]', tutorial: '#tut-next', results: '#res-continue', gameover: '#go-retry', victory: '#vic-next', pause: '#pause-resume' }[name];
     if (focus) { const el = document.querySelector(focus); if (el) try { el.focus({ preventScroll: true }); } catch (e) { /* old browsers */ } }
@@ -188,12 +212,25 @@ export class UI {
     $('dj-panel').classList.toggle('quiet', !text);
     if (text) $('dj-text').textContent = text;
   }
+  /** One toast at a time: same text refreshes (×2, ×3…), a lower-priority one never replaces a live higher one. */
   toast(text, kind = 'info') {
+    if (!text) return;
+    const now = performance.now(), prio = kind === 'info' ? 1 : 2, cur = this.curToast;
+    if (now < (this.quietUntil || 0) && prio < 3) return;
+    const live = cur && now < cur.until;
+    if (live && cur.text === text) { cur.n++; cur.until = now + 1700; cur.el.textContent = `${text}  ×${cur.n}`; return; }
+    if (live && prio < cur.prio) return;
+    const box = $('toasts'); box.textContent = '';
     const el = document.createElement('div');
-    el.className = 'toast ' + kind; el.textContent = text;
-    const box = $('toasts'); box.appendChild(el);
-    while (box.children.length > 3) box.removeChild(box.firstChild);
-    setTimeout(() => el.remove(), 1900);
+    el.className = 'toast ' + kind; el.textContent = text; box.appendChild(el);
+    this.curToast = { text, prio, el, n: 1, until: now + 1700 };
+    clearTimeout(this.toastTimer); this.toastTimer = setTimeout(() => { box.textContent = ''; this.curToast = null; }, 1900);
+  }
+  /** Clears transient overlays at round transitions. */
+  clearTransient() {
+    $('toasts').textContent = ''; this.curToast = null;
+    $('flash').className = ''; $('stopfx').classList.remove('go'); document.body.classList.remove('quake');
+    this.replay(false);
   }
   flash(text, sub = '', cls = '') {
     const f = $('flash');
@@ -204,20 +241,21 @@ export class UI {
   /** The music has stopped: the loudest moment in the show. */
   musicStop(d) {
     this.flash('PARK!', `${d.bays} SPACE${d.bays === 1 ? '' : 'S'}\u2002·\u2002${d.cars} CARS`, 'big');
+    this.quietUntil = performance.now() + 900; $('toasts').textContent = ''; this.curToast = null;
     const fx = $('stopfx');
     fx.classList.remove('go'); void fx.offsetWidth; fx.classList.add('go');
     if (!reducedMotion()) { document.body.classList.remove('quake'); void document.body.offsetWidth; document.body.classList.add('quake'); }
     if (navigator.vibrate && this.isTouch) try { navigator.vibrate([90, 60, 160]); } catch (e) { /* not allowed */ }
   }
   roundIntro(d) {
-    this.hideIntro();
+    this.hideIntro(); this.clearTransient();
     if (d.final) { this.finalIntro(d); return; }
     $('intro-mode').textContent = `${STATION.toUpperCase()} · ${d.mode.label.toUpperCase()}`;
     $('intro-round').textContent = 'ROUND ' + d.round;
     $('intro-of').textContent = d.total ? `OF ${d.total}` : '';
     $('intro-counts').innerHTML = `<span><i>${d.cars}</i>CARS</span><span><i class="ic-p">P</i>${d.bays} SPACE${d.bays === 1 ? '' : 'S'}</span>`;
     const g = this.game, out = g ? g.competitors.filter((c) => c.outRound === d.round - 1) : [];
-    $('intro-out').innerHTML = out.length ? `<span class="lbl">OUT LAST ROUND</span>` + out.slice(0, 3).map((c) => `<span><i style="background:${hex(c.colour)}"></i> <b>${c.isPlayer ? 'YOU' : esc(c.name)}</b> · ${esc(c.title.replace('The ', ''))}</span>`).join(' ') + (out.length > 3 ? ` <span>+${out.length - 3} more</span>` : '') : '';
+    $('intro-out').innerHTML = out.length ? `<span class="lbl">OUT LAST ROUND</span>` + out.slice(0, 3).map((c) => `<span><i style="background:${hex(idColour(c))}"></i> <b>${c.isPlayer ? 'YOU' : esc(c.name)}</b> · ${esc(c.title.replace('The ', ''))}</span>`).join(' ') + (out.length > 3 ? ` <span>+${out.length - 3} more</span>` : '') : '';
     $('intro-note').textContent = d.round === 1 ? 'Circulate clockwise while the music plays. Scout the coned-off bays: some open when it stops.' : out.length ? '' : 'One fewer space. Same number of egos.';
     const el = $('screen-intro');
     el.classList.remove('hidden');
@@ -233,7 +271,7 @@ export class UI {
       const sa = st(a), sb = st(b);
       const cmp = (x, y, lower) => (x == null || y == null || x === y ? ['', ''] : (lower ? x < y : x > y) ? ['win', ''] : ['', 'win']);
       const row = (k, va, vb, fa, fb, lower, i) => { const [ca, cb2] = cmp(va, vb, lower); return `<div class="tp-row" style="animation-delay:${2.1 + i * 0.12}s"><span class="${ca}">${fa}</span><span class="k">${k}</span><span class="${cb2}">${fb}</span></div>`; };
-      const side = (c) => `<div class="tp-side ${c.isPlayer ? 'me' : ''}"><div class="tp-sw" style="background:${hex(c.colour)}"></div><div class="tp-name">${c.isPlayer ? 'YOU' : esc(c.name.toUpperCase())}</div><div class="tp-title">${esc(c.title)}</div></div>`;
+      const side = (c) => `<div class="tp-side ${c.isPlayer ? 'me' : ''}"><div class="tp-sw" style="background:${hex(idColour(c))}"></div><div class="tp-name">${c.isPlayer ? 'YOU' : esc(c.name.toUpperCase())}</div><div class="tp-title">${esc(c.title)}</div></div>`;
       const t = (s) => (s.best == null ? '—' : s.best.toFixed(1) + 's');
       $('tape-body').innerHTML = side(a) + '<div class="tp-vs">VS</div>' + side(b) + '<div class="tp-rows">' +
         row('POINTS', a.points, b.points, a.points, b.points, false, 0) +
@@ -261,7 +299,7 @@ export class UI {
       const rp = c.alive && c.roundPoints ? `+${c.roundPoints}` : '';
       const from = c.alive && c.roundPoints ? c.points - c.roundPoints : c.points;
       return `<div class="lg-row ${c.isPlayer ? 'me' : ''} ${!c.alive ? (outNow ? 'outnow' : 'out') : ''}" style="--i:${i + 1};--n:${n}">` +
-        `<span class="lg-pos">${i + 1}</span><span class="lg-sw" style="background:${hex(c.colour)}"></span>` +
+        `<span class="lg-pos">${i + 1}</span><span class="lg-sw" style="background:${hex(idColour(c))}"></span>` +
         `<span class="lg-name"><b>${c.isPlayer ? 'YOU' : esc(c.name)}</b><small>${esc(c.title)}</small></span>` +
         `<span class="lg-status">${status}</span><span class="lg-rp">${rp}</span><span class="lg-tot" data-from="${from}" data-to="${c.points}">${from}</span>` +
         (outNow ? '<span class="lg-stamp">ELIMINATED</span>' : '') + '</div>';
@@ -375,7 +413,9 @@ export class UI {
     for (const c of game.world.cars) {
       if (c.ghost || c.isPlayer) continue;
       const [x, y] = this.mmT(c.x, c.z);
-      g.beginPath(); g.arc(x, y, c.type === 'lorry' ? 7 : 5.5, 0, 7); g.fillStyle = hex(c.colour); g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#071a3d'; g.stroke();
+      const rc = this.rivalCars && this.rivalCars.get(c);
+      if (rc == null) { g.beginPath(); g.arc(x, y, c.type === 'lorry' ? 6 : 3.8, 0, 7); g.fillStyle = '#9fb0cf'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#071a3d'; g.stroke(); continue; }
+      g.beginPath(); g.arc(x, y, 7, 0, 7); g.fillStyle = hex(rc); g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#fff'; g.stroke();
     }
     const pc = game.player.car;
     if (!pc.ghost) {
@@ -390,7 +430,8 @@ export class UI {
   // ---------------------------------------------------------------- per-frame HUD
   setRivals(game) {
     this.game = game; this.tape = {}; this.cache = {}; this.lastCount = null;
-    $('rivals').innerHTML = game.competitors.map((c, i) => `<div class="chip ${c.isPlayer ? 'me' : ''}" id="chip${i}" style="--c:${hex(c.colour)}"><b>${c.isPlayer ? 'YOU' : esc(c.name)}</b><em>${c.isPlayer ? '' : esc(c.title.replace('The ', ''))}</em><span class="st"></span></div>`).join('');
+    this.rivalCars = new Map(game.competitors.filter((c) => !c.isPlayer).map((c) => [c.car, idColour(c)]));
+    $('rivals').innerHTML = game.competitors.map((c, i) => `<div class="chip ${c.isPlayer ? 'me' : ''}" id="chip${i}" style="--c:${hex(idColour(c))}"><b>${c.isPlayer ? 'YOU' : esc(c.name)}</b><em>${c.isPlayer ? '' : esc(c.title.replace('The ', ''))}</em><span class="st"></span></div>`).join('');
   }
   set(id, prop, v) {
     const k = id + prop;
@@ -401,6 +442,8 @@ export class UI {
     if (this.game !== game) this.game = game;
     const pc = game.player.car, ph = game.phase, free = ph === 'free';
     if (ph !== 'intro') this.leaveIntro();
+    const pk = ph === 'park' && !(game.playerComp && game.playerComp.parked);
+    if (pk !== this.pk) { this.pk = pk; $('hud').classList.toggle('pk', pk); }
     const mph = Math.round(Math.abs(pc.v) * 2.237);
     this.set('mph', 'textContent', mph); $('mph').classList.toggle('over', mph > 24);
     this.set('gear', 'textContent', pc.parked ? 'P' : pc.v < -0.3 ? 'R' : pc.stalled > 0 ? '!' : 'D');
@@ -512,13 +555,20 @@ export class UI {
       sx = W / 2 + dx * k; sy = H / 2 + dy * k;
       ang = Math.atan2(dy, dx) * 180 / Math.PI + 90;
     }
+    if (!this.avoid || time - this.avoidT > 0.5) { this.avoidT = time; this.avoid = ['hud-left', 'hud-right', 'phase-banner', 'dj-panel'].map((id) => $(id).getBoundingClientRect()).filter((r) => r.width > 0); }
     if (off) {
       // keep the edge arrow clear of the HUD corners (rects re-measured every half second)
-      if (!this.avoid || time - this.avoidT > 0.5) { this.avoidT = time; this.avoid = ['hud-left', 'hud-right', 'phase-banner'].map((id) => $(id).getBoundingClientRect()); }
+      const hw = Math.max(34, (this.labW || 120) / 2 + 8);
       for (const r of this.avoid) {
-        if (sx > r.left - 34 && sx < r.right + 34 && sy > r.top - 34 && sy < r.bottom + 34) sy = Math.min(H - bot, r.bottom + 40);
+        if (sx > r.left - hw && sx < r.right + hw && sy > r.top - 34 && sy < r.bottom + 60) sy = Math.min(H - bot, r.bottom + 40);
       }
     }
+    let hideLab = false;
+    if (!off && this.avoid) {
+      const hw = (this.labW || 120) / 2;
+      hideLab = this.avoid.some((r) => sx + hw > r.left && sx - hw < r.right && sy - 84 > r.top - 4 && sy - 104 < r.bottom);
+    }
+    if (hideLab !== this.hideLab) { this.hideLab = hideLab; el.classList.toggle('nolabel', hideLab); }
     el.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
     const txt = `${Math.round(dist)} m\u2002·\u2002${bay.street.replace(' Street', ' St').toUpperCase()}`;
     const lab = el.lastElementChild;

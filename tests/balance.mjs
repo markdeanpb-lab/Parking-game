@@ -13,6 +13,7 @@ const N = +(process.argv.find((a) => /^\d+$/.test(a)) || 20);
 function run(persona) {
   const stat = {}; const why = {}; const elim = {}; let wins = 0, games = 0, rounds = 0, finals = 0, photo = 0, robbed = 0, contested = 0;
   const parkT = [], countdowns = [];
+  const near = { near: [0, 0], far: [0, 0] }; let pendingNear = null; let r1 = [0, 0];
   for (const mode of ['classic', 'rush']) for (let i = 0; i < N; i++) {
     const track = buildTrack(map);
     const game = new Game(track, { seed: 500 + i * 31, autoplay: true, autoContinue: true, autoPersona: persona });
@@ -20,7 +21,11 @@ function run(persona) {
     game.on((type, d) => {
       if (type === 'gameover') ended = true;
       if (type === 'victory') { ended = true; wins++; }
-      if (type === 'musicStop') { log = []; countdowns.push(d.countdown); }
+      if (type === 'musicStop') {
+        log = []; countdowns.push(d.countdown);
+        // was the player first in line for one of the bays that gave a tell?
+        if (!d.final) { const pc = game.player.car, l = track.locate(pc.x, pc.z); let best = Infinity; for (const b of game.freeBays()) best = Math.min(best, game.playerDistTo(b, l, true)); pendingNear = best < 60 ? 'near' : 'far'; } else pendingNear = null;
+      }
       if (type === 'photoFinish') photo++;
       if (type === 'rivalRobbed') robbed++;
       if (type === 'contested') contested++;
@@ -29,6 +34,7 @@ function run(persona) {
       if (type === 'roundEnd') {
         rounds++; elim[d.out.length] = (elim[d.out.length] || 0) + 1; if (d.final) finals++;
         const k = 'R' + d.round; stat[k] ||= [0, 0]; stat[k][0]++;
+        if (pendingNear) { near[pendingNear][0]++; if (!d.playerOut) near[pendingNear][1]++; }
         if (d.playerOut) {
           stat[k][1]++;
           const me = game.playerComp.driver;
@@ -49,6 +55,7 @@ function run(persona) {
   console.log(`\n[${persona}] wins ${wins}/${games} | survived per round ${JSON.stringify(surv)}`);
   console.log(`  eliminations per round ${JSON.stringify(elim)} | multi-elimination ${(100 * (rounds - (elim[1] || 0)) / rounds).toFixed(0)}% | finals ${finals}, photo finishes ${photo}`);
   console.log(`  player park time median ${med(parkT)} s, countdown median ${med(countdowns)} s | rival robberies ${robbed}, contested ${contested}`);
-  console.log('  player out because:', why);
+  console.log(`  survival when within 60 m of a released bay at the stop: ${near.near[1]}/${near.near[0]} (${(100 * near.near[1] / Math.max(1, near.near[0])).toFixed(0)}%), otherwise ${near.far[1]}/${near.far[0]} (${(100 * near.far[1] / Math.max(1, near.far[0])).toFixed(0)}%)`);
+  if (verbose) console.log('  player out because:', why);
 }
 for (const p of only ? [only] : ['auto', 'human']) run(p);

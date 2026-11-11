@@ -19,6 +19,8 @@ export const PARKED_COLOURS = [
   0x1f3a63, 0x7a1f24, 0x2f5d48, 0x5a6b7d, 0xc7b79a, 0x3d4a57, 0x9c2f2f, 0x30475e,
 ];
 
-// Mix of what you actually find parked on a terraced street (listed three times so the odd classic camper stays rare).
-const EVERYDAY = ['hatch', 'hatch', 'hatch', 'mini', 'mini', 'saloon', 'saloon', 'estate', 'estate', 'suv', 'suv', 'suv', 'bigsuv', 'van'];
-export const PARKED_MIX = [...EVERYDAY, ...EVERYDAY, ...EVERYDAY, 'camper'];
+// Mix of what you actually find parked on a terraced street. Campervans are not in the random mix:
+// the track places them deliberately (track.campervans) as type 'camper'.
+export const PARKED_MIX = [
+  'hatch', 'hatch', 'hatch', 'mini', 'mini', 'saloon', 'saloon', 'estate', 'estate', 'suv', 'suv', 'suv', 'bigsuv', 'van',
+];

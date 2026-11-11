@@ -50,12 +50,12 @@ export const PERSONAS = {
   // through the streets, takes a couple of goes to get into a space)
   human: {
     key: 'human', name: 'You', title: 'Typical Human', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
-    cruise: 7.6, seek: 9.2, reaction: [0.6, 1.3], manSpeed: 1.25, skill: 0.6, shuffles: [0, 2], aggression: 0.6, gap: 2.0, pushy: false, indicates: true, greedy: true,
+    cruise: 7.6, seek: 9.2, reaction: [0.6, 1.3], manSpeed: 1.25, skill: 0.6, shuffles: [0, 2], aggression: 0.6, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 0.5,
   },
   // used when the player car is on autopilot (tests / attract mode)
   auto: {
     key: 'auto', name: 'You', title: 'Autopilot', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
-    cruise: 8.2, seek: 13, reaction: [0.05, 0.15], manSpeed: 3.2, skill: 0.9, shuffles: [0, 0], aggression: 1, gap: 2.0, pushy: false, indicates: true, greedy: true,
+    cruise: 8.2, seek: 13, reaction: [0.05, 0.15], manSpeed: 3.2, skill: 0.9, shuffles: [0, 0], aggression: 1, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 0.9,
   },
 };
 export const RIVAL_ORDER = ['mum', 'major', 'dazza', 'tarquin', 'poppy', 'sandra'];
@@ -199,6 +199,7 @@ export class Driver {
     const l = this.game.track.locate(this.car.x, this.car.z);
     this.car.kinematic = false;
     this.state = 'cruise'; this.target = null; this.stopR = null; this.indicator = 0; this.hazards = false;
+    this.tellWatcher = !!this.p.watchesTells && this.game.rng.chance(this.p.watchesTells);
     this.wander(l.edge.id, l.s);
   }
   onMusicStop() {
@@ -314,6 +315,7 @@ export class Driver {
       case 'cruise': {
         let speed = p.cruise * this.speedScale;
         if (p.anticipates && g.phase === 'music') speed = this.anticipate(speed);
+        if (g.phase === 'music' && g.tells.length && (p.anticipates || this.tellWatcher)) speed = this.hoverTell(speed);
         // The final: two cars, one space, and your rival is not letting you out of their sight.
         if (g.final && g.phase === 'music' && this.comp && !p.civilian) {
           const pl = g.player.car, me = this.loc();
@@ -371,6 +373,17 @@ export class Driver {
         return;
       }
     }
+  }
+
+  /** Spotted a council worker eyeing up the cones ahead: ease off and be first in line for it. */
+  hoverTell(speed) {
+    const me = this.loc();
+    for (const b of this.game.tells) {
+      if (b.edgeId !== me.edge.id) continue;
+      const d = b.s + START_AHEAD - me.s;
+      if (d > -1 && d < 45) return Math.min(speed, clamp(d * 0.35, 3.2, speed));
+    }
+    return speed;
   }
 
   /** The Local Expert dawdles where she knows spaces are, and hurries through the bits with none. */

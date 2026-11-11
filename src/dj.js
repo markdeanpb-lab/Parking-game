@@ -291,32 +291,35 @@ const L = {
   // ----------------------------------------------------------------------------- the music stops
   musicStop: [
     "PARK! PARK! PARK! The cones are OFF! Try {STREET}!",
-    "THE MUSIC'S STOPPED! FIND A SPACE! {bays} spaces, {cars} cars! There's one on {STREET}!",
-    "AND STOP! PARK! PARK! PARK! There's a gap on {STREET}! GO GO GO!",
-    "PARK! PARK! PARK! {bays} SPACES, {cars} CARS! SOMEBODY'S WALKING HOME!",
-    "STOP THE MUSIC! PARK! PARK! PARK! {STREET}! MOVE!",
-    { t: "PARK! PARK! PARK! Only {bays} spaces now! {STREET}! DON'T THINK, PARK!", when: (c) => c.bays <= 3 },
-    "PARK! PARK! PARK! GO! GO! GO! Try {STREET}!",
-    "THAT'S IT! MUSIC OFF! PARK! PARK! PARK! {bays} spaces!",
-    "PARK! PARK! PARK! The cones are coming off! Look on {STREET}!",
-    "THE MUSIC'S STOPPED! EVERYBODY PARK! {STREET}! GO!",
     "PARK! PARK! PARK! {cars} cars, {bays} spaces, NO MERCY!",
-    "PARK! PARK! PARK! Round {round}! {STREET}! Find a gap and get in it!",
-    "OFF! IT'S OFF! PARK! PARK! PARK! {STREET} has a space!",
-    "PARK! PARK! PARK! Mirror, signal, PANIC! {STREET}!",
+    { t: "PARK! PARK! PARK! Only {bays} spaces now! {STREET}! DON'T THINK, PARK!", when: (c) => c.bays <= 3 },
+    "THE MUSIC'S STOPPED! FIND A SPACE! {bays} spaces, {cars} cars! There's one on {STREET}!",
+    "STOP! STOP! The cones are coming off! {STREET}! GO GO GO!",
+    "AND THAT'S YOUR LOT! Music off! Everybody park! There's a gap on {STREET}!",
+    "SCRAMBLE! {bays} spaces, {cars} cars, and somebody's walking home! Try {STREET}!",
+    "OFF IT GOES! The music's stopped! {STREET}! MOVE!",
+    "IT'S GONE QUIET ON SNORBENS FM! That means PARK! {STREET}!",
+    "THAT'S IT! Find a kerb and get next to it! {STREET} has a space!",
+    "NOW! NOW! NOW! Cones off on {STREET}! Mirror, signal, PANIC!",
+    "SILENCE! Which means one thing! {bays} spaces! {cars} cars! GO!",
+    "Round {round}, and the music has STOPPED! Get in a bay! {STREET}!",
+    "WHOA! Music off! Handbrakes at the ready! {STREET}, quick!",
+    "Here we go! The cones are off, the gloves are off! {STREET}!",
+    "AAAND STOP! Everybody PARK! I'd try {STREET}!",
   ],
   musicStopFake: [
     "PARK! PARK! PARK! There's a lovely big gap on {FAKE}! ~ Oh. No. That's somebody's driveway. Ignore me.",
     "THE MUSIC'S STOPPED! THERE'S ONE ON {FAKE}! ~ Wait. Dropped kerb. That's a driveway. Sorry.",
-    "PARK! PARK! Go for {FAKE}! ~ Hang on, that's number twelve's driveway, and he's coming out in his dressing gown.",
-    "PARK! PARK! PARK! Try {FAKE}! ~ Hmm. There's a gate. And a gnome. That might be a driveway.",
+    "GO for {FAKE}! ~ Hang on, that's number twelve's driveway, and he's coming out in his dressing gown.",
+    "STOP! Try {FAKE}! ~ Hmm. There's a gate. And a gnome. That might be a driveway.",
   ],
   musicStopFinal: [
     "PARK! PARK! PARK! TWO DRIVERS! ONE SPACE! IT'S ON {STREET}! THIS IS WHAT THEY'VE TRAINED FOR!",
     "THE MUSIC'S STOPPED! ONE SPACE! {STREET}! GO, GO, GO!",
-    "PARK! PARK! PARK! ONE SPACE ON {STREET}! THE GOLDEN PERMIT IS RIGHT THERE!",
-    "PARK! PARK! PARK! THIS IS FOR THE GOLDEN PERMIT! {STREET}! GO!",
-    "PARK! PARK! PARK! {STREET}! ONE SPACE! FOR EVERYTHING!",
+    "THIS IS IT! ONE SPACE ON {STREET}! THE GOLDEN PERMIT IS RIGHT THERE!",
+    "FOR THE GOLDEN PERMIT! {STREET}! ONE BAY! GO!",
+    "STOP! {STREET}! ONE SPACE! FOR EVERYTHING!",
+    "SILENCE ON THE TERRACES! One space, {STREET}, and a Golden Permit! GO!",
   ],
   musicStopPerfect: [
     "PARK! PARK! PARK! And look at THAT on {PERFECT}! A space you could land a helicopter in! EVERYBODY WANTS IT!",
@@ -384,14 +387,25 @@ const L = {
     { t: "ONE SPACE! {STREET}! {HUNTERS}! It's between you! {secs} SECONDS!", when: (c) => c.nHunt === 2 },
     "DOWN TO ONE! {STREET}! {secs} seconds on the clock and no manners left on the street!",
   ],
+  tell: [
+    "I'm hearing whispers from the council about {street}...",
+    "My sources tell me something's stirring on {street}. My sources are a man at a bus stop.",
+    "Keep an eye on {street}. I'm saying nothing. ~ I've said {street}.",
+    "Are those cones on {street} wobbling? Or is it my sixth coffee?",
+    "A little bird tells me {street} might be worth a look. The bird lives on {street}. It's biased.",
+    "Psst. {street}. You didn't hear it from me.",
+    "Rumour on the WhatsApp group: {street}. The group's never been wrong. It's never been right, either.",
+    "Somebody on {street} has just taken their recycling in. That usually means something.",
+  ],
   finalClock: [
     "I'm cutting the clock! {secs} SECONDS FOR THE GOLDEN PERMIT!",
     "Clock's cut! {secs} seconds! One space, two cars, no prisoners!",
     "{secs} SECONDS! That's all you get! I've cut it! I'm drunk on power!",
   ],
   whistle: [
-    "TIME! But they're still reversing in! I'm allowing it!",
-    "ON THE WHISTLE! Half in! The stewards are muttering, but I'll allow it!",
+    "TIME! But somebody's still reversing in! I'll give them till they stop!",
+    "ON THE WHISTLE! Still moving! Let's see if it counts!",
+    "THAT'S TIME! Somebody's mid-manoeuvre! The stewards are watching!",
   ],
 
   // ----------------------------------------------------------------------------- parking
@@ -416,18 +430,44 @@ const L = {
     "Lovely! In on {street}, nice and tidy. {points} points.",
     "IN! On {street}! Tidy enough to keep the neighbours quiet. Well. Quieter.",
     { t: "FIRST IN! Our contestant's parked on {street} before anybody else has even found a gap!", when: (c) => c.order === 1, w: 3 },
+    "Neat! On {street}! Not showroom, but you'd let your mum see it.",
+    "That's a good park on {street}. Straight-ish, close-ish, and very much safe.",
+    "In on {street}! Geoffrey would give that a seven. Geoffrey's never given anything higher than a seven.",
+    "Tucked in on {street}! Nice work. The bay looks happy. The bay's never happy.",
+    { t: "IN, with {secs} seconds to spare! Tidy on {street}!", when: (c) => c.secs >= 12 },
+    "Tidy on {street}! That's the kind of parking that gets you invited to the street party.",
+    "Lovely job! Safe on {street}, and not a wheel on the pavement.",
+    { t: "Tidy park on {street}! And after {kerbs} kerbs on the way in, we'll take it!", when: (c) => c.kerbs >= 3, w: 2 },
   ],
   playerOk: [
     "It's in. It's not pretty, but it's in.",
     "Our contestant is parked on {street}. Let's not look too closely at how.",
     "That'll do! It's in the bay, mostly. The bay's fine with it.",
     "Parked! At an angle Geoffrey would describe as 'continental'.",
+    "In on {street}! A bit wonky. Like the terraces. It suits the street.",
+    "Safe! It's not straight, but neither's the kerb on {street}.",
+    "Parked on {street}. If anyone asks, the car's 'relaxing'.",
+    "It'll do! Parked like someone who's got a lot on today.",
+    "In! On {street}! The back wheel's thinking about the pavement, but it's in.",
+    "Safe on {street}! Not a park you'd put on a postcard. A park you'd put on a fridge.",
+    { t: "Safe! Bit skew-whiff on {street}, but you're through to round {next}!", when: (c) => c.next },
+    "That's in! It's parked the way people hang pictures after one glass of wine.",
+    { t: "It'll do! And with {kerbs} kerbs on the way, honestly, it's a triumph.", when: (c) => c.kerbs >= 3, w: 2 },
   ],
   playerAwful: [
     "That's not parked, that's ABANDONED. It counts, but the stewards have fined you for crimes against parallel parking.",
     "Our contestant has parked like they've popped into the chippy. Safe. Fined.",
     "Is that parked? The stewards say yes. The kerb says no. The kerb is a foot away.",
     "Safe! But the back end's in a different postcode. Points off!",
+    "That's not a park, that's a breakdown. It counts. It's fined. It's on the WhatsApp group.",
+    "Our contestant has left the car on {street} like a shopping trolley. Safe, and fined.",
+    "Abandoned on {street}! Half in the bay, half in the road, all in trouble. Points off!",
+    "It counts! I can't believe it counts! The stewards are fining you just to feel something.",
+    "Parked like the car fell out of the sky onto {street}. Safe. Fined. Shamed.",
+    "That's a technical park on {street}. The technicality is: you stopped. Points off.",
+    "In, sort of, on {street}. The bay's been reported as missing a car, and the road's found one.",
+    "Safe on {street}! Somewhere, a driving instructor just felt a cold shiver. Fined!",
+    { t: "After {attempts} attempts, it's... that. Safe on {street}. Fined. We'll never speak of it.", when: (c) => c.attempts, w: 3 },
   ],
   playerParkedAny: { repeat: true, lines: [
     "[IN|PARKED|SAFE]! Our contestant's [in|parked up|tucked in] on {street}! [Lovely|Get in|Beautiful]!",
@@ -610,6 +650,14 @@ const L = {
     "Ooh, that's a kerbing. Somewhere, a tyre fitter has just put a deposit on a boat.",
     "Clonk! That's the kerb, and that's another alloy wheel heading for a refurb.",
     "Kerb strike! The wheel's fine. ~ The wheel is not fine.",
+    "Kerbed it! That's Victorian stone, that. It wins every time.",
+    "Ooh, the kerb! I felt that in the studio.",
+    "Scrape! There goes the shiny bit off the alloy.",
+    "Kerb! The council will be out to inspect it. The kerb, not you. They don't care about you.",
+    "Clunk! That's the tracking gone. Lovely.",
+    "Kerb! On {street}! The residents have heard that noise before. Mostly from Tarquin.",
+    "Bit of kerb there. Just a nibble. A very expensive nibble.",
+    "Ooh! Kerb! Somewhere a garage has just put the kettle on and rubbed its hands together.",
   ],
   kerbMany: [
     "That's kerb number {kerbs}! Those alloys now have the texture of a digestive biscuit.",
@@ -667,14 +715,28 @@ const L = {
     "Wrong way round on {street}! It's musical chairs, not dodgems!",
   ],
   speeding: [
-    "{mph} in a twenty zone! This is {street}, not Silverstone!",
-    "{mph} miles an hour past the terraces! The community speed watch need a bigger clipboard!",
-    "It's a TWENTY zone! You're doing {mph}! Somewhere a crossing patrol is having palpitations!",
+    "{mph} in a twenty zone! This is {street}, not Silverstone! Points off!",
+    "{mph} miles an hour past the terraces! The community speed watch need a bigger clipboard! Penalty!",
+    "It's a TWENTY zone! You're doing {mph}! Somewhere a crossing patrol is having palpitations! That's points off!",
+    "Speeding on {street}! {mph}! The stewards have docked you, and Sandra's written down your number plate!",
+    "{mph}?! On {street}?! There are children! Well, there's Poppy! Points off!",
+    "Twenty's plenty, and {mph} is a penalty! Slow it down!",
+    "Speed camera! Well, it's Geoffrey with a stopwatch, but it counts. {mph}. Points off!",
+    "{mph} miles an hour down {street}! The wheelie bins are spinning! Penalty!",
   ],
   loiter1: [
     "Keep moving, please! No hovering next to the cones. We've all seen that trick.",
     "Oi! Circulate! This is musical chairs, not a picnic!",
     "No loitering! You're sat next to that cone like it owes you money.",
+    "Keep it rolling! The stewards are watching anyone who parks next to a cone and pretends to admire the brickwork.",
+    "Move along! You're hovering like a seagull over a chip shop.",
+    "Oi! This isn't a drive-in! Keep circulating!",
+    "Keep moving! The cones aren't coming off any faster because you're staring at them.",
+    "Loitering! I can see you! Everyone on {street} can see you!",
+    "No sitting still! Even Geoffrey's moving, and Geoffrey's barely moving.",
+    "Circulate, please! This is your first warning. I don't do second warnings. I do penalties.",
+    "Keep going round! Clockwise! Like a nice orderly queue at the post office!",
+    "Stop hovering by the cones! You look like you're waiting to be picked for five-a-side.",
   ],
   loiter2: [
     "Right, the stewards have had enough. LOITERING PENALTY! Your engine cuts out when the music stops!",
@@ -892,6 +954,7 @@ export class DJ {
     this.used = new Set();
     this.usedAt = new Map();
     this.catAt = {};
+    this.talk = []; this.curTalk = null;
     this.speakToken = 0;
     this.resetMemory();
     this.synth = typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null;
@@ -996,6 +1059,10 @@ export class DJ {
     const cat = opts.cat || keys[keys.length - 1];
     if (COOL[cat] && this.clock - (this.catAt[cat] ?? -1e9) < COOL[cat]) return false;
     if (pri === 1 && !this.colourWindow(opts)) return false;
+    // airtime budget: leave breathing room so the big moments land (colour first, then routine important lines)
+    const busy = this.talkFrac();
+    if (pri === 1 && busy > 0.42 && !opts.tease) return false;
+    if (pri === 2 && busy > 0.62 && !opts.urgent) return false;
     if (pri === 2 && this.current && this.current.pri >= 3 && this.queue.some((q) => q.pri >= 2 && q.cat === cat)) return false;
     let ch = null, key = null;
     for (const k of keys) {
@@ -1017,10 +1084,19 @@ export class DJ {
     return true;
   }
 
+  closeTalk() { if (this.curTalk) { this.curTalk.e = this.clock; this.talkTotal = (this.talkTotal || 0) + this.clock - this.curTalk.s; this.curTalk = null; } }
+  /** fraction of the last 30 s the DJ has been talking */
+  talkFrac(win = 30) {
+    const from = this.clock - win;
+    while (this.talk.length && this.talk[0].e < from) this.talk.shift();
+    let sum = 0;
+    for (const x of this.talk) sum += Math.max(0, Math.min(x.e, this.clock) - Math.max(x.s, from));
+    return Math.max(0, sum) / win;
+  }
   colourWindow(opts) {
     if (this.current || this.queue.length) return false;
     if (this.clock < this.holdUntil) return false;
-    if (this.clock - this.lastEnd < (opts.gap ?? 1.4)) return false;
+    if (this.clock - this.lastEnd < (opts.gap ?? 2.4)) return false;
     // never start colour that would still be going when the music is due to stop
     const g = this.game;
     if (g && g.phase === 'music' && Number.isFinite(g.stopAt) && g.stopAt - g.phaseT < (opts.need ?? 3.5)) return !!opts.tease;
@@ -1051,11 +1127,12 @@ export class DJ {
   }
   release(item) { this.used.delete(item.id); }
   cut(reason) {
+    this.closeTalk();
     if (this.current) this.note('cut', this.current.key, this.current.pri, reason);
     this.stopSpeech();
     this.current = null;
   }
-  interrupt() { this.stopSpeech(); this.current = null; }
+  interrupt() { this.stopSpeech(); this.current = null; this.closeTalk(); }
   stopSpeech() {
     this.speakToken++;
     if (this.synth) { try { this.synth.cancel(); } catch (e) { /* ignore */ } }
@@ -1069,7 +1146,7 @@ export class DJ {
       const cur = this.current;
       cur.t += dt;
       const done = cur.t > cur.maxT || (cur.spoken && cur.ended && cur.t > cur.minT) || (!cur.spoken && cur.t > cur.est);
-      if (done) { this.current = null; this.lastEnd = this.clock; this.subT = 1.4; }
+      if (done) { this.current = null; this.lastEnd = this.clock; this.subT = 1.4; this.closeTalk(); }
     }
     if (!this.current) {
       while (this.queue.length) {
@@ -1107,6 +1184,7 @@ export class DJ {
     const words = shown.split(/\s+/).length;
     const pr = this.prosody(item, false);
     const est = 0.5 + words * 0.36 / pr.rate + (item.text.includes('~') ? 0.4 : 0);
+    this.curTalk = { s: this.clock, e: this.clock + est }; this.talk.push(this.curTalk);
     this.current = { ...item, t: 0, est, minT: Math.min(1.0, est * 0.5), maxT: est + 2, spoken: false, ended: false };
     this.lastText = shown;
     this.onSubtitle(shown);
@@ -1158,6 +1236,7 @@ export class DJ {
       round: g.round, cars: alive.length, bays: free, score: Math.round(g.score || 0), kerbs: g.stats ? g.stats.kerbs : 0,
       final: !!g.final, alive: alive.map((x) => x.name), aliveNames: listNames(rivals.map((x) => x.name).concat(alive.some((x) => x.isPlayer) ? ['our contestant'] : [])),
       hunters: hunt.length && hunt.length <= 3 ? listNames(hunt) : null, nHunt: hunt.length, free,
+      street: g.playerLoc && g.playerLoc.edge ? g.playerLoc.edge.name : undefined,
       secs: g.timeLeft !== undefined && g.phase === 'park' ? Math.max(1, Math.round(g.timeLeft)) : null, heat: g.mode && g.mode.heat,
       aliveRival: rivals.length ? rivals[Math.floor(rivals.length / 2)].name : null,
     };
@@ -1193,7 +1272,7 @@ export class DJ {
     const g = this.game;
     if (!g || !g.drivers || !g.track) return;
     if (this.clock - this.lastEnd < 2.2 || this.clock < this.holdUntil) return;
-    if (this.clock - (this.autoAt || -1e9) < (g.phase === 'park' ? 2.5 : 4.5)) return;
+    if (this.clock - (this.autoAt || -1e9) < (g.phase === 'park' ? 5 : 7)) return;
     if (g.phase === 'music' && g.phaseT > 3) { this.autoAt = this.clock; this.observeMusic(g); }
     else if (g.phase === 'park' && g.phaseT > 4) { this.autoAt = this.clock; this.observePark(g); }
   }
@@ -1294,7 +1373,7 @@ export class DJ {
         break;
       }
       case 'roundIntro': {
-        this.frantic = false; m.roundRob = null; m.perfectStreet = null; m.stash = []; m.photo = null; m.endSaid = false; m.struggleRound = 0;
+        this.frantic = false; m.tells = 0; m.roundRob = null; m.perfectStreet = null; m.stash = []; m.photo = null; m.endSaid = false; m.struggleRound = 0;
         const c = this.ctx({ ...d, label: d.mode && d.mode.label, rivals: (d.cars || 1) - 1 });
         if (m.leader && m.leader.fresh && d.round > 1) { c.newLeader = m.leader.isPlayer ? null : m.leader.name; c.youLead = m.leader.isPlayer ? Math.round(m.leader.points) : null; c.newLeaderPts = Math.round(m.leader.points); m.leader.fresh = false; }
         let keys;
@@ -1362,7 +1441,7 @@ export class DJ {
         if (d.kind === 'perfectSpot' && atStop) { m.perfectStreet = d.street; break; }
         if (d.kind === 'deliveryVan' && atStop) { m.stash.push({ keys: ['deliveryVan'], c }); break; }
         const pri = d.kind === 'permit' || d.kind === 'vanGone' || d.kind === 'perfectSpot' ? 3 : 2;
-        this.say(d.kind, c, pri, { ttl: pri === 3 ? 5 : 4 });
+        this.say(d.kind, c, pri, { ttl: pri === 3 ? 5 : 4, urgent: true });
         if (d.kind === 'permit') this.react('groan');
         if (d.kind === 'binLorry' || d.kind === 'schoolRun') this.react('groan');
         break;
@@ -1371,7 +1450,7 @@ export class DJ {
         if (g.playerComp && !g.playerComp.alive) break;
         const c = this.ctx(d);
         if (d.t === 20 && g.countdown > 28) this.say('tick20', c, 2, { ttl: 1.5 });
-        if (d.t === 10) this.say('tick10', c, 2, { ttl: 1.2 });
+        if (d.t === 10) this.say('tick10', c, 2, { ttl: 1.2, urgent: true });
         if (d.t === 5) this.say('tick5', c, 3, { ttl: 1.0 });
         break;
       }
@@ -1426,7 +1505,7 @@ export class DJ {
         const hasPlayer = names.includes('our contestant');
         const others = names.filter((n) => n !== 'our contestant');
         const c = this.ctx({ names: listNames(names), others: listNames(others), street });
-        this.say(hasPlayer ? ['contestedPlayer', 'contested'] : ['contested'], c, hasPlayer ? 2 : 1, { ttl: 2.5, cat: 'contested' });
+        this.say(hasPlayer ? ['contestedPlayer', 'contested'] : ['contested'], c, hasPlayer ? 2 : 1, { ttl: 2.5, cat: 'contested', urgent: hasPlayer });
         break;
       }
       case 'nearMiss': {
@@ -1441,7 +1520,7 @@ export class DJ {
         this.react('ooh');
         break;
       }
-      case 'overshot': this.say('overshot', this.ctx({ street: d.street || (d.bay && d.bay.street) }), 2, { ttl: 2 }); break;
+      case 'overshot': this.say('overshot', this.ctx({ street: d.street || (d.bay && d.bay.street) }), 2, { ttl: 2, urgent: true }); break;
       case 'longReverse': this.say('longReverse', this.ctx({ seconds: Math.round(d.seconds || 0) || null }), 1, { ttl: 2, gap: 0.8 }); break;
       case 'photoFinish': {
         const win = this.who(d.winner), lose = this.who(d.loser);
@@ -1452,7 +1531,7 @@ export class DJ {
       }
       case 'struggle': {
         m.struggleRound = d.count;
-        this.say('struggle', this.ctx(d), 2, { ttl: 2.5 });
+        this.say('struggle', this.ctx(d), 2, { ttl: 2.5, urgent: true });
         if (d.count >= 6) this.react('laugh');
         break;
       }
@@ -1478,15 +1557,22 @@ export class DJ {
       }
       case 'shove': this.say(this.pk('shove', w.key, 0.7), this.ctx(w), 2); break;
       case 'honk': if (d.atPlayer) this.say(this.pk('honkPlayer', w.key, 0.6), this.ctx(w), 1, { cat: 'honk' }); break;
-      case 'wrongWay': this.say(d.real ? 'wrongWayReal' : 'wrongWay', this.ctx(d), 2); break;
-      case 'speeding': this.say('speeding', this.ctx(d), 2, { ttl: 2 }); break;
-      case 'loiter': this.say(d.level === 2 ? 'loiter2' : 'loiter1', this.ctx(), d.level === 2 ? 3 : 2); break;
-      case 'falseStart': this.say('falseStart', this.ctx(), 2, { ttl: 4 }); break;
+      case 'wrongWay': this.say(d.real ? 'wrongWayReal' : 'wrongWay', this.ctx(d), 2, { urgent: !!d.real }); break;
+      case 'speeding': this.say('speeding', this.ctx(d), 2, { ttl: 2, urgent: true }); break;
+      case 'tell': {
+        // cones wobbling on a bay that's about to open: the DJ drops a hint, once or twice a round at most
+        const street = d.street || (d.bay && d.bay.street);
+        if (!street || (this.mem.tells || 0) >= 2) break;
+        if (this.say('tell', this.ctx({ street }), 1, { cat: 'tell', tease: true, gap: 1.2, ttl: 2 })) this.mem.tells = (this.mem.tells || 0) + 1;
+        break;
+      }
+      case 'loiter': this.say(d.level === 2 ? 'loiter2' : 'loiter1', this.ctx(), d.level === 2 ? 3 : 2, { urgent: true }); break;
+      case 'falseStart': this.say('falseStart', this.ctx(), 2, { ttl: 4, urgent: true }); break;
       case 'driveway': this.say('driveway', this.ctx(d), 3, { ttl: 3 }); this.react('laugh'); break;
-      case 'yellow': this.say('yellow', this.ctx(d), 2); break;
-      case 'permitParked': this.say('permitParked', this.ctx(d), 2); break;
-      case 'blockedParked': this.say('blockedParked', this.ctx(d), 2); break;
-      case 'vanBlocked': this.say('vanBlocked', this.ctx(d), 2); break;
+      case 'yellow': this.say('yellow', this.ctx(d), 2, { urgent: true }); break;
+      case 'permitParked': this.say('permitParked', this.ctx(d), 2, { urgent: true }); break;
+      case 'blockedParked': this.say('blockedParked', this.ctx(d), 2, { urgent: true }); break;
+      case 'vanBlocked': this.say('vanBlocked', this.ctx(d), 2, { urgent: true }); break;
       case 'fooled': this.say(this.pk('fooled', w.key, 0.9), this.ctx({ ...w, street: d.street }), 2, { ttl: 3 }); this.react('laugh'); break;
       case 'stall': {
         m.stalls[w.name] = (m.stalls[w.name] || 0) + 1;
@@ -1518,7 +1604,7 @@ export class DJ {
     const rk = d.rating && d.rating.key;
     m.parkedAt[w.name] = this.clock;
     if (d.isPlayer) {
-      const c = this.ctx({ street, points: d.points, order: d.order, secs, attempts: m.struggleRound >= 4 ? m.struggleRound : null, perfects: g.stats ? g.stats.perfects : 0 });
+      const c = this.ctx({ street, points: d.points, order: d.order, secs, attempts: m.struggleRound >= 4 ? m.struggleRound : null, perfects: g.stats ? g.stats.perfects : 0, next: g.final ? null : g.round + 1 });
       let keys;
       if (d.timeLeft !== undefined && d.timeLeft < 3 && rk !== 'awful') { keys = ['playerClutch']; m.lastClutch = w.name; }
       else if (m.struggleRound >= 4 && rk !== 'awful') keys = ['playerAfterStruggle'];
@@ -1545,7 +1631,7 @@ export class DJ {
     if (!keys.includes('rivalParked')) keys.push('rivalParked');
     // routine rival parks are important only when nothing else is going on
     if (d.baysLeft > 1 && this.current && this.current.pri >= 2) pri = 1;
-    this.say(keys, c, pri, { ttl: 1.8, cat: 'rivalParked', gap: 0.3 });
+    this.say(keys, c, pri, { ttl: 1.8, cat: 'rivalParked', gap: 0.3, urgent: d.baysLeft === 1 });
   }
 
   onRoundEnd(d, g) {

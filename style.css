@@ -160,29 +160,29 @@ a { color: var(--yellow); }
 @keyframes rise { 0% { opacity: 0; transform: translateY(14px) scale(.85); } 12% { opacity: 1; transform: translateY(0) scale(1.05); } 20% { transform: scale(1); } 78% { opacity: 1; } 100% { opacity: 0; transform: translateY(-36px); } }
 
 #flash { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); font: min(17vw, 150px)/0.95 var(--display); letter-spacing: 2px; color: var(--yellow); -webkit-text-stroke: 9px var(--ink); paint-order: stroke fill; text-shadow: 0 9px 0 var(--ink); text-align: center; white-space: nowrap; opacity: 0; z-index: 3; }
-#flash.show { animation: slam 1.7s forwards; }
+#flash.show { animation: slam 1.25s forwards; }
 #flash.red { color: #fff; text-shadow: 0 9px 0 var(--red); } #flash.green { color: #7dffad; }
 #flash small { display: block; width: max-content; margin: 10px auto 0; font: 900 max(14px, .16em)/1 var(--sign); -webkit-text-stroke: 0; color: var(--ink); background: var(--yellow); letter-spacing: 2px; padding: 8px 14px 5px; border-radius: 4px; text-shadow: none; box-shadow: 0 4px 0 rgba(0,0,0,.35); }
 #flash.red small { background: #fff; }
-#flash.big { font-size: min(30vw, 260px); top: 40%; color: #fff; text-shadow: 0 12px 0 var(--red); -webkit-text-stroke: 12px var(--ink); animation: slamBig 1.9s forwards; }
+#flash.big { font-size: min(30vw, 260px); top: 40%; color: #fff; text-shadow: 0 12px 0 var(--red); -webkit-text-stroke: 12px var(--ink); animation: slamBig .8s forwards; }
 #flash.big small { font-size: max(15px, .1em); background: var(--yellow); }
 @keyframes slam { 0% { opacity: 0; transform: translate(-50%, -50%) scale(3) rotate(-8deg); } 14% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-4deg); } 22% { transform: translate(-50%, -50%) scale(1.12) rotate(-2deg); } 80% { opacity: 1; transform: translate(-50%, -50%) scale(1.05) rotate(-3deg); } 100% { opacity: 0; transform: translate(-50%, -60%) scale(1.3) rotate(-3deg); } }
-@keyframes slamBig { 0% { opacity: 0; transform: translate(-50%, -50%) scale(4) rotate(-12deg); } 10% { opacity: 1; transform: translate(-50%, -50%) scale(.92) rotate(-5deg); } 16% { transform: translate(-50%, -50%) scale(1.08) rotate(-3deg); } 22% { transform: translate(-50%, -50%) scale(1) rotate(-4deg); } 78% { opacity: 1; transform: translate(-50%, -50%) scale(1.04) rotate(-4deg); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(.6) rotate(-4deg); } }
+@keyframes slamBig { 0% { opacity: 0; transform: translate(-50%, -50%) scale(4) rotate(-12deg); } 16% { opacity: 1; transform: translate(-50%, -50%) scale(.92) rotate(-5deg); } 26% { transform: translate(-50%, -50%) scale(1.06) rotate(-3deg); } 34% { transform: translate(-50%, -50%) scale(1) rotate(-4deg); } 70% { opacity: 1; transform: translate(-50%, -50%) scale(1.03) rotate(-4deg); } 100% { opacity: 0; transform: translate(-50%, -62%) scale(1.15) rotate(-4deg); } }
 
 /* ---------------- the music-stop moment */
 #stopfx { position: absolute; inset: 0; overflow: hidden; display: none; }
 #stopfx.go { display: block; }
 .sf-white { position: absolute; inset: 0; background: #fff; opacity: 0; }
-#stopfx.go .sf-white { animation: whiteout .7s ease-out forwards; }
+#stopfx.go .sf-white { animation: whiteout .45s ease-out forwards; }
 @keyframes whiteout { 0% { opacity: .95; } 25% { opacity: .55; background: #ff2a3d; } 100% { opacity: 0; background: #ff2a3d; } }
 .sf-tape { position: absolute; left: -20%; width: 140%; height: 44px; background: var(--hazard); border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); display: flex; align-items: center; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,.35); opacity: 0; }
 .sf-tape span { display: block; white-space: nowrap; font: 900 20px/1 var(--sign); letter-spacing: 3px; color: var(--ink); background: var(--yellow); padding: 6px 0 3px; width: 100%; }
 .sf-tape.t1 { top: 12%; transform: rotate(-6deg); }
 .sf-tape.t2 { bottom: 16%; transform: rotate(4deg); }
-#stopfx.go .sf-tape.t1 { animation: tapeL 1.9s cubic-bezier(.2,.9,.3,1) forwards; }
-#stopfx.go .sf-tape.t2 { animation: tapeR 1.9s cubic-bezier(.2,.9,.3,1) forwards; }
-@keyframes tapeL { 0% { opacity: 1; transform: translateX(-100%) rotate(-6deg); } 18% { transform: translateX(0) rotate(-6deg); } 80% { opacity: 1; transform: translateX(4%) rotate(-6deg); } 100% { opacity: 0; transform: translateX(8%) rotate(-6deg); } }
-@keyframes tapeR { 0% { opacity: 1; transform: translateX(100%) rotate(4deg); } 18% { transform: translateX(0) rotate(4deg); } 80% { opacity: 1; transform: translateX(-4%) rotate(4deg); } 100% { opacity: 0; transform: translateX(-8%) rotate(4deg); } }
+#stopfx.go .sf-tape.t1 { animation: tapeL .8s cubic-bezier(.2,.9,.3,1) forwards; }
+#stopfx.go .sf-tape.t2 { animation: tapeR .8s cubic-bezier(.2,.9,.3,1) forwards; }
+@keyframes tapeL { 0% { opacity: 1; transform: translateX(-100%) rotate(-6deg); } 25% { transform: translateX(0) rotate(-6deg); } 80% { opacity: 1; transform: translateX(4%) rotate(-6deg); } 100% { opacity: 0; transform: translateX(8%) rotate(-6deg); } }
+@keyframes tapeR { 0% { opacity: 1; transform: translateX(100%) rotate(4deg); } 25% { transform: translateX(0) rotate(4deg); } 80% { opacity: 1; transform: translateX(-4%) rotate(4deg); } 100% { opacity: 0; transform: translateX(-8%) rotate(4deg); } }
 body.quake canvas#c, body.quake #hud-left, body.quake #hud-right { animation: quake .5s linear; }
 @keyframes quake { 0%, 100% { transform: none; } 10% { transform: translate(-9px, 5px); } 20% { transform: translate(8px, -6px); } 30% { transform: translate(-7px, -4px); } 40% { transform: translate(6px, 5px); } 55% { transform: translate(-4px, 2px); } 70% { transform: translate(3px, -2px); } 85% { transform: translate(-1px, 1px); } }
 
@@ -587,7 +587,7 @@ button.toggle[aria-pressed="true"]::after { background-color: var(--green); back
   #vic-confetti { display: none; }
   body.quake canvas#c, body.quake #hud-left, body.quake #hud-right { animation: none !important; }
   #stopfx .sf-tape { display: none; }
-  #flash.show, #flash.big { animation: fadeHold 1.7s forwards !important; }
+  #flash.show, #flash.big { animation: fadeHold 1s forwards !important; }
   .bumper, .tape, .fn-sting, .lg-row, .board, .pcn, .stamp, .lg-stamp, #vic-title, .vic-kicker { animation-name: fadeOnly !important; }
   .bumper { animation: fadeOnly .3s !important; }
   #screen-intro.leaving .bumper { animation: fadeOut .3s forwards !important; }
@@ -597,3 +597,42 @@ button.toggle[aria-pressed="true"]::after { background-color: var(--green); back
 }
 @keyframes fadeHold { 0% { opacity: 0; transform: translate(-50%, -50%); } 10%, 80% { opacity: 1; transform: translate(-50%, -50%); } 100% { opacity: 0; transform: translate(-50%, -50%); } }
 @keyframes fadeOnly { from { opacity: 0; } }
+
+/* ============================================================ cycle 2: keep the scramble readable on phones */
+.toast { max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+@media (max-height: 520px) and (orientation: landscape) {
+  .sf-tape { height: 24px; } .sf-tape span { font-size: 11px; padding: 4px 0 2px; }
+  .sf-tape.t1 { top: 6%; } .sf-tape.t2 { bottom: 6%; }
+  #flash { top: 34%; font-size: 60px; -webkit-text-stroke: 5px var(--ink); }
+  #flash.big { top: 36%; font-size: 104px; -webkit-text-stroke: 7px var(--ink); }
+  #flash small { font-size: 11px; padding: 5px 9px 3px; margin-top: 5px; }
+  #toasts { top: calc(var(--st) + 112px); } .toast { font-size: 12px; padding: 5px 9px 3px; }
+  body.touch #hud.pk #dj-panel { top: var(--st); bottom: auto; left: calc(var(--sl) + 158px); right: calc(var(--sr) + 150px); border-left-width: 4px; }
+  body.touch #hud.pk #dj-panel.quiet { transform: translateY(-8px); }
+  body.touch #hud.pk #dj-head { display: none; }
+  body.touch #hud.pk #dj-text { -webkit-line-clamp: 2; font-size: 11.5px; line-height: 1.22; margin: 4px 8px 4px; }
+  body.touch #hud.pk #phase-text { display: none !important; }
+  body.touch #hud.pk #phase-banner { top: calc(var(--st) + 40px); }
+  body.touch #hud.pk #toasts { top: calc(var(--st) + 118px); }
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  .sf-tape { height: 26px; } .sf-tape span { font-size: 12px; padding: 5px 0 2px; }
+  .sf-tape.t1 { top: 22%; } .sf-tape.t2 { bottom: 30%; }
+  #flash { top: 38%; } #flash.big { top: 40%; font-size: 108px; }
+  #toasts { top: calc(var(--st) + 300px); }
+  body.touch #hud.pk #dj-panel { top: calc(var(--st) + 166px); bottom: auto; left: var(--sl); right: var(--sr); }
+  body.touch #hud.pk #dj-head { display: none; }
+  body.touch #hud.pk #dj-text { -webkit-line-clamp: 2; font-size: 12px; margin: 4px 8px; }
+  body.touch #hud.pk #phase-text { display: none !important; }
+  body.touch #hud.pk #phase-banner { top: calc(var(--st) + 212px); }
+  /* results: two-line rows */
+  .lg-row { grid-template-columns: 26px 5px 1fr 54px; grid-template-areas: "pos sw name tot" "pos sw status rp"; row-gap: 2px; padding: 5px 8px 4px 0; }
+  .lg-pos { grid-area: pos; margin: -5px 0 -4px; } .lg-sw { grid-area: sw; align-self: stretch; height: auto; }
+  .lg-name { grid-area: name; } .lg-status { grid-area: status; text-align: left; } .lg-rp { grid-area: rp; font-size: 12px; } .lg-tot { grid-area: tot; font-size: 19px; }
+  .lg-time { display: inline; font-size: 11px; } .lg-status .badge { white-space: nowrap; }
+  .lg-head { grid-template-areas: "pos sw name tot"; } .lg-head .lg-status, .lg-head .lg-rp { display: none; }
+  .lg-stamp { right: 64px; font-size: 14px; }
+  .board h2 { font-size: 30px; }
+}
+body.screen-on #dj-panel, body.screen-on #toasts, body.screen-on #target { display: none; }
+#target.nolabel .tg-label { display: none; }
