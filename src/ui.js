@@ -528,6 +528,12 @@ export class UI {
     this.drawMinimap(game, time);
   }
 
+  /** True if a screen-space box overlaps the countdown/navigator column, the minimap or the left HUD (rects cached ~0.5 s). */
+  overlapsHud(x0, y0, x1, y1) {
+    const now = performance.now();
+    if (!this.hudRects || now - this.hudRectsT > 500) { this.hudRectsT = now; this.hudRects = ['phase-banner', 'hud-right', 'hud-left'].map((id) => $(id).getBoundingClientRect()).filter((r) => r.width > 0); }
+    return this.hudRects.some((r) => x1 > r.left - 6 && x0 < r.right + 6 && y1 > r.top - 6 && y0 < r.bottom + 6);
+  }
   /** Points the player at the ringed bay. A fixed navigator badge sits in the top-centre column under the countdown
    *  (it never wanders into other HUD); within 25 m, where the world's big P billboard is hidden, a small P pin also
    *  marks the bay itself unless it would land on HUD. */

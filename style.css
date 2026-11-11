@@ -659,3 +659,8 @@ body.screen-on #dj-panel, body.screen-on #toasts, body.screen-on #target { displ
 @keyframes whiteout { 0% { opacity: .95; } 30% { opacity: .6; } 100% { opacity: 0; } }
 @media (max-height: 520px) { #flash.big { top: 30%; font-size: 84px; -webkit-text-stroke: 6px var(--ink); } .sf-tape.t1 { top: 2%; } }
 @media (orientation: portrait) and (max-width: 600px) { #flash.big { top: 30%; font-size: 92px; } .sf-tape.t1 { top: 18%; } }
+
+/* cycle 4: bold chevron in the navigator */
+#tg-nav .tg-arrow { width: 46px; height: 46px; }
+#tg-nav .tg-arrow svg { width: 32px; height: 32px; fill: none; stroke: var(--ink); }
+@media (max-height: 520px) { #tg-nav .tg-arrow { width: 38px; height: 38px; } #tg-nav .tg-arrow svg { width: 28px; height: 28px; } }

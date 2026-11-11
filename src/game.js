@@ -451,12 +451,20 @@ export class Game {
         let pick = null;
         if (this.final) { const p = this.pickRelease(1); if (p && p.bays.length && (p.fair || this.phaseT > this.stopAt + 12)) pick = p; }
         else pick = this.planRelease(this.nBays);
-        if (pick) { this.release = pick; this.tellT0 = this.phaseT; this.musicStopsAt = this.phaseT + TELL_LEAD; this.tells = pick.bays.slice(); }
+        if (pick) {
+          this.release = pick; this.tellT0 = this.phaseT; this.musicStopsAt = this.phaseT + TELL_LEAD; this.tells = pick.bays.slice();
+          // now and again a red herring: one more coned bay wobbles a bit, but stays coned
+          if (!this.final && this.rng.chance(0.25)) {
+            const pc0 = this.player.car;
+            const dec = this.rng.shuffle(this.bays.filter((b) => b.state === 'coned' && !b.stub && !this.tells.includes(b) && Math.hypot(b.x - pc0.x, b.z - pc0.z) < 260))[0];
+            if (dec) { dec.decoy = true; this.tells.push(dec); }
+          }
+        }
       }
     }
     if (this.release) {
       const k = clamp((this.phaseT - this.tellT0) / TELL_LEAD, 0, 1);
-      for (const b of this.tells) b.tell = k;
+      for (const b of this.tells) b.tell = b.decoy ? k * 0.6 : k;
       if (!this.tellSaid && k > 0.25) {
         this.tellSaid = true;
         const pc2 = this.player.car;
@@ -504,7 +512,9 @@ export class Game {
     // The player always gets at least one CONTESTABLE space within a realistic drive: not a free seat (a rival
     // can still beat a dawdler to it), but never a round that was lost before the music stopped.
     const pv = Math.max(4, Math.abs(pc.v));
-    const reachable = (b) => { const d = distOf(me, b) - pv * TELL_LEAD; return d > 25 && d < 190 && ahead(b) <= 1; };
+    // (round 1 is gentler: a first-timer gets a contestable space close by, so a game can't end in a minute)
+    const maxD = this.round === 1 ? 70 : 190;
+    const reachable = (b) => { const d = distOf(me, b) - pv * TELL_LEAD; return d > 25 && d < maxD && ahead(b) <= 1; };
     if (me.alive && !bays.some(reachable)) {
       const alt = cands.filter((b) => !bays.includes(b) && reachable(b) && bays.every((o) => Math.hypot(o.x - b.x, o.z - b.z) > 14));
       if (alt.length) {
@@ -569,9 +579,9 @@ export class Game {
     // the clock gets meaner as the field shrinks: generous while you learn the streets, tight by the end
     const roundK = clamp(1.08 - 0.045 * (this.round - 1), 0.82, 1.08);
     this.countdown = pick.assigned
-      ? clamp((pick.makespan * 1.25 + 10) * Math.max(roundK, 0.95), 24, 58) * (0.5 + 0.5 * this.mode.countdownK)
+      ? clamp((pick.makespan * 1.25 + 10) * Math.max(roundK, 0.95) * (this.round === 1 ? 1.3 : 1), 24, 66) * (0.5 + 0.5 * this.mode.countdownK)
       : clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, pick.pd > 220 ? 70 : 55) * (0.5 + 0.5 * this.mode.countdownK);
-    for (const b of this.tells) b.tell = 0;
+    for (const b of this.tells) { b.tell = 0; b.decoy = false; }
     this.tells = [];
     this.lastSpace = false;
     if (this.extras.some((x) => x.kind === 'lorry')) this.countdown += 10;

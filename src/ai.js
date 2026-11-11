@@ -397,6 +397,7 @@ export class Driver {
           const oq = o.distTo(b);
           if (oq && oq.dist < q.dist) score += 150;
         }
+        if (this.p.smartTells && b.decoy) score += 60;   // the expert notices it is only half-hearted wobbling
         if (!best || score < best.score) best = { b, q, score };
       }
       if (!best) return this.hoverTell(speed);

@@ -454,6 +454,7 @@ game.on((type, d) => {
   }
 });
 
+const tagV = new THREE.Vector3();
 // ------------------------------------------------------------------ main loop
 let last = performance.now(), time = 0, frame = 0, sensor = null;
 /**
@@ -508,7 +509,20 @@ function tick(now) {
     m.tag.scale.set(3.2 * k, 1.0 * k, 1); m.tag.position.y = m.baseY + (k - 1) * 0.35;
     const offStage = replay || celebration || game.phase === 'victory' || game.phase === 'gameover' || !!ui.screen;
     m.tag.visible = !offStage;
-    m.tag.material.opacity = clamp((dc - 3.5) / 2.5, 0, 1);
+    let op = clamp((dc - 3.5) / 2.5, 0, 1);
+    if (op > 0 && !offStage) {
+      // fade a tag that would sit behind the countdown / navigator badge / minimap
+      tagV.set(c.car.x, m.tag.position.y, c.car.z).applyMatrix4(camera.matrixWorldInverse);
+      const depth = -tagV.z;
+      if (depth > 0.5) {
+        const ppm = window.innerHeight / (2 * Math.tan(camera.fov * Math.PI / 360) * depth);
+        tagV.applyMatrix4(camera.projectionMatrix);
+        const sx = (tagV.x * 0.5 + 0.5) * window.innerWidth, sy = (0.5 - tagV.y * 0.5) * window.innerHeight;
+        const hw = 1.6 * k * ppm, h = 1.0 * k * ppm;
+        if (ui.overlapsHud(sx - hw, sy - h, sx + hw, sy)) op *= 0.12;
+      }
+    }
+    m.tag.material.opacity = op;
     if (m.ring) { m.ring.visible = c.alive && !offStage; m.ring.material.opacity = c.parked ? 0.45 : 0.6 + 0.3 * Math.sin(time * 6); }
   }
 

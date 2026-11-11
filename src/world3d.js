@@ -286,32 +286,34 @@ export function buildWorld(scene, track, quality) {
           if (br() > 0.12) {
             const p = F.p(x + L / 2, 0, sd * 9.2);
             blocks.push({ x: p[0], z: p[2], h: ang, L, D: 8.4, H: 5.9 + br() * 0.8, c: br.pick([0x9c5a42, 0xa86048, 0x8d5440, 0xb59a70, 0xd9d4c6, 0x9c5a42]), r: br.pick([0x5d636c, 0x646a73, 0x6a625a]) });
-          } else if (br() < 0.8) { const p = F.p(x + L / 2 + br.range(-4, 4), 0, sd * br.range(10, 15)); trees.push(p); }
+          } else if (br() < 0.45) { const p = F.p(x + L / 2 + br.range(-4, 4), 0, sd * br.range(10, 15)); trees.push(p); }
           x += L + br.range(1, 4);
         }
-        if (br() < 0.5) { const p = F.p(br.range(-C / 2, C / 2), 0, sd * br.range(14, 17)); trees.push(p); }
+        if (br() < 0.2) { const p = F.p(br.range(-C / 2, C / 2), 0, sd * br.range(14, 17)); trees.push(p); }
       }
     }
-    const wallGeo = new THREE.BoxGeometry(1, 1, 1); wallGeo.translate(0, 0.5, 0);
-    const roofGeo = new THREE.BufferGeometry();
-    roofGeo.setAttribute('position', new THREE.Float32BufferAttribute([
-      -0.5, 0, -0.5, -0.5, 1, 0, 0.5, 1, 0, -0.5, 0, -0.5, 0.5, 1, 0, 0.5, 0, -0.5,
-      0.5, 0, 0.5, 0.5, 1, 0, -0.5, 1, 0, 0.5, 0, 0.5, -0.5, 1, 0, -0.5, 0, 0.5,
-      -0.5, 0, 0.5, -0.5, 1, 0, -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 1, 0, 0.5, 0, 0.5], 3));
-    roofGeo.computeVertexNormals();
-    const wm = new THREE.InstancedMesh(wallGeo, new THREE.MeshStandardMaterial({ roughness: 0.95 }), blocks.length);
-    const rm = new THREE.InstancedMesh(roofGeo, new THREE.MeshStandardMaterial({ roughness: 0.85, side: THREE.DoubleSide }), blocks.length);
+    // impostor: four walls + two roof slopes in one 12-triangle geometry (unit footprint, wall height 1, ridge 1.38)
+    const imp = new THREE.BufferGeometry();
+    const W = (ax, az, bx, bz, ya, yb) => [ax, ya, az, bx, ya, bz, bx, yb, bz, ax, ya, az, bx, yb, bz, ax, yb, az];
+    imp.setAttribute('position', new THREE.Float32BufferAttribute([
+      ...W(-0.5, 0.5, 0.5, 0.5, 0, 1), ...W(0.5, -0.5, -0.5, -0.5, 0, 1), ...W(0.5, 0.5, 0.5, -0.5, 0, 1), ...W(-0.5, -0.5, -0.5, 0.5, 0, 1),
+      -0.53, 1, 0.55, 0.53, 1, 0.55, 0.53, 1.38, 0, -0.53, 1, 0.55, 0.53, 1.38, 0, -0.53, 1.38, 0,
+      0.53, 1, -0.55, -0.53, 1, -0.55, -0.53, 1.38, 0, 0.53, 1, -0.55, -0.53, 1.38, 0, 0.53, 1.38, 0], 3));
+    const icol = []; for (let i = 0; i < 24; i++) icol.push(1, 1, 1); for (let i = 0; i < 12; i++) icol.push(0.42, 0.44, 0.48);   // roofs slate-dark
+    imp.setAttribute('color', new THREE.Float32BufferAttribute(icol, 3));
+    imp.computeVertexNormals();
+    const wm = new THREE.InstancedMesh(imp, new THREE.MeshLambertMaterial({ vertexColors: true }), blocks.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), cc = new THREE.Color();
     blocks.forEach((k, i) => {
       q.setFromAxisAngle(up, -k.h);
       m4.compose(new THREE.Vector3(k.x, 0, k.z), q, new THREE.Vector3(k.L, k.H, k.D)); wm.setMatrixAt(i, m4); wm.setColorAt(i, cc.set(k.c));
-      m4.compose(new THREE.Vector3(k.x, k.H, k.z), q, new THREE.Vector3(k.L + 0.4, 2.3, k.D + 0.6)); rm.setMatrixAt(i, m4); rm.setColorAt(i, cc.set(k.r));
     });
-    wm.receiveShadow = rm.receiveShadow = false;
-    scene.add(wm, rm);
+    wm.castShadow = wm.receiveShadow = false;
+    scene.add(wm);
     roads.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), false, false);
-    const tg = new THREE.IcosahedronGeometry(2.6, 0); tg.translate(0, 4.2, 0);
-    const tm = new THREE.InstancedMesh(tg, new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), trees.length);
+    const tg = new THREE.OctahedronGeometry(2.6, 0); tg.scale(1, 1.2, 1); tg.translate(0, 4.2, 0);
+    if (quality.low) trees.length = Math.floor(trees.length / 2);
+    const tm = new THREE.InstancedMesh(tg, new THREE.MeshLambertMaterial({ flatShading: true }), trees.length);
     trees.forEach((p, i) => { const s2 = br.range(0.8, 1.4); m4.compose(new THREE.Vector3(p[0], 0, p[2]), q.identity(), new THREE.Vector3(s2, s2, s2)); tm.setMatrixAt(i, m4); tm.setColorAt(i, cc.set(br.pick([0x4f8a3c, 0x5d9a45, 0x3f7534]))); });
     scene.add(tm);
   }
@@ -970,9 +972,11 @@ export function buildWorld(scene, track, quality) {
               picketRun(props, frame(px - tx * hw + ox * 0.12, pz - tz * hw + oz * 0.12, tx, tz), 0, 2 * hw, 1.0);
               props.box(F, -hw, hw, 0.13, 0.3, ...zr(0.02, 0.24), brickW2, 'fblrt');
             } else if (style === 'fence') {
-              props.box(F, -hw, hw, 0.13, 1.8, ...zr(0.04, 0.1), rr() < 0.5 ? timber : timber2, 'fblrt');
-              if (!quality.low) for (let q = -hw; q < hw; q += 0.15) props.box(F, q, q + 0.02, 0.15, 1.78, ...zr(0.0, 0.04), timber.clone().multiplyScalar(0.8), flip > 0 ? 'b' : 'f');
-              props.box(F, -0.05, 0.05, 0.13, 1.9, ...zr(0.0, 0.14), timber.clone().multiplyScalar(0.7), 'fblrt');
+              // panels overlap their neighbours slightly and every panel end gets a post, so bends never open a gap
+              const ext = hw + 0.07;
+              props.box(F, -ext, ext, 0.13, 1.8, ...zr(0.04, 0.1), timber, 'fblrt');
+              if (!quality.low) for (let q = -hw + 0.05; q < hw - 0.03; q += 0.15) props.box(F, q, q + 0.02, 0.15, 1.78, ...zr(0.0, 0.04), timber.clone().multiplyScalar(0.8), flip > 0 ? 'b' : 'f');
+              for (const px2 of [-hw, hw]) props.box(F, px2 - 0.06, px2 + 0.06, 0.13, 1.92, ...zr(-0.02, 0.16), timber.clone().multiplyScalar(0.7), 'fblrt');
             } else {     // hedge, chunky and a bit lumpy
               const hc = rr.pick(hedgeC), hh = (key === 'church' ? 1.7 : 1.1) + rr() * 0.3;
               props.shade = (x, y) => (y < 0.3 ? 0.6 : y > hh ? 1.12 : 1);
@@ -1282,12 +1286,41 @@ export function buildWorld(scene, track, quality) {
     } else if (e.circuit && e.len > 60) roundSign(zone20, e, 9, side, true);
   }
 
+  // ------------------------------------------------------------ open ground inside the map: copses and allotment plots
+  const fillTrees = [];
+  {
+    const fr = makeRng(777), CELL = 22, alot = new GB();
+    const isEmpty = (x, z) => sdf.sample(x, z) < -7 && !inCtx(x, z) && !buildingRings.some((r) => pointInRing(x, z, r)) &&
+      !buildingRings.some((r) => r.some((p) => Math.abs(p.x - x) < 5 && Math.abs(p.z - z) < 5));
+    for (let x = b.minX + 6; x < b.maxX - CELL; x += CELL) for (let z = b.minZ + 6; z < b.maxZ - CELL; z += CELL) {
+      let ok = true;
+      for (let i = 0; i <= 2 && ok; i++) for (let j = 0; j <= 2 && ok; j++) ok = isEmpty(x + i * CELL / 2, z + j * CELL / 2);
+      if (!ok) continue;
+      if (fr() < 0.45) {        // allotment: rows of beds (soil, greens, canes) inside a hedge
+        const beds = [0x5b4433, 0x6d8a45, 0x4f3c2e, 0x7f9d4f, 0x5b4433, 0x8aa356];
+        for (let k = 0; k < 7; k++) {
+          const z0 = z + 1.5 + k * 2.8, c2 = col(fr.pick(beds));
+          alot.quad([x + 1.5, 0.03, z0 + 2.0], [x + CELL - 1.5, 0.03, z0 + 2.0], [x + CELL - 1.5, 0.03, z0], [x + 1.5, 0.03, z0], c2);
+          if (fr() < 0.3) for (let c = x + 3; c < x + CELL - 3; c += 1.2) alot.cyl(c, z0 + 1, 0.03, 1.6, 0.03, 0.02, 4, col(0x9b8457), false);
+        }
+        for (const [ax, az, bx, bz] of [[x, z, x + CELL, z + 0.8], [x, z + CELL - 0.8, x + CELL, z + CELL], [x, z, x + 0.8, z + CELL], [x + CELL - 0.8, z, x + CELL, z + CELL]]) {
+          const F = frame(ax, az, 1, 0); alot.box(F, 0, bx - ax, 0, 1.3, 0, bz - az, hedgeC[0], 'fblrt');
+        }
+      } else {                  // copse
+        const n = fr.int(3, 6);
+        for (let k = 0; k < n; k++) fillTrees.push({ x: x + fr.range(2, CELL - 2), z: z + fr.range(2, CELL - 2), s: fr.range(0.9, 1.5), lx: 0, lz: 0 });
+      }
+    }
+    alot.mesh(scene, new THREE.MeshLambertMaterial({ vertexColors: true }), false, true);
+  }
+
   // ------------------------------------------------------------ trees
   {
     const spots = [];
     for (const t of churchTrees) spots.push({ x: t.x, z: t.z, s: t.s, lx: t.lean.x, lz: t.lean.z });
+    for (const t of fillTrees) spots.push(t);
     let tries = 0;
-    while (spots.length < (quality.low ? 70 : 130) + churchTrees.length && tries++ < 6000) {
+    while (spots.length < (quality.low ? 70 : 130) + churchTrees.length + fillTrees.length && tries++ < 6000) {
       const x = rng.range(b.minX + 4, b.maxX - 4), z = rng.range(b.minZ + 4, b.maxZ - 4);
       const dd = sdf.sample(x, z);
       if (dd > -3.2) continue;

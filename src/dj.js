@@ -394,12 +394,39 @@ const L = {
     "Are those cones on {street} wobbling? Or is it my sixth coffee?",
     "A little bird says {street}. ~ The bird lives there.",
     "Psst. {street}. You didn't hear it from me.",
+    "The WhatsApp group says {street}. It's never wrong. ~ Or right.",
+    "Someone on {street} just took their bins in. That means something.",
     "Council van spotted near {street}. Just saying.",
     "Hmm. {street}. No reason. ~ Every reason.",
     "Is that a man in a hi-vis on {street}? Interesting.",
     "If I were you, and I'm glad I'm not, I'd look at {street}.",
-    "The WhatsApp group says {street}. It's never wrong. ~ Or right.",
-    "Someone on {street} just took their bins in. That means something.",
+    "My producer's mouthing something. I think it's {street}. ~ Or 'get a sandwich'.",
+    "Word on the terraces: {street}. Word on the terraces is often wrong.",
+    "I've got a feeling about {street}. I had a feeling about the lottery once, too.",
+    "Tip of the morning: {street}. ~ Tips may go down as well as up.",
+    "Rumour has it {street}. Rumour has been sacked twice from this station.",
+    "{street}. That's all I'm saying. That's literally the only word I've got.",
+    "Hot tip! {street}! ~ Lukewarm tip. Room-temperature tip.",
+  ],
+  tell_church: [
+    "Somebody under the big trees on Church Street is putting a cone in their boot.",
+    "A pigeon on Church Street has gone very still. Pigeons know things.",
+    "There's movement behind the railings on Church Street. Curtain or council? You decide.",
+  ],
+  tell_grange: [
+    "One of the campervans on Grange Street has started its engine. Historic. Or a hint.",
+    "A bay window on Grange Street has a face in it, pointing. At a cone.",
+    "Grange Street. The SUVs are twitching. I'd twitch towards it.",
+  ],
+  tell_dalton: [
+    "The scaffolders on Dalton Street have stopped for a brew. Facing a cone. Interesting.",
+    "Someone's leaning on a picket fence on Dalton Street looking smug. Smug means space.",
+    "Dalton Street: a wheelie bin's been moved. Nobody moves a wheelie bin for nothing.",
+  ],
+  tell_bernard: [
+    "The corner shop on Bernard Street says 'something's happening'. They also sell lottery tickets.",
+    "A bollard on Bernard Street is looking very pleased with itself.",
+    "Bernard Street. The double yellows are smiling. That's never happened before.",
   ],
   finalClock: [
     "I'm cutting the clock! {secs} SECONDS FOR THE GOLDEN PERMIT!",
@@ -1576,7 +1603,12 @@ export class DJ {
         // cones wobbling on a bay that's about to open: the DJ drops a hint, once or twice a round at most
         const street = d.street || (d.bay && d.bay.street);
         if (!street || (this.mem.tells || 0) >= 2) break;
-        if (this.say('tell', this.ctx({ street }), 2, { cat: 'tell', urgent: true, ttl: 1.5 })) this.mem.tells = (this.mem.tells || 0) + 1;
+        // ~30% of the time the DJ points somewhere else: the wobbling cones are more trustworthy than he is
+        let named = street;
+        if (rnd() < 0.3) { const others = ['Church Street', 'Grange Street', 'Dalton Street', 'Bernard Street'].filter((x) => x !== street); named = others[Math.floor(rnd() * others.length)]; }
+        const sk = STREET_KEY[named];
+        const keys = sk && this.has('tell_' + sk) && rnd() < 0.4 ? ['tell_' + sk, 'tell'] : ['tell'];
+        if (this.say(keys, this.ctx({ street: named }), 2, { cat: 'tell', urgent: true, ttl: 1.5 })) this.mem.tells = (this.mem.tells || 0) + 1;
         break;
       }
       case 'loiter': this.say(d.level === 2 ? 'loiter2' : 'loiter1', this.ctx(), d.level === 2 ? 3 : 2, { urgent: true }); break;
