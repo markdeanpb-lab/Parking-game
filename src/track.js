@@ -141,8 +141,18 @@ function locate(track, x, z) {
 }
 
 // ------------------------------------------------------------------ kerbside layout
+// Streets where residents park down BOTH sides (as in the reference photos). The opposite row is static scenery
+// with collision; the AI lane is moved to the middle of the remaining gap. `kerb`: that row is half up on the pavement.
+const BOTH_SIDES = {
+  dalton: { gaps: [[218, 1e9, 'single']] },             // north end: single yellow + bollards outside the gault-brick house
+  grangeAB: {}, grangeBC: {}, grangeNW: {}, grangeSE: {},
+  church: { kerb: true },
+};
+// Block-paved off-street forecourt on Dalton St (right as you drive north), cars parked on it, dropped kerb in front.
+const FORECOURTS = [{ edgeId: 'dalton', side: 1, s0: 112, s1: 131 }];
+
 function layoutKerbside(track) {
-  const rng = makeRng(LAYOUT_SEED);
+  const rng = makeRng(LAYOUT_SEED), rowRng = makeRng(LAYOUT_SEED + 11);
   // real driveway / alley accesses from OSM, matched to an edge and a side
   const accessByEdge = {};
   for (const a of track.map.accesses) {
@@ -154,6 +164,8 @@ function layoutKerbside(track) {
     (accessByEdge[loc.edge.id] ||= []).push({ s: loc.s, side, kind: a.kind });
   }
   track.accesses = accessByEdge;
+  track.parkingRuns = [];      // kerbside stretches where parking is allowed (for the dashed bay line)
+  track.forecourts = [];
 
   let bayId = 0;
   for (const e of Object.values(track.edges)) {
@@ -163,11 +175,18 @@ function layoutKerbside(track) {
       continue;
     }
     const side = e.baySide;
+    const both = BOTH_SIDES[e.id];
     let s0 = JUNCTION_CLEAR, s1 = e.len - JUNCTION_CLEAR;
     if (e.id === 'grangeNW') s1 = e.len - 5;            // real dead end
     if (e.id === 'grangeSE') s1 = e.len - 17;           // barrier
-    track.yellow.push({ edgeId: e.id, side: -side, s0: sA, s1: e.id === 'grangeNW' ? e.len - 1 : sB });
+    if (both) {
+      e.laneOff = 0;                                    // parked cars both sides: drive down the middle
+      layoutOppositeRow(track, e, -side, both, s0, s1, accessByEdge[e.id] || [], rowRng);
+    } else {
+      track.yellow.push({ edgeId: e.id, side: -side, s0: sA, s1: e.id === 'grangeNW' ? e.len - 1 : sB });
+    }
     track.yellow.push({ edgeId: e.id, side, s0: sA, s1: s0 - 0.6 }, { edgeId: e.id, side, s0: s1 + 0.6, s1: sB });
+    track.parkingRuns.push({ edgeId: e.id, side, s0, s1, wid: BAY_WIDTH });
 
     const drives = (accessByEdge[e.id] || []).filter((a) => a.side === side && a.s > s0 + 4 && a.s < s1 - 4)
       .map((a) => ({ s0: a.s - 2.6, s1: a.s + 2.6, kind: a.kind })).sort((p, q) => p.s0 - q.s0);
@@ -213,12 +232,56 @@ function layoutKerbside(track) {
         const spec = CAR_TYPES[item.type];
         const pose = parkedPose(e, mid, side, spec, rng);
         const facing = !e.realOneway && rng.chance(0.12) ? Math.PI : 0;
-        track.parked.push({ type: item.type, colour: rng.pick(PARKED_COLOURS), x: pose.x, z: pose.z, h: pose.h + facing + rng.range(-0.02, 0.02), edgeId: e.id });
+        track.parked.push({ type: item.type, colour: rng.pick(PARKED_COLOURS), x: pose.x, z: pose.z, h: pose.h + facing + rng.range(-0.02, 0.02), edgeId: e.id, side });
         sinceBay++;
       }
       s += item.len;
     }
   }
+}
+
+/** Residents' row on the non-competition side of a two-sided street (static obstacles only, never bays). */
+function layoutOppositeRow(track, e, side, cfg, s0, s1, accesses, rng) {
+  const sA = 6, sB = e.len - 6;
+  const blocked = accesses.filter((a) => a.side === side).map((a) => [a.s - 3.0, a.s + 3.0, 'drop']);
+  for (const f of FORECOURTS) if (f.edgeId === e.id && f.side === side) {
+    blocked.push([f.s0, f.s1, 'drop']);
+    track.forecourts.push({ ...f, rng: LAYOUT_SEED });
+  }
+  for (const g of cfg.gaps || []) blocked.push([g[0], Math.min(g[1], s1), g[2]]);
+  blocked.sort((p, q) => p[0] - q[0]);
+  // yellow lines: corners always; single yellow over any no-parking gaps flagged as such
+  track.yellow.push({ edgeId: e.id, side, s0: sA, s1: s0 - 0.6 });
+  const tail = blocked.find((b) => b[2] === 'single' && b[1] >= s1);
+  track.yellow.push({ edgeId: e.id, side, s0: (tail ? tail[0] : s1) + 0.6, s1: e.id === 'grangeNW' ? e.len - 1 : sB, single: !!tail && e.id !== 'grangeNW' });
+  for (const b of blocked) if (b[2] === 'single' && b !== tail) track.yellow.push({ edgeId: e.id, side, s0: b[0], s1: b[1], single: true });
+  let runStart = s0;
+  let s = s0 + rng.range(0, 2);
+  const kerbLat = cfg.kerb ? 0.66 : null;
+  while (s < s1 - 3.4) {
+    const blk = blocked.find((b) => b[1] > s && b[0] < s + 5.6);
+    const type = rng.pick(PARKED_MIX.filter((t) => !cfg.kerb || t !== 'bigsuv'));
+    const spec = CAR_TYPES[type];
+    const len = spec.len + rng.range(0.6, 1.3);
+    if (blk && s + len > blk[0]) {
+      if (blk[0] - runStart > 3) track.parkingRuns.push({ edgeId: e.id, side, s0: runStart, s1: blk[0], wid: 1.9, kerb: !!cfg.kerb });
+      s = blk[1] + 0.4; runStart = s; continue;
+    }
+    if (s + len > s1) break;
+    const bend = Math.abs(wrapAngle(e.path.at(s + len).h - e.path.at(s).h));
+    if (bend > 0.12) { s += 1.5; continue; }
+    if (rng.chance(0.08)) { s += len; continue; }      // the odd gap
+    const mid = s + len / 2;
+    let pose, roll = 0;
+    if (kerbLat !== null) {      // two wheels up on the kerb
+      const p = e.path.offsetAt(mid, side * (e.hw - kerbLat - rng.range(0, 0.04)));
+      pose = { x: p.x, z: p.z, h: p.h }; roll = side * 0.09;
+    } else pose = parkedPose(e, mid, side, spec, rng);
+    const facing = !e.realOneway && rng.chance(0.35) ? Math.PI : 0;
+    track.parked.push({ type, colour: rng.pick(PARKED_COLOURS), x: pose.x, z: pose.z, h: pose.h + facing + rng.range(-0.025, 0.025), edgeId: e.id, side, roll: facing ? -roll : roll });
+    s += len;
+  }
+  if (s1 - runStart > 3) track.parkingRuns.push({ edgeId: e.id, side, s0: runStart, s1, wid: 1.9, kerb: !!cfg.kerb });
 }
 
 function parkedPose(e, s, side, spec, rng) {

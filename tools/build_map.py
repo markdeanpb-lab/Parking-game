@@ -21,7 +21,11 @@ from shapely.ops import unary_union
 
 LAT0, LON0 = 51.7572, -0.3372
 BOUNDS = (-205.0, -170.0, 210.0, 225.0)   # minx, miny, maxx, maxy  (metres, x east / y north)
-ROAD_W = 5.6        # residential carriageway (stylised)
+ROAD_W = 5.6        # residential carriageway with parking down one side (stylised)
+BOTH_W = 7.4        # parking down both sides (Dalton St, Grange St)
+CHURCH_W = 6.8      # Church St: parking both sides, the north row half up on the pavement
+YARD_MAX = 2.8      # street-facing terraces further back than this behind the pavement get their fronts brought forward
+YARD_TARGET = 1.5   # ... to leave a front yard this deep
 MAIN_W = 7.6        # Catherine Street
 PAVE_W = 1.5
 FILLET = 2.5
@@ -57,15 +61,15 @@ GRANGE, DALTON = '151687981', '151687980'
 cath = seq('3997174')
 EDGES = [
     # id, name, from, to, node list (in competition travel direction), width, flags
-    ('dalton',   'Dalton Street',  'F', 'A', seq(DALTON), ROAD_W, dict(circuit=True, baySide='L', realOneway=False)),
-    ('grangeAB', 'Grange Street',  'A', 'B', seq(GRANGE, A, B, rev=True), ROAD_W, dict(circuit=True, baySide='L', realOneway=False)),
-    ('grangeBC', 'Grange Street',  'B', 'C', seq(GRANGE, B, C, rev=True), ROAD_W, dict(circuit=True, baySide='L', realOneway=False)),
-    ('church',   'Church Street',  'C', 'D', seq('151687982') + seq('1230246220')[1:], ROAD_W, dict(circuit=True, baySide='L', realOneway=True)),
+    ('dalton',   'Dalton Street',  'F', 'A', seq(DALTON), BOTH_W, dict(circuit=True, baySide='L', realOneway=False)),
+    ('grangeAB', 'Grange Street',  'A', 'B', seq(GRANGE, A, B, rev=True), BOTH_W, dict(circuit=True, baySide='L', realOneway=False)),
+    ('grangeBC', 'Grange Street',  'B', 'C', seq(GRANGE, B, C, rev=True), BOTH_W, dict(circuit=True, baySide='L', realOneway=False)),
+    ('church',   'Church Street',  'C', 'D', seq('151687982') + seq('1230246220')[1:], CHURCH_W, dict(circuit=True, baySide='L', realOneway=True)),
     ('bernard',  'Bernard Street', 'D', 'B', seq('1230246221') + seq('151687985')[1:], ROAD_W, dict(circuit=True, baySide='R', realOneway=True)),
     ('bernardS', 'Bernard Street', 'D', 'E', seq('1230246222', rev=True), ROAD_W + 0.6, dict(circuit=True, baySide=None, realOneway=False)),
     ('catherine', 'Catherine Street', 'E', 'F', cath[cath.index(F):cath.index(E) + 1][::-1], MAIN_W, dict(circuit=True, baySide=None, realOneway=False)),
-    ('grangeNW', 'Grange Street',  'A', 'G', seq(GRANGE, G, A, rev=True)[::-1] if False else seq(GRANGE, A, G), ROAD_W, dict(circuit=False, stub=True, baySide='L', realOneway=False)),
-    ('grangeSE', 'Grange Street',  'C', 'H', seq(GRANGE, C, H, rev=True), ROAD_W, dict(circuit=False, stub=True, baySide='L', realOneway=False)),
+    ('grangeNW', 'Grange Street',  'A', 'G', seq(GRANGE, G, A, rev=True)[::-1] if False else seq(GRANGE, A, G), BOTH_W, dict(circuit=False, stub=True, baySide='L', realOneway=False)),
+    ('grangeSE', 'Grange Street',  'C', 'H', seq(GRANGE, C, H, rev=True), BOTH_W, dict(circuit=False, stub=True, baySide='L', realOneway=False)),
     ('catherineW', 'Catherine Street', 'F', 'W', cath[:cath.index(F) + 1][::-1], MAIN_W, dict(circuit=False, stub=True, baySide=None, realOneway=False)),
     ('catherineE', 'Catherine Street', 'E', 'X', cath[cath.index(E):cath.index(E) + 4], MAIN_W, dict(circuit=False, stub=True, baySide=None, realOneway=False)),
 ]
@@ -100,19 +104,67 @@ def polys(g):
     return out
 
 # ---- buildings (trimmed back from the stylised road corridor) ----
+# Church St's north side (right as you drive it) has front gardens with hedges and big overhanging trees.
+church_line = LineString([e['pts'] for e in edge_out if e['id'] == 'church'][0])
+church_gardens = church_line.buffer(-(CHURCH_W / 2 + PAVE_W + 2.4), single_sided=True)
 buildings = []
 for wid, (tags, nd) in ways.items():
     if 'building' not in tags or len(nd) < 4: continue
     p = Polygon([xy(n) for n in nd])
     if not p.is_valid: p = p.buffer(0)
     if not p.intersects(clip) or not clip.contains(p.centroid): continue
-    trimmed = p.difference(corridor)
-    for q in polys(trimmed.simplify(0.15)):
+    # close up the traced bay-window zigzags so each terrace has one clean facade line (bays are modelled in 3D)
+    closed = p.buffer(1.25, join_style='mitre', mitre_limit=2.0).buffer(-1.25, join_style='mitre', mitre_limit=2.0)
+    if isinstance(closed, Polygon) and closed.is_valid and closed.area < p.area * 1.35: p = closed
+    trimmed = p.difference(corridor).difference(church_gardens)
+    if tags.get('building') in ('yes', 'house', 'semidetached_house', 'detached', 'terrace', 'residential') and not trimmed.is_empty:
+        # square up the street front: fill the notches between (trimmed) bay windows along the pavement
+        band = corridor.buffer(1.8).difference(corridor).difference(church_gardens)
+        trimmed = unary_union([trimmed, trimmed.convex_hull.intersection(band).intersection(p.buffer(0.01).convex_hull)])
+        trimmed = trimmed.buffer(0.05, join_style='mitre').buffer(-0.05, join_style='mitre')
+    for q in polys(trimmed.simplify(0.45 if tags.get("building") in ("yes", "house", "terrace", "semidetached_house") else 0.15)):
         poly = Polygon(q['outer'])
         if poly.area < 12: continue
         kind = tags.get('building')
         if kind in ('yes', 'house', 'semidetached_house', 'detached', 'terrace', 'residential'): kind = 'house'
-        buildings.append(dict(p=q['outer'], t=kind, d=round(poly.distance(road), 1), a=round(poly.area)))
+        buildings.append(dict(p=q['outer'], t=kind, d=round(poly.distance(road), 1), a=round(poly.area), poly=poly))
+
+# Real terraces here front almost straight onto the pavement. Where a street-facing facade sits well back
+# from our stylised pavement, bring that facade forward (extrude the wall segment towards the street).
+street_lines = unary_union([LineString(e['pts']) for e in edge_out if e['id'] in ('dalton', 'grangeAB', 'grangeBC', 'church', 'bernard', 'grangeNW', 'grangeSE')])
+others = unary_union([bd['poly'] for bd in buildings])
+extended = 0
+for bd in buildings:
+    poly = bd['poly']
+    if bd['t'] not in ('house', 'apartments') or bd['a'] < 30: continue
+    ring = list(poly.exterior.coords)[:-1]
+    add = []
+    for i in range(len(ring)):
+        a, b = ring[i], ring[(i + 1) % len(ring)]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 3.5: continue
+        tx, ty = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+        nx, ny = ty, -tx
+        if poly.contains(Point(mid[0] + nx * 0.3, mid[1] + ny * 0.3)): nx, ny = -nx, -ny   # outward
+        D = Point(mid).distance(road)
+        if Point(mid[0] + nx * 1.0, mid[1] + ny * 1.0).distance(road) > D - 0.8: continue    # not facing the road
+        if Point(mid).distance(street_lines) > 16: continue
+        yard = D - PAVE_W
+        if yard <= YARD_MAX or yard > 9: continue
+        sh = yard - YARD_TARGET
+        quad = Polygon([a, b, (b[0] + nx * sh, b[1] + ny * sh), (a[0] + nx * sh, a[1] + ny * sh)])
+        quad = quad.difference(others.difference(poly).buffer(0.3)).difference(corridor).difference(church_gardens)
+        if quad.area > 2: add.append(quad)
+    if add:
+        np_ = unary_union([poly] + add).buffer(0.05, join_style='mitre').buffer(-0.05, join_style='mitre')
+        if isinstance(np_, Polygon):
+            np_ = np_.simplify(0.15)
+            bd['p'] = [r2(c) for c in np_.exterior.coords[:-1]]; bd['poly'] = np_; bd['a'] = round(np_.area); bd['d'] = round(np_.distance(road), 1)
+            extended += 1
+print('facades brought forward:', extended)
+all_b = unary_union([bd['poly'] for bd in buildings])
+for bd in buildings: del bd['poly']
 
 # ---- context: other roads, paths, car parks, parks, walls ----
 ctx_parts, foot_parts, accesses, walls, areas = [], [], [], [], []
@@ -150,8 +202,14 @@ for wid, (tags, nd) in ways.items():
             for q in polys(p.simplify(0.2)):
                 areas.append(dict(kind=kind, **q))
 
-ctx = unary_union(ctx_parts).intersection(clip).difference(corridor).simplify(0.1)
+ctx = unary_union(ctx_parts)
+yard_ctx = unary_union(ctx_parts + foot_parts).intersection(clip).difference(corridor).simplify(0.1)
 foot = unary_union(foot_parts).intersection(clip).difference(corridor).difference(ctx.buffer(0.01)).simplify(0.1)
+
+# front yards: the strip between the back of the pavement and the street-facing houses (paved, walled)
+near_b = unary_union([Polygon(bd['p']).buffer(3.2) for bd in buildings if bd['d'] < PAVE_W + 4.5 and bd['t'] in ('house', 'apartments', 'retail')])
+yard_zone = road.buffer(PAVE_W + YARD_MAX + 1.4).difference(road.buffer(PAVE_W - 0.02)).intersection(near_b)
+yards = yard_zone.difference(all_b).difference(yard_ctx.buffer(0.2)).intersection(clip).simplify(0.08)
 
 cushions = []
 for n in net_nodes:
@@ -163,7 +221,7 @@ out = dict(
               attribution='Map data (c) OpenStreetMap contributors, ODbL 1.0'),
     nodes={k: r2(xy(v)) for k, v in JUNCTIONS.items()},
     edges=edge_out, road=polys(road), pave=polys(pave), buildings=buildings,
-    context=polys(ctx), footways=polys(foot), areas=areas, walls=walls,
+    context=polys(ctx), footways=polys(foot), yards=polys(yards), areas=areas, walls=walls,
     accesses=accesses, cushions=cushions,
 )
 js = ('// GENERATED by tools/build_map.py from OpenStreetMap data. Do not edit by hand.\n'

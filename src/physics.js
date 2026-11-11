@@ -6,6 +6,8 @@ import { clamp, approach, wrapAngle } from './util.js';
 import { CAR_TYPES } from './cartypes.js';
 
 let nextId = 1;
+const GEAR_PAUSE = 0.32;    // s: pause at a standstill before brake turns into reverse (and vice versa)
+const LAT_G = 9.5;          // m/s^2: the most cornering grip any car has (arcade, not a simulator)
 
 export class Car {
   constructor(type, opts = {}) {
@@ -27,10 +29,13 @@ export class Car {
     this.braking = false;
     this.bump = 0;            // visual jolt (speed cushions, impacts)
     this.stalled = 0;         // seconds of engine cut-out remaining
+    this.yawRate = 0;
+    this.latch = 0; this.latchT = 0;
+    this.scrape = 0;          // > 0 while grinding along a kerb (for sparks / sound)
     Object.assign(this, opts);
   }
 
-  place(x, z, h) { this.x = x; this.z = z; this.h = h; this.v = 0; this.steer = 0; }
+  place(x, z, h) { this.x = x; this.z = z; this.h = h; this.v = 0; this.steer = 0; this.yawRate = 0; }
 
   get fx() { return Math.cos(this.h); }
   get fz() { return Math.sin(this.h); }
@@ -59,32 +64,51 @@ export class Car {
     let throttle = clamp(c.throttle, -1, 1);
     if (this.stalled > 0) { this.stalled -= dt; throttle = 0; }
 
-    // steering: slower and shallower at speed
-    let speedK = 1 / (1 + Math.pow(Math.abs(this.v) / 11, 2) * 1.6);
-    if (this.aiSteer) speedK = Math.max(speedK, 0.88);
-    const target = clamp(c.steer, -1, 1) * sp.maxSteer * speedK;
-    this.steer = approach(this.steer, target, 2.6 * dt);
+    // Steering, tuned for digital (keyboard / touch) input:
+    //  - full lock at parking speeds, then the lock is limited so cornering grip tops out around LAT_G
+    //    (arcade grip: you can't spin it, and a held key at speed gives a firm but sane turn)
+    //  - the wheel winds on quickly when slow (snappy parking) but progressively at speed, so a tap is a nudge
+    //  - it self-centres faster than it winds on, so letting go of the key straightens you up
+    const av = Math.abs(this.v);
+    let lim = av < 3 ? 1 : Math.min(1, Math.atan(LAT_G * sp.wheelbase / (av * av)) / sp.maxSteer);
+    if (this.aiSteer) lim = Math.max(lim, 0.88 / (1 + Math.pow(av / 11, 2) * 1.6));
+    const input = clamp(c.steer, -1, 1);
+    const target = input * sp.maxSteer * lim;
+    const wind = sp.maxSteer * (av < 2 ? 7 : clamp(7 - (av - 2) * 0.45, 2.6, 7));   // rad/s of wheel angle
+    const centring = Math.abs(target) < Math.abs(this.steer) || target * this.steer < 0;
+    this.steer = approach(this.steer, target, (centring ? Math.max(wind * 1.5, sp.maxSteer * 6) : wind * Math.max(lim, 0.3)) * dt);
 
     // longitudinal
     this.braking = false;
     if (c.handbrake) {
       this.v = approach(this.v, 0, 16 * dt); this.braking = true;
     } else if (throttle > 0) {
-      if (this.v < -0.2) { this.v = approach(this.v, 0, 11 * dt * throttle); this.braking = true; }
-      else this.v += this.accel * throttle * Math.max(0, 1 - Math.pow(this.v / this.maxSpeed, 2)) * dt;
+      // Brake-then-reverse on one key: after braking to a stop the car holds still for a moment before it
+      // changes direction, so a keyboard player can stop dead without lurching the other way.
+      if (this.v < -0.2) { this.v = approach(this.v, 0, 13 * dt * throttle); this.braking = true; this.latch = 1; this.latchT = 0; }
+      else if (this.latch === 1 && (this.latchT += dt) < GEAR_PAUSE) { this.v = approach(this.v, 0, 13 * dt); this.braking = true; }
+      else { this.latch = 0; this.v += this.accel * throttle * Math.max(0, 1 - Math.pow(this.v / this.maxSpeed, 2)) * dt; }
     } else if (throttle < 0) {
-      if (this.v > 0.2) { this.v = approach(this.v, 0, 11 * dt * -throttle); this.braking = true; }
-      else this.v += this.accel * 0.75 * throttle * Math.max(0, 1 - Math.pow(this.v / 5.5, 2)) * dt;
+      if (this.v > 0.2) { this.v = approach(this.v, 0, 13 * dt * -throttle); this.braking = true; this.latch = -1; this.latchT = 0; }
+      else if (this.latch === -1 && (this.latchT += dt) < GEAR_PAUSE) { this.v = approach(this.v, 0, 13 * dt); this.braking = true; }
+      else { this.latch = 0; this.v += this.accel * 0.9 * throttle * Math.max(0, 1 - Math.pow(this.v / 6.2, 2)) * dt; }
     } else {
-      this.v = approach(this.v, 0, (1.4 + Math.abs(this.v) * 0.22) * dt);
+      this.latch = 0;
+      // coasting: engine braking, and a crisp final stop so parking doesn't end in a long creep
+      this.v = approach(this.v, 0, (av < 0.8 ? 2.6 : 1.4 + av * 0.22) * dt);
     }
     this.v -= this.v * 0.05 * dt;
 
-    // kinematic bicycle, pivoting about the rear axle
+    // kinematic bicycle, pivoting about the rear axle. The body follows the wheels with a short lag at speed,
+    // which gives the car a little weight without making it slide.
     const wb = sp.wheelbase, half = wb / 2;
     let rx = this.x - Math.cos(this.h) * half, rz = this.z - Math.sin(this.h) * half;
     rx += Math.cos(this.h) * this.v * dt; rz += Math.sin(this.h) * this.v * dt;
-    this.h = wrapAngle(this.h + (this.v * Math.tan(this.steer) / wb) * dt);
+    let yawRate = this.v * Math.tan(this.steer) / wb;
+    if (c.handbrake && av > 4 && Math.abs(this.steer) > 0.05 && !this.aiSteer) yawRate *= 1.45;   // handbrake turn
+    const tau = clamp(av * 0.009, 0, 0.11);
+    this.yawRate = tau > 0 ? this.yawRate + (yawRate - this.yawRate) * Math.min(1, dt / tau) : yawRate;
+    this.h = wrapAngle(this.h + this.yawRate * dt);
     this.x = rx + Math.cos(this.h) * half; this.z = rz + Math.sin(this.h) * half;
     this.wheelSpin += this.v * dt / 0.31;
     this.bump = approach(this.bump, 0, dt * 2.5);
@@ -134,6 +158,19 @@ export function boxGap(a, b) {
   return d;
 }
 
+/**
+ * Rotate car c so it stops pointing into a surface with normal n (pointing back at the car), a little per step,
+ * only while it is actually moving into it. Keeps scrapes along kerbs and parked cars smooth and predictable.
+ */
+function alignTo(c, nx, nz, share, dt) {
+  const fn = c.fx * nx + c.fz * nz;            // forward . normal
+  if (c.v * fn >= 0) return;                   // moving away from it already
+  const rn = -c.fz * nx + c.fx * nz;           // right . normal: d(fn)/dh
+  const dh = -fn / (Math.abs(rn) > 0.2 ? rn : (rn < 0 ? -0.2 : 0.2));
+  const maxR = (0.5 + Math.abs(c.v) * 0.3) * dt * share;
+  c.h = wrapAngle(c.h + clamp(dh, -maxR, maxR));
+}
+
 // ---------------------------------------------------------------- world
 export class PhysicsWorld {
   constructor(track) {
@@ -143,6 +180,7 @@ export class PhysicsWorld {
     this.cell = 10;
     this.hash = new Map();
     this.onImpact = null;    // (car, other|null, speed, kind) kind: 'kerb' | 'car' | 'static'
+    this.dt = 1 / 60;
   }
   key(x, z) { return Math.floor(x / this.cell) * 4096 + Math.floor(z / this.cell); }
   addStatic(box) {
@@ -169,7 +207,8 @@ export class PhysicsWorld {
   }
 
   step(dt) {
-    for (const c of this.cars) c.step(dt);
+    this.dt = dt;
+    for (const c of this.cars) { c.scrape = Math.max(0, c.scrape - dt * 4); c.step(dt); }
     const tmp = [];
     for (const c of this.cars) {
       if (c.kinematic || c.isStatic || c.ghost) continue;
@@ -212,14 +251,19 @@ export class PhysicsWorld {
     a.x += o.nx * o.depth * share; a.z += o.nz * o.depth * share;
     if (both) { b.x -= o.nx * o.depth * (1 - share); b.z -= o.nz * o.depth * (1 - share); }
     if (rel < 0) {
-      const e = 0.25;
       const an = a.fx * o.nx + a.fz * o.nz;
+      const speed = -rel;
+      // Head-on knocks bounce a little; glancing contact scrapes along instead of ping-ponging.
+      const glancing = Math.abs(an) < 0.75;
+      const e = glancing ? 0 : speed > 2.5 ? 0.25 : 0.1;
       a.v -= (1 + e) * rel * share * an;
       if (both) { const bn = b.fx * o.nx + b.fz * o.nz; b.v += (1 + e) * rel * (1 - share) * bn; }
-      // glancing blows twist the car a little
-      const twist = clamp(-rel * 0.012, 0, 0.05) * Math.sign(a.fx * o.nz - a.fz * o.nx || 1) * (Math.abs(an) < 0.95 ? 1 : 0);
-      a.h = wrapAngle(a.h + twist * share);
-      const speed = -rel;
+      if (glancing) {
+        // turn the body to lie along whatever we are rubbing against, and lose a bit of speed to friction
+        alignTo(a, o.nx, o.nz, share, this.dt);
+        a.v = approach(a.v, 0, 2.5 * this.dt * share);
+        a.scrape = Math.max(a.scrape, clamp(Math.abs(a.v) / 6 + 0.2, 0, 1));
+      }
       if (speed > 0.6 && this.onImpact) this.onImpact(a, b, speed, b.isStatic ? 'static' : 'car');
       if (speed > 0.6) { a.bump = Math.min(1, speed / 6); if (both) b.bump = Math.min(1, speed / 6); }
     }
@@ -246,13 +290,18 @@ export class PhysicsWorld {
     const vn = c.v * fn;
     if (vn < 0) {
       const impact = -vn;
-      c.v -= (1 + 0.15) * c.v * fn * fn;
+      // soak up the motion into the kerb: a touch just stops you drifting further in, a real hit bounces a bit
+      const e = impact > 3 ? 0.12 : 0;
+      c.v -= (1 + e) * c.v * fn * fn;
+      if (!quiet) {
+        c.v = approach(c.v, 0, 3.2 * this.dt);     // tyre scrubbing on the kerb
+        c.scrape = Math.max(c.scrape, clamp(Math.abs(c.v) / 6 + 0.2, 0, 1));
+        // the kerb steers the car parallel to itself rather than flinging it round
+        alignTo(c, g.x, g.z, 1, this.dt);
+      }
       if (!quiet && impact > 1.1 && this.onImpact) this.onImpact(c, null, impact, 'kerb');
-      if (impact > 1.1) c.bump = Math.min(1, impact / 5);
+      if (impact > 1.6) c.bump = Math.min(1, impact / 5);
     }
-    // rotate so the body lies along the kerb instead of grinding into it
-    const rx = wp.x - c.x, rz = wp.z - c.z;
-    c.h = wrapAngle(c.h + clamp((rx * g.z - rz * g.x) * pen * 0.12, -0.04, 0.04));
   }
 
   /** Smallest gap from car to anything solid nearby (for parking sensors). */
@@ -293,9 +342,9 @@ export function evaluatePark(car, bay) {
   const inBay = Math.abs(ctr.u) < bay.len / 2 && Math.abs(ctr.w) < bay.wid / 2 + 0.5;
   let issue = null;
   if (!inBay) issue = 'out';
-  else if (dh > 0.36) issue = 'angle';
-  else if (overhang > 0.75) issue = 'overhang';
-  else if (overEnd > 0.35) issue = 'ends';
+  else if (dh > 0.4) issue = 'angle';           // ~23 degrees: forgiving for keyboard and touch players...
+  else if (overhang > 0.92) issue = 'overhang';  // ...the rating below is where precision pays
+  else if (overEnd > 0.5) issue = 'ends';
   const valid = inBay && !issue;
   const qAngle = clamp(1 - dh / 0.24, 0, 1);
   const qKerb = clamp(1 - Math.max(0, kerbGap - 0.3) / 0.75, 0, 1) * clamp(1 - overhang / 0.6, 0, 1);

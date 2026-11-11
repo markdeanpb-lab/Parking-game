@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#14213d">
+<meta name="theme-color" content="#0b1530">
 <title>Parking Panic: St Albans Edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Overpass:wght@600;700;800;900&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,26 +15,40 @@
 
 <!-- ======================= HUD ======================= -->
 <div id="hud" class="hidden">
+  <div id="vignette"></div>
+  <div id="target" class="hidden" aria-hidden="true">
+    <div class="tg-arrow"><svg viewBox="0 0 40 40"><path d="M20 3 L36 34 L20 26 L4 34 Z"/></svg></div>
+    <div class="tg-pin"><span class="tg-p">P</span></div>
+    <div class="tg-label"><b>YOUR SPACE</b><span id="tg-dist">0 m</span></div>
+  </div>
   <div id="hud-left">
-    <div id="round-box"><b id="round-label">ROUND 1</b><span id="counts"></span></div>
+    <div id="round-box">
+      <div class="rb-top"><span class="live">LIVE</span><b id="round-label">ROUND 1</b></div>
+      <div id="counts"></div>
+    </div>
     <div id="rivals"></div>
+    <div id="hud-buttons">
+      <button id="btn-cam" title="Camera (C)" aria-label="Switch camera"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg></button>
+      <button id="btn-mute" title="Mute (M)" aria-label="Mute"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="w" d="M16 9c1.5 1.5 1.5 4.5 0 6M18.5 6.5c3 3 3 8 0 11"/><path class="x" d="M16 9l5 6M21 9l-5 6"/></svg></button>
+      <button id="btn-pause" title="Pause (P)" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button>
+    </div>
   </div>
   <div id="phase-banner">
     <div id="phase-text"></div>
-    <div id="countdown"></div>
+    <div id="countdown" aria-live="off"><span id="cd-num"></span></div>
     <div id="loiter"><span>KEEP MOVING!</span><div><i></i></div></div>
   </div>
   <div id="hud-right">
-    <div id="score-box"><b id="score">0</b><span>POINTS</span></div>
-    <canvas id="minimap" width="440" height="400"></canvas>
+    <div id="score-box"><b id="score">0</b><span>PTS</span></div>
+    <div id="mm-wrap"><canvas id="minimap" width="440" height="400"></canvas><span class="mm-n">N</span></div>
   </div>
   <div id="dj-panel">
-    <div id="dj-head"><span id="onair">ON AIR</span><span id="dj-name"></span><span id="eq"><i></i><i></i><i></i><i></i><i></i></span></div>
+    <div id="dj-head"><span id="onair"><i></i>ON AIR</span><span id="dj-name"></span><span id="eq"><i></i><i></i><i></i><i></i><i></i></span></div>
     <div id="dj-text"></div>
   </div>
-  <div id="speedo"><div id="street"></div><b id="mph">0</b><small>mph</small><span id="gear">D</span></div>
+  <div id="speedo"><div id="street"></div><div class="sp-row"><b id="mph">0</b><small>mph</small><span id="gear">D</span></div></div>
   <div id="guide" class="hidden">
-    <div id="guide-title">PARKING ASSIST</div>
+    <div id="guide-title"><span>P</span>PARKING ASSIST</div>
     <div class="g-row" id="g-in"><i></i><span>In the bay</span></div>
     <div class="g-row" id="g-angle"><i></i><span>Straight</span></div>
     <div class="g-row" id="g-kerb"><i></i><span>Close to kerb</span></div>
@@ -39,89 +56,122 @@
     <div id="guide-msg"></div>
   </div>
   <div id="toasts"></div>
-  <div id="flash"></div>
-  <div id="replay-badge" class="hidden">● REPLAY <small>press any key to skip</small></div>
-  <div id="hud-buttons">
-    <button id="btn-cam" title="Camera (C)">📷</button>
-    <button id="btn-mute" title="Mute (M)">🔊</button>
-    <button id="btn-pause" title="Pause (P)">⏸</button>
+  <div id="stopfx" aria-hidden="true">
+    <div class="sf-white"></div>
+    <div class="sf-tape t1"><span></span></div>
+    <div class="sf-tape t2"><span></span></div>
   </div>
+  <div id="flash"></div>
+  <div id="replay-badge" class="hidden"><span class="rec"></span>ACTION REPLAY <small>press any key to skip</small></div>
 </div>
 
 <!-- ======================= touch controls ======================= -->
 <div id="touch" class="hidden">
-  <div id="t-steer"><button data-k="left">◀</button><button data-k="right">▶</button></div>
-  <div id="t-pedals"><button data-k="brake" class="brake">BRAKE<small>REVERSE</small></button><button data-k="gas" class="gas">GO</button></div>
-  <button data-k="horn" id="t-horn">📯</button>
+  <div id="t-steer"><button data-k="left" aria-label="Steer left"><svg viewBox="0 0 40 40"><path d="M26 6 L10 20 L26 34"/></svg></button><button data-k="right" aria-label="Steer right"><svg viewBox="0 0 40 40"><path d="M14 6 L30 20 L14 34"/></svg></button></div>
+  <div id="t-pedals"><button data-k="brake" class="brake">BRAKE<small>/ REVERSE</small></button><button data-k="gas" class="gas">GO</button></div>
+  <button data-k="horn" id="t-horn" aria-label="Horn">HONK</button>
+</div>
+
+<!-- ======================= overlays (non-blocking) ======================= -->
+<div id="screen-intro" class="overlay hidden">
+  <div class="bumper">
+    <div class="bp-tag"><span class="live">LIVE</span><span id="intro-mode"></span></div>
+    <div class="bp-main"><div id="intro-round"></div><div id="intro-of"></div></div>
+    <div id="intro-counts"></div>
+    <div id="intro-out"></div>
+    <div id="intro-note"></div>
+    <div class="bp-stripe"></div>
+  </div>
+</div>
+
+<div id="screen-final" class="overlay hidden">
+  <div class="fn-sting"><div class="fn-bars"></div><div class="fn-word">THE <b>FINAL</b></div><div class="fn-sub">TWO DRIVERS · ONE SPACE</div></div>
+  <div class="tape">
+    <div class="tape-head"><span class="live">LIVE</span>TALE OF THE TAPE</div>
+    <div class="tape-body" id="tape-body"></div>
+    <div class="tape-foot">ONE SPACE. TWO DRIVERS. NO PRESSURE.</div>
+  </div>
 </div>
 
 <!-- ======================= screens ======================= -->
-<div id="screen-loading" class="screen"><div class="panel center"><div class="logo small"><span>PARKING</span><span>PANIC</span></div><p id="loading-text">Building St Albans…</p></div></div>
+<div id="screen-loading" class="screen"><div class="load-card"><div class="logo small"><span>PARKING</span><span>PANIC</span></div><div class="load-bar"><i></i></div><p id="loading-text">Building St Albans…</p></div></div>
 
 <div id="screen-title" class="screen hidden">
   <div class="title-wrap">
-    <div class="station">📻 <b>SNORBENS FM 104.7</b> PRESENTS</div>
-    <div class="logo"><span>PARKING</span><span>PANIC</span></div>
-    <div class="plate">ST ALBANS EDITION</div>
-    <p class="tagline">Musical chairs. With cars. On Bernard Street, Church Street, Grange Street &amp; Dalton Street.</p>
-    <div class="modes">
-      <button class="mode primary" data-mode="classic"><b>MUSICAL CHAIRS</b><small>7 cars · 6 spaces · 1 Golden Permit</small></button>
-      <button class="mode" data-mode="rush"><b>RUSH HOUR</b><small>More traffic, shorter countdowns</small></button>
-      <button class="mode" data-mode="champ"><b>CHAMPIONSHIP</b><small>Three heats, getting nastier</small></button>
-      <button class="mode" data-mode="free"><b>FREE DRIVE</b><small>Explore &amp; practise parking</small></button>
+    <div class="station"><span class="onair-lamp"><i></i>ON AIR</span><b>SNORBENS FM 104.7</b><span class="presents">PRESENTS</span></div>
+    <div class="keyart">
+      <div class="ka-sign" aria-hidden="true">P</div>
+      <h1 class="logo"><span>PARKING</span><span>PANIC</span></h1>
+      <div class="plate"><span class="plate-uk">UK</span>ST ALBANS EDITION</div>
     </div>
-    <div class="row">
+    <p class="tagline">Musical chairs. With cars. On Bernard St, Church St, Grange St &amp; Dalton St.</p>
+    <div class="modes">
+      <button class="mode primary" data-mode="classic">
+        <span class="m-ico"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="17.5" cy="16" r="2.6"/></svg></span>
+        <b>MUSICAL CHAIRS</b><small>7 cars · 6 spaces · 1 Golden Permit</small><em>PLAY</em></button>
+      <button class="mode" data-mode="rush">
+        <span class="m-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 8v5l3 2M9 2h6"/></svg></span>
+        <b>RUSH HOUR</b><small>More traffic, shorter countdowns</small></button>
+      <button class="mode" data-mode="champ">
+        <span class="m-ico"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8M9 18h6"/></svg></span>
+        <b>CHAMPIONSHIP</b><small>Three heats, getting nastier</small></button>
+      <button class="mode" data-mode="free">
+        <span class="m-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.4"/><path d="M3.5 10.5h6M14.5 10.5h6M12 14.4V21"/></svg></span>
+        <b>FREE DRIVE</b><small>Explore &amp; practise parking</small></button>
+    </div>
+    <div class="row settings">
       <button id="btn-how" class="ghost">HOW TO PLAY</button>
-      <button id="btn-voice" class="ghost">DJ VOICE: ON</button>
-      <button id="btn-music" class="ghost">MUSIC: ON</button>
+      <button id="btn-voice" class="ghost toggle" aria-pressed="true">DJ VOICE: ON</button>
+      <button id="btn-music" class="ghost toggle" aria-pressed="true">MUSIC: ON</button>
     </div>
     <div id="highscores"></div>
     <p class="credits">Street layout &amp; building footprints © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Road widths, parking bays and residents are stylised. Not affiliated with any real radio station, council or traffic warden.</p>
   </div>
+  <div class="hazard-band" aria-hidden="true"></div>
 </div>
 
 <div id="screen-tutorial" class="screen hidden">
-  <div class="panel wide">
-    <h2 id="tut-title"></h2>
+  <div class="panel wide tut">
+    <div class="tut-head"><span id="tut-step"></span><h2 id="tut-title"></h2></div>
     <div id="tut-body"></div>
-    <div class="row between"><button id="tut-prev" class="ghost">BACK</button><span id="tut-dots"></span><button id="tut-next" class="primary">NEXT</button></div>
-  </div>
-</div>
-
-<div id="screen-intro" class="overlay hidden">
-  <div class="intro-card">
-    <div id="intro-mode"></div>
-    <div id="intro-round"></div>
-    <div id="intro-counts"></div>
-    <div id="intro-note"></div>
+    <div class="row between"><button id="tut-prev" class="ghost dark">BACK</button><span id="tut-dots"></span><button id="tut-next" class="primary">NEXT</button></div>
   </div>
 </div>
 
 <div id="screen-results" class="screen hidden">
-  <div class="panel wide">
+  <div class="board">
+    <div class="board-head"><span class="live">LIVE</span><span id="res-round">ROUND 1</span><span class="bh-station">SNORBENS FM 104.7 · THE LEAGUE TABLE</span></div>
     <h2 id="res-title"></h2>
     <p id="res-sub"></p>
-    <table id="res-table"></table>
+    <div id="res-table" class="league"></div>
     <div class="row center"><button id="res-continue" class="primary">CONTINUE <small>(Enter)</small></button></div>
   </div>
 </div>
 
 <div id="screen-gameover" class="screen hidden">
-  <div class="panel center">
-    <div class="stamp">ELIMINATED</div>
-    <p id="go-quote"></p>
-    <div id="go-stats" class="stats"></div>
-    <div class="row center"><button id="go-retry" class="primary">TRY AGAIN</button><button id="go-menu" class="ghost">MENU</button></div>
+  <div class="pcn">
+    <div class="pcn-head"><div><b>PENALTY CHARGE NOTICE</b><span>CITY &amp; DISTRICT OF ST ALBANS · PARKING PANIC</span></div><span id="go-no" class="pcn-no"></span></div>
+    <div class="pcn-body">
+      <div class="pcn-row"><span>CONTRAVENTION</span><b id="go-why">Failed to find a space when the music stopped</b></div>
+      <div class="pcn-row"><span>LOCATION</span><b id="go-where">St Albans</b></div>
+      <div class="stamp">ELIMINATED</div>
+      <p id="go-quote"></p>
+      <div id="go-stats" class="stats"></div>
+    </div>
+    <div class="row center"><button id="go-retry" class="primary">TRY AGAIN</button><button id="go-menu" class="ghost dark">MENU</button></div>
   </div>
 </div>
 
 <div id="screen-victory" class="screen hidden">
-  <div class="panel center">
+  <div id="vic-rays" aria-hidden="true"></div>
+  <div id="vic-confetti" aria-hidden="true"></div>
+  <div class="vic-wrap">
+    <div class="vic-kicker">★ PARKING PANIC ★ WINNER ★</div>
     <div id="permit">
       <div class="permit-top">CITY &amp; DISTRICT OF ST ALBANS</div>
       <div class="permit-title">GOLDEN PARKING PERMIT</div>
-      <div class="permit-p">P</div>
-      <div class="permit-lines"><span>HOLDER: <b>YOU</b></span><span>ZONE: <b>ALL OF THEM</b></span><span>VALID: <b>FOREVER</b></span></div>
+      <div class="permit-mid"><div class="permit-p">P</div><div class="permit-lines"><span>HOLDER <b>YOU</b></span><span>ZONE <b>ALL OF THEM</b></span><span>VALID <b>FOREVER</b></span></div></div>
+      <div class="permit-shine"></div>
     </div>
     <h2 id="vic-title">CHAMPION OF THE KERB!</h2>
     <div id="vic-stats" class="stats"></div>
@@ -130,8 +180,8 @@
 </div>
 
 <div id="screen-pause" class="screen hidden">
-  <div class="panel center"><h2>PAUSED</h2><p>The DJ is filling with a traffic report.</p>
-    <div class="row center"><button id="pause-resume" class="primary">RESUME</button><button id="pause-menu" class="ghost">QUIT TO MENU</button></div>
+  <div class="panel center pause"><div class="pause-sign"><span></span><span></span></div><h2>PAUSED</h2><p>The DJ is filling with a traffic report. The A1081 is, as ever, a car park.</p>
+    <div class="row center"><button id="pause-resume" class="primary">RESUME</button><button id="pause-menu" class="ghost dark">QUIT TO MENU</button></div>
   </div>
 </div>
 

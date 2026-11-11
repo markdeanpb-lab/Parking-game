@@ -9,6 +9,7 @@ export const CAR_TYPES = {
   suv:    { shape: 'suv',    len: 4.6,  wid: 1.9,  hgt: 1.7,  wheelbase: 2.8, mass: 1.7, maxSpeed: 13.5, accel: 4.8, maxSteer: 0.6 },
   bigsuv: { shape: 'suv',    len: 5.05, wid: 2.02, hgt: 1.86, wheelbase: 3.0, mass: 2.2, maxSpeed: 13, accel: 4.4, maxSteer: 0.58 },
   van:    { shape: 'van',    len: 4.7,  wid: 1.92, hgt: 1.98, wheelbase: 2.9, mass: 1.8, maxSpeed: 14, accel: 5.0, maxSteer: 0.6 },
+  camper: { shape: 'camper', len: 4.5,  wid: 1.74, hgt: 1.98, wheelbase: 2.5, mass: 1.4, maxSpeed: 11, accel: 3.4, maxSteer: 0.6 },
   lorry:  { shape: 'lorry',  len: 7.6,  wid: 2.4,  hgt: 3.1,  wheelbase: 4.2, mass: 9, maxSpeed: 6, accel: 1.5, maxSteer: 0.6 },
 };
 
@@ -18,7 +19,6 @@ export const PARKED_COLOURS = [
   0x1f3a63, 0x7a1f24, 0x2f5d48, 0x5a6b7d, 0xc7b79a, 0x3d4a57, 0x9c2f2f, 0x30475e,
 ];
 
-// Mix of what you actually find parked on a terraced street.
-export const PARKED_MIX = [
-  'hatch', 'hatch', 'hatch', 'mini', 'mini', 'saloon', 'saloon', 'estate', 'estate', 'suv', 'suv', 'suv', 'bigsuv', 'van',
-];
+// Mix of what you actually find parked on a terraced street (listed three times so the odd classic camper stays rare).
+const EVERYDAY = ['hatch', 'hatch', 'hatch', 'mini', 'mini', 'saloon', 'saloon', 'estate', 'estate', 'suv', 'suv', 'suv', 'bigsuv', 'van'];
+export const PARKED_MIX = [...EVERYDAY, ...EVERYDAY, ...EVERYDAY, 'camper'];

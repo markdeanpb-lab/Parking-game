@@ -46,6 +46,12 @@ export const PERSONAS = {
     key: 'lorry', name: 'Bin Lorry', title: 'The Bin Lorry', car: 'lorry', carName: 'bin lorry', colour: 0x2e7d4a,
     cruise: 3.0, seek: 3.0, reaction: [9, 9], manSpeed: 1, skill: 0.5, shuffles: [0, 0], aggression: 0, gap: 3.5, pushy: false, indicates: true, civilian: true, lorry: true,
   },
+  // balance testing: roughly what a typical first-time keyboard player manages (slower to react, slower
+  // through the streets, takes a couple of goes to get into a space)
+  human: {
+    key: 'human', name: 'You', title: 'Typical Human', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
+    cruise: 7.6, seek: 9.2, reaction: [0.6, 1.3], manSpeed: 1.25, skill: 0.6, shuffles: [0, 2], aggression: 0.6, gap: 2.0, pushy: false, indicates: true, greedy: true,
+  },
   // used when the player car is on autopilot (tests / attract mode)
   auto: {
     key: 'auto', name: 'You', title: 'Autopilot', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
@@ -135,6 +141,7 @@ export class Driver {
     this.stallT = game.rng.range(6, 14);
     this.lorryT = 3; this.lorryStop = 0;
     this.honkCooldown = 0;
+    this.stuckT = 0; this.unstickT = 0; this.unstickSteer = 0; this.stuckCount = 0;
     this.speedScale = 1;
     this.fooled = null;       // driveway the gullible learner is heading for
   }
@@ -318,7 +325,7 @@ export class Driver {
         if (!this.target) { this.drive(dt, p.seek * 0.8); return; }
         let remain = this.stopR - this.r;
         if (this.target.state === 'blocked') remain -= START_AHEAD + this.target.slotLen / 2 + 2 + car.len / 2;   // wait behind the van, not in its way
-        if (remain < 14 && !this.target.claimedBy) this.target.claimedBy = this;
+        if (remain < 14 && !this.target.claimedBy) { this.target.claimedBy = this; g.noteClaim(this, this.target); }
         if (remain < 30) this.indicator = p.indicates ? this.target.side : 0;
         let speed = Math.min(p.seek * this.speedScale, Math.sqrt(Math.max(0, 2 * 2.6 * (remain - 0.15))) + 0.25);
         if (remain < -1.5 && this.target.state === 'open') { this.blacklist.set(this.target.id, g.time + 20); this.retarget(); return; }   // overshot it
@@ -431,14 +438,29 @@ export class Driver {
     const dv = speed - car.v;
     if (speed < 0.15 && Math.abs(car.v) < 0.6) { car.ctrl.throttle = 0; car.ctrl.handbrake = true; }
     else car.ctrl.throttle = clamp(dv * (dv < 0 ? 1.2 : 0.9), -1, 1);
-    if (car.v < -0.05 && speed >= 0) car.ctrl.throttle = 0.6;
+    if (car.v < -0.05 && speed >= 0 && this.unstickT <= 0) car.ctrl.throttle = 0.6;
+
+    // Hung up on something we can't see (a resident's bumper, a kerb corner): back off and try again.
+    // Without this a car pressed nose-first against a static box sits there with its foot down forever.
+    if (this.unstickT > 0) {
+      this.unstickT -= dt;
+      car.ctrl.throttle = this.unstickT > 0.25 ? -0.65 : 0; car.ctrl.handbrake = false;
+      car.ctrl.steer = this.unstickSteer;
+      if (this.unstickT <= 0) this.stuckT = 0;
+    } else if (car.ctrl.throttle > 0.3 && Math.abs(car.v) < 0.25 && speed > 0.8 && car.stalled <= 0) {
+      this.stuckT = (this.stuckT || 0) + dt;
+      if (this.stuckT > 0.8) {
+        this.unstickT = 1.1; this.unstickSteer = -Math.sign(car.ctrl.steer || 1) * 0.9;
+        this.stuckCount = (this.stuckCount || 0) + 1;
+      }
+    } else this.stuckT = Math.max(0, (this.stuckT || 0) - dt);
   }
 
   // ---- parking ----------------------------------------------------------
   beginManoeuvre() {
     const g = this.game, p = this.p, bay = this.target;
     if (!bay || bay.state !== 'open' || bay.occupant || (bay.claimedBy && bay.claimedBy !== this)) { this.retarget(); return; }
-    bay.claimedBy = this;
+    if (bay.claimedBy !== this) { bay.claimedBy = this; g.noteClaim(this, bay); }
     const bad = 1 - p.skill;
     const err = {
       angle: g.rng.range(-1, 1) * bad * 0.3,
@@ -466,8 +488,12 @@ export class Driver {
     // would this move hit a moving car?
     const probe = { x: pose.x, z: pose.z, h: pose.h, len: car.len + 0.1, wid: car.wid + 0.1 };
     let hit = null;
+    // Nearly in: if somebody has pulled up alongside and is now in the way of our last bit of shuffling, nudge on
+    // in anyway (kinematic cars push dynamic ones aside) rather than both sitting there for ever.
+    const squeeze = !out && this.blockT > 1.2 && this.pi / this.poses.length >= 0.5;
     for (const o of g.world.cars) {
       if (o === car || o.ghost) continue;
+      if (squeeze && !o.kinematic && !o.isStatic && !o.parked) continue;
       if (obbOverlap(probe, o)) { hit = o; break; }
     }
     if (hit) {

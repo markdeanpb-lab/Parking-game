@@ -70,6 +70,7 @@ const ui = new UI(track, {
   onKey(k) { if (k === 'cam') toggleCam(); if (k === 'mute') toggleMute(); if (k === 'horn') audio.horn(); },
 });
 const dj = new DJ((text) => ui.subtitle(text));
+dj.sfx = audio;
 function applySettings() {
   dj.voiceOn = settings.voice && !settings.muted; if (!dj.voiceOn) dj.interrupt();
   audio.setMusicOn(settings.music); audio.setMuted(settings.muted);
@@ -328,14 +329,14 @@ game.on((type, d) => {
     case 'carAdded': addMesh(d.car, d.persona, game.drivers.find((x) => x.car === d.car) || null, false); break;
     case 'carRemoved': { const m = meshes.get(d.car); if (m) puff(d.car.x, d.car.z, 14); removeMesh(d.car); break; }
     case 'roundIntro':
-      ui.hideScreens(); ui.roundIntro(d); audio.jingle(); history.length = 0;
+      ui.hideScreens(); ui.roundIntro(d); audio.jingle(d); history.length = 0;
       cam.h = pc.h; cam.pos.set(pc.x - Math.cos(pc.h) * 14, 9, pc.z - Math.sin(pc.h) * 14);
       break;
     case 'freeStart': cam.h = pc.h; break;
-    case 'musicStart': audio.startMusic(game.round); ui.flash('GO!', 'KEEP MOVING · SCOUT THE CONES', 'green'); break;
+    case 'musicStart': audio.startMusic(game.round, game.final); ui.flash('GO!', 'KEEP MOVING · SCOUT THE CONES', 'green'); break;
     case 'musicStop':
-      audio.stopMusic(true); audio.alarm(); audio.startPanic();
-      ui.flash('PARK!', `${d.bays} SPACE${d.bays === 1 ? '' : 'S'} · ${d.cars} CARS`, 'red');
+      audio.parkMoment(d);
+      ui.musicStop(d);
       cam.shake = 1;
       for (const b of game.bays) if (b.state === 'open') puff(b.x, b.z, 18, [0xff6a13, 0xffffff, 0xffc928]);
       break;
@@ -455,6 +456,7 @@ function tick(now) {
   audio.update(dt, {
     speed: pc.v, throttle: playing && Math.abs(pc.ctrl.throttle) > 0 && pc.stalled <= 0, engine: playing && !pc.ghost && !replay, sensor: replay ? null : sensor,
     urgency: game.phase === 'park' ? clamp(1 - game.timeLeft / 20, 0, 1) : 0,
+    timeLeft: game.phase === 'park' ? game.timeLeft : null, safe: !game.playerComp.alive || !!game.playerComp.parked,
   });
   audio.duck(dj.speaking);
   dj.update(dt);

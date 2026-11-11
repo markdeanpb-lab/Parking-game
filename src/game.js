@@ -2,7 +2,7 @@
 // Pure logic. Talks to the outside world (DJ, audio, UI, renderer) only through emit().
 
 import { makeRng, clamp, wrapAngle } from './util.js';
-import { Car, PhysicsWorld, makeBox, evaluatePark, ratingFor, obbOverlap } from './physics.js';
+import { Car, PhysicsWorld, makeBox, evaluatePark, ratingFor, obbOverlap, boxGap } from './physics.js';
 import { Driver, PERSONAS, RIVAL_ORDER, obstacleAhead } from './ai.js';
 import { CAR_TYPES } from './cartypes.js';
 
@@ -18,6 +18,31 @@ export const CHAMPIONSHIP = [
 ];
 const EVENTS = ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 'perfectSpot'];
 
+/**
+ * The street graph never changes, so the edge sequence (and the length of the edges in between) from one street
+ * to another is computed once and reused. The AI asks for routes constantly (every driver, every bay, every
+ * think tick), and the raw search is a depth-first walk of the graph.
+ */
+function cacheRoutes(track) {
+  if (track.routeCache) return;
+  const raw = track.routeEdgesTo, memo = new Map();
+  track.routeCache = memo;
+  track.routeEdgesTo = (edgeId, s, toEdgeId, toS) => {
+    if (edgeId === toEdgeId && toS >= s) return { edges: [edgeId], dist: toS - s };
+    const k = edgeId + '>' + toEdgeId;
+    let m = memo.get(k);
+    if (m === undefined) {
+      const len = track.edges[edgeId].len;
+      const r = raw(edgeId, len, toEdgeId, 0);
+      m = r ? { edges: r.edges, base: r.dist } : null;
+      memo.set(k, m);
+    }
+    if (!m) return null;
+    return { edges: m.edges, dist: m.base + (track.edges[edgeId].len - s) + toS };
+  };
+  track.pathDistance = (edgeId, s, toEdgeId, toS) => { const r = track.routeEdgesTo(edgeId, s, toEdgeId, toS); return r ? r.dist : Infinity; };
+}
+
 export class Game {
   constructor(track, opts = {}) {
     this.track = track;
@@ -28,6 +53,7 @@ export class Game {
     this.driveways = track.driveways;
     this.autoplay = !!opts.autoplay;       // AI drives the player's car (tests / attract)
     this.autoContinue = !!opts.autoContinue;
+    this.autoPersona = opts.autoPersona || 'auto';   // 'auto' = competent autopilot, 'human' = a typical keyboard player
     this.phase = 'title';
     this.time = 0;
     this.drivers = [];
@@ -47,6 +73,7 @@ export class Game {
     this.player.car.ghost = true;
     this.playerComp = { parked: false };
     this.world.onImpact = (car, other, speed, kind) => this.onImpact(car, other, speed, kind);
+    cacheRoutes(track);
   }
 
   on(fn) { this.listeners.push(fn); }
@@ -69,7 +96,7 @@ export class Game {
     }
     if (box) { this.residentBoxes.set(bay.id, box); this.world.addStatic(box); }
     bay.state = state;
-    if (state === 'closed' || state === 'coned') { bay.occupant = null; bay.claimedBy = null; bay.perfect = false; }
+    if (state === 'closed' || state === 'coned') { bay.occupant = null; bay.claimedBy = null; bay.perfect = false; bay.contestedSaid = false; bay.robbedSaid = false; bay.overshotSaid = false; }
   }
   openBays() { return this.bays.filter((b) => b.state === 'open' || b.state === 'blocked'); }
   freeBays() { return this.bays.filter((b) => (b.state === 'open' || b.state === 'blocked') && !b.occupant); }
@@ -117,6 +144,7 @@ export class Game {
     const PLAYER = 'player';
     const dOf = (who, b) => (who === PLAYER ? pd.get(b) + 6.6 : dist.get(who).get(b));
     const usable = cands.filter((b) => pd.get(b) >= 30);
+    if (n === 1 && rivals.length === 1) return this.pickFinal(rivals[0], usable, pd, dist, l, withFlow);
     const todo = new Set([PLAYER, ...rivals]);
     const taken = new Set();
     const order = [];
@@ -151,7 +179,46 @@ export class Game {
     const myD = pd.get(mine.b);
     const pEta = myD / 8 + 6.5 + queueAhead * 5;
     const fair = bays.length === n && myD <= 220 && makespan < 34;
-    return { bays, makespan, pd: myD, pEta, duel: { bay: mine.b }, fair };
+    const chaser = theirs.length < order.length - 1 ? order.find((o) => o.who !== PLAYER && !theirs.includes(o)) : null;
+    return { bays, makespan, pd: myD, pEta, duel: { bay: mine.b, rival: chaser ? chaser.who.comp : null }, fair };
+  }
+
+  /**
+   * The final: two cars, one space. Best of all is a real race, where the two of them come at the space
+   * down different streets (the loop splits at the bottom of Church Street and joins again where Bernard Street
+   * meets Grange Street) and would get there at about the same time. Failing that, a bumper-to-bumper duel:
+   * the rival right on your tail, so any hesitation or overshoot hands it over.
+   */
+  pickFinal(rival, usable, pd, dist, l, withFlow) {
+    const me = this.player.car;
+    const rl = rival.loc();
+    const humanEta = (d) => d / 9 + 1.2;                 // a decent human: reaction, then ~20 mph average
+    const rivalEta = (d) => d / rival.effSpeed() + (rival.p.reaction[0] + rival.p.reaction[1]) / 2;
+    let race = null, duel = null;
+    for (const b of usable) {
+      const dp = pd.get(b), dr = dist.get(rival).get(b);
+      if (!Number.isFinite(dp) || !Number.isFinite(dr) || dp > 230) continue;
+      const prt = withFlow ? this.track.routeEdgesTo(l.edge.id, l.s, b.edgeId, b.s) : null;
+      const rrt = rival.distTo(b);
+      const sameQueue = !prt || !rrt || l.edge.id === rl.edge.id || prt.edges.includes(rl.edge.id) || rrt.rt.edges.includes(l.edge.id);
+      const gap = dr - (dp + 6.6);                         // + = rival behind
+      if (!sameQueue) {
+        const dt = Math.abs(humanEta(dp + 6.6) - rivalEta(dr));
+        if (dt < 3.2 && (!race || dt < race.dt)) race = { b, dt, dp };
+      } else if (gap > 6 && gap < 32 && dp > 40 && (!duel || Math.abs(gap - 16) < Math.abs(duel.gap - 16))) duel = { b, gap, dp };
+    }
+    const late = this.phaseT > this.stopAt + 14;
+    let pick = race || duel;
+    if (!pick && late) {
+      // nothing ideal: the nearest space that the player is at least first in the queue for
+      let best = null;
+      for (const b of usable) { const dp = pd.get(b), dr = dist.get(rival).get(b); if (Number.isFinite(dp) && dr > dp + 6 && (!best || dp < best.dp)) best = { b, dp }; }
+      pick = best || (usable.length ? { b: usable.reduce((a, c) => (pd.get(a) < pd.get(c) ? a : c)), dp: 0 } : null);
+      if (pick) pick.dp = pd.get(pick.b);
+    }
+    if (!pick) return { bays: [], fair: false, pd: Infinity, makespan: 0, pEta: 0, duel: { bay: null } };
+    const makespan = rival.parkEta(pick.b);
+    return { bays: [pick.b], makespan, pd: pick.dp, pEta: pick.dp / 8 + 6.5, duel: { bay: pick.b, rival: rival.comp }, fair: true, race: race ? 'race' : duel ? 'duel' : 'fallback' };
   }
 
   // ------------------------------------------------------------- setup
@@ -160,6 +227,7 @@ export class Game {
     if (modeKey === 'champ') { this.champIndex = opts.heat ?? 0; this.mode = CHAMPIONSHIP[this.champIndex]; }
     else { this.mode = MODES[modeKey]; this.champIndex = null; }
     if (!opts.keepScore) { this.score = 0; this.streak = 0; }
+    this.leaderKey = null;
     this.round = 0;
     this.eventPool = this.rng.shuffle(EVENTS);
     this.stats = { kerbs: 0, bumps: 0, perfects: 0, wrongWays: 0 };
@@ -171,7 +239,7 @@ export class Game {
     this.playerComp = this.makeComp({ key: 'player', name: 'You', title: 'Our Plucky Contestant', carName: 'yellow hatchback', colour: 0xffc928 }, pc, true);
     this.competitors.push(this.playerComp);
     this.drivers = [];
-    if (this.autoplay) { this.playerComp.driver = new Driver(this, pc, PERSONAS.auto); this.drivers.push(this.playerComp.driver); }
+    if (this.autoplay) { this.playerComp.driver = new Driver(this, pc, PERSONAS[this.autoPersona] || PERSONAS.auto); this.drivers.push(this.playerComp.driver); }
     for (const key of this.mode.rivals) {
       const p = PERSONAS[key];
       const car = new Car(p.car, { persona: key, colour: p.colour });
@@ -233,14 +301,17 @@ export class Game {
 
     for (const c of alive) { c.car.kinematic = false; c.car.ghost = false; c.car.stalled = 0; c.car.parked = false; }
     this.placeCars(alive.map((c) => c.car));
-    for (const d of this.drivers) { d.state = 'idle'; d.target = null; d.stopR = null; d.route = null; d.indicator = 0; d.hazards = false; d.fooled = null; d.blacklist.clear(); }
+    for (const d of this.drivers) {
+      if (d.comp && !d.comp.alive) { d.state = 'out'; d.target = null; d.assigned = null; continue; }   // eliminated drivers stay out
+      d.state = 'idle'; d.target = null; d.stopR = null; d.route = null; d.indicator = 0; d.hazards = false; d.fooled = null; d.blacklist.clear();
+    }
     for (let i = 0; i < this.mode.traffic; i++) this.spawnTraffic('traffic');
 
     this.phase = 'intro'; this.phaseT = 0; this.timeScale = 1;
     this.fakeTip = null; this.eventDone = false; this.eventT = 0; this.van = null; this.lastPick = null;
     this.loiter = 0; this.loiterPenalty = false; this.gearChanges = 0; this.lastGear = 0; this.struggleSaid = 0;
     this.stopHold = 0; this.illegalHold = 0; this.wrongWayT = 0; this.speedT = 0; this.cooldowns = {};
-    this.trail = [];
+    this.trail = []; this.passes = new Map(); this.approachRing = null; this.revT = 0; this.revD = 0; this.revSaid = false;
     this.emit('roundIntro', { round: this.round, total: this.totalRounds, cars: alive.length, bays: nBays, coned: this.bays.filter((b) => b.state === 'coned').length, final: this.final, event: this.event, mode: this.mode });
   }
 
@@ -303,6 +374,7 @@ export class Game {
     this.playerLoc = this.track.locate(pc.x, pc.z);
     if (!this.playerComp.driver) pc.loc = { edgeId: this.playerLoc.edge.id, s: this.playerLoc.s };
     this.checkCushions();
+    if (this.phase === 'music' || this.phase === 'park' || this.phase === 'free') this.watchPlayer(dt);
   }
 
   beginMusic() {
@@ -354,7 +426,7 @@ export class Game {
         this.fairT = 0.35;
         const pick = this.pickRelease(this.nBays);
         const fair = pick && pick.fair;
-        if (pick && (fair || this.phaseT > this.stopAt + 14)) this.stopMusic(pick);
+        if (pick && pick.bays.length && (fair || this.phaseT > this.stopAt + 14)) this.stopMusic(pick);
       }
     }
   }
@@ -375,13 +447,15 @@ export class Game {
     this.phase = 'park'; this.phaseT = 0; this.lastPick = pick;
     for (const b of pick.bays) this.setBayState(b, 'open');
     const d = Number.isFinite(pick.pd) ? pick.pd : 150;
-    this.countdown = clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8), 20, 55) * (0.5 + 0.5 * this.mode.countdownK);
+    // the clock gets meaner as the field shrinks: generous while you learn the streets, tight by the end
+    const roundK = clamp(1.08 - 0.06 * (this.round - 1), 0.78, 1.08);
+    this.countdown = clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, 55) * (0.5 + 0.5 * this.mode.countdownK);
     this.lastSpace = false;
     if (this.extras.some((x) => x.kind === 'lorry')) this.countdown += 10;
     else if (this.extras.length) this.countdown += 5;
     if (this.event === 'deliveryVan') this.countdown += 10;
     this.timeLeft = this.countdown; this.lastTick = Math.ceil(this.timeLeft) + 1;
-    this.parkOrder = 0; this.endHold = 0; this.grace = 0; this.whistled = false;
+    this.parkOrder = 0; this.endHold = 0; this.grace = 0; this.whistled = false; this.overtime = false;
     if (this.loiterPenalty && !this.playerComp.driver) { this.player.car.stalled = 2.2; this.emit('falseStart', {}); }
     const near = this.playerBayDistance().bay;
     let fake = null;
@@ -394,7 +468,7 @@ export class Game {
     }
     if (this.event === 'deliveryVan') this.spawnVan();
     for (const dr of this.drivers) dr.onMusicStop();
-    this.emit('musicStop', { street: near ? near.street : null, fakeStreet: fake ? fake.street : null, countdown: this.countdown, final: this.final, bays: this.freeBays().length, cars: this.alive().length });
+    this.emit('musicStop', { race: pick.race || null, rival: pick.duel.rival || null, street: near ? near.street : null, fakeStreet: fake ? fake.street : null, countdown: this.countdown, final: this.final, bays: this.freeBays().length, cars: this.alive().length });
     if (fake) this.emit('event', { kind: 'fakeSpace', street: fake.street, drive: fake });
   }
 
@@ -498,6 +572,7 @@ export class Game {
     this.runEventsDuringPark();
     this.assignT = (this.assignT || 0) - dt;
     if (this.assignT <= 0) { this.assignT = 0.5; this.assignBays(); }
+    this.checkContested();
     this.checkDrivingRules(dt, false);
     const t = Math.ceil(this.timeLeft);
     if (t < this.lastTick && t >= 0) { this.lastTick = t; this.emit('tick', { t }); }
@@ -511,7 +586,7 @@ export class Game {
     // "LAST SPACE!": once only one space is left, the clock is cut so the stragglers have to get on with it
     if (free === 1 && unparked.length >= 2 && !this.lastSpace && !this.van && this.phaseT > 4) {
       this.lastSpace = true;
-      const need = clamp(this.playerBayDistance().dist / 7 + 9, 12, 30) * this.mode.countdownK;
+      const need = clamp(this.playerBayDistance().dist / 6.5 + 11, 13, 32) * this.mode.countdownK;
       if (!me.parked && this.timeLeft > need) { this.timeLeft = need; this.lastTick = Math.ceil(need) + 1; this.emit('lastSpace', { t: Math.ceil(need), street: this.freeBays()[0].street }); }
     }
     if (this.timeLeft <= 0) {
@@ -520,11 +595,38 @@ export class Game {
       const finishing = free > 0 && this.drivers.some((d) => d.state === 'manoeuvre' && d.comp && d.pi / d.poses.length > 0.4);
       this.grace = (this.grace || 0) + dt;
       if (finishing && this.grace < 4) { if (!this.whistled) { this.whistled = true; this.emit('whistle', {}); } return; }
+      if (this.startOvertime(unparked, free)) return;
       this.endRound();
     } else if (unparked.length === 0 || free === 0) {
       this.endHold += dt;
       if (this.endHold > 0.6) this.endRound();
     }
+  }
+
+  /**
+   * Musical chairs only ever knocks out ONE player. If the clock runs out with spaces still free and several
+   * stragglers (rivals who boxed each other in, or a final where nobody has managed it yet), it goes to
+   * SUDDEN DEATH: the clock restarts and the first ones in keep their seats. A player who is still unparked
+   * when the clock goes is out, as ever; sudden death only rescues a round from losing several rivals at once.
+   */
+  startOvertime(unparked, free) {
+    if (this.overtime || free <= 0) return false;
+    const me = this.playerComp;
+    const rivalsOnly = !unparked.includes(me);
+    if (!(this.final && unparked.length >= 2) && !(rivalsOnly && unparked.length >= 2)) return false;
+    this.overtime = true;
+    // enough time for the nearest straggler to reach the nearest free space and get in
+    let best = Infinity;
+    for (const c of unparked) {
+      const d = c.driver;
+      if (d) for (const b of this.freeBays()) best = Math.min(best, d.parkEta(b));
+      else best = Math.min(best, this.playerBayDistance().dist / 7 + 10);
+    }
+    // (with the player safely parked the clock runs at fast-forward, so a long wait for the rivals costs nothing)
+    this.timeLeft = rivalsOnly ? clamp((Number.isFinite(best) ? best : 30) + 8, 15, 75) : clamp((Number.isFinite(best) ? best : 20) + 6, 12, 40);
+    this.lastTick = Math.ceil(this.timeLeft) + 1; this.grace = 0; this.whistled = false;
+    this.emit('lastSpace', { t: Math.ceil(this.timeLeft), street: this.freeBays()[0].street, overtime: true, final: this.final });
+    return true;
   }
 
   /**
@@ -573,18 +675,44 @@ export class Game {
       this.lastGear = gear;
     }
     this.guide = null;
-    const stopped = Math.abs(pc.v) < 0.18;
+    const stopped = Math.abs(pc.v) < 0.22;
     if (bay) {
+      if (bay.state === 'open' && !bay.occupant) this.parkAssist(bay, dt);
       const ev = evaluatePark(pc, bay);
       this.guide = { bay, ev, state: bay.state, taken: !!bay.occupant };
       if (ev.valid && stopped && bay.state === 'open' && !bay.occupant) {
         this.stopHold += dt;
-        if (this.stopHold > 0.7) { this.playerParked(bay, ev); return; }
+        if (this.stopHold > 0.55) { this.playerParked(bay, ev); return; }
       } else this.stopHold = 0;
       if (ev.inBay && stopped && bay.state === 'permit' && this.cool('permitParked', 8)) { this.penalise('permit', 40); this.emit('permitParked', { street: bay.street }); }
       if (ev.inBay && stopped && bay.state === 'blocked' && this.cool('blockedParked', 8)) this.emit('blockedParked', { street: bay.street });
     } else this.stopHold = 0;
     this.checkIllegalStop(dt, stopped, bay);
+  }
+
+  /**
+   * Parking assist (subtle): when the player is creeping about inside an open bay and roughly lined up,
+   * every metre they roll draws the car a little towards the kerb line and straightens it. A stationary car
+   * is never moved, so it feels like the car "finding" the space rather than being placed in it.
+   */
+  parkAssist(bay, dt) {
+    const pc = this.player.car;
+    const av = Math.abs(pc.v);
+    if (av < 0.05 || av > 2.2 || pc.kinematic) return;
+    const ev = evaluatePark(pc, bay);
+    if (!ev.inBay || ev.angle > 0.32 || Math.abs(ev.along) > bay.len / 2 - 0.6) return;
+    const roll = av * dt;
+    const c = Math.cos(bay.h), s = Math.sin(bay.h), sgn = -bay.side;
+    // It only gets you to "decent" (about 0.6 m off the kerb, within ~6 degrees): a SHOWROOM FINISH is still your job.
+    if (ev.kerbGap > 0.6) {
+      const dw = -Math.min(ev.kerbGap - 0.6, 0.22 * roll);
+      pc.x += -s * dw * sgn; pc.z += c * dw * sgn;
+    }
+    if (ev.angle > 0.1) {
+      const da = wrapAngle(pc.h - bay.h), target = Math.abs(da) > Math.PI / 2 ? bay.h + Math.PI : bay.h;
+      const err = wrapAngle(target - pc.h);
+      pc.h = wrapAngle(pc.h + Math.sign(err) * Math.min(Math.abs(err) - 0.1, 0.14 * roll));
+    }
   }
 
   checkIllegalStop(dt, stopped, bay) {
@@ -643,6 +771,106 @@ export class Game {
     }
     this.parkOrder++;
     this.emit('parked', { comp, bay, ev, rating, isPlayer: comp.isPlayer, timeLeft: this.timeLeft, order: this.parkOrder, speedBonus, points: comp.roundPoints, final: this.final, baysLeft: this.freeBays().length });
+    if (this.phase === 'park' && this.timeLeft < 3) this.emit('lastGasp', { comp, timeLeft: Math.max(0, this.timeLeft), street: bay.street });
+    if (this.final && this.phase === 'park') {
+      // the Golden Permit: was it close?
+      const loser = this.alive().find((c) => c !== comp && !c.parked);
+      if (loser) {
+        const d = Math.hypot(loser.car.x - bay.x, loser.car.z - bay.z);
+        const ld = loser.driver;
+        const lining = ld && ld.target === bay && (ld.state === 'manoeuvre' || (ld.stopR !== null && ld.stopR - ld.r < 25));
+        const eta = d / Math.max(3, Math.abs(loser.car.v));
+        if (d < 12 || eta < 2.2 || lining) this.emit('photoFinish', { winner: comp, loser, street: bay.street, gap: d });
+      }
+    }
+  }
+
+  // ------------------------------------------------------------- moments worth commenting on
+  /** Near misses, overshooting your space, epic reverses. Cheap: a handful of nearby cars, a few times a second. */
+  watchPlayer(dt) {
+    const pc = this.player.car, me = this.playerComp;
+    if (pc.ghost || pc.kinematic) return;
+    // near miss: closest approach to a moving car, reported once the gap opens again, if we never touched
+    this.passes ||= new Map();
+    for (const o of this.world.cars) {
+      if (o === pc || o.ghost) continue;
+      const dx = o.x - pc.x, dz = o.z - pc.z;
+      let ps = this.passes.get(o);
+      if (dx * dx + dz * dz > 64) { if (ps) this.passes.delete(o); continue; }
+      const rel = Math.hypot(pc.fx * pc.v - o.fx * o.v, pc.fz * pc.v - o.fz * o.v);
+      if (!ps) { if (rel < 2.5 || (Math.abs(o.v) < 1 && !o.kinematic)) continue; ps = { min: 9, contact: false, rel: 0 }; this.passes.set(o, ps); }
+      const gap = boxGap(pc, o);
+      if (gap < ps.min) { ps.min = gap; ps.rel = Math.max(ps.rel, rel); }
+      if (gap > ps.min + 0.5 || gap > 1.2) {
+        if (ps.min < 0.38 && ps.min > 0.04 && !ps.contact && ps.rel > 2.5 && this.cool('nearMiss', 7)) {
+          const comp = this.competitors.find((c) => c.car === o);
+          this.emit('nearMiss', { rival: comp && !comp.isPlayer ? comp : null, extra: o.persona || null, gap: +ps.min.toFixed(2) });
+        }
+        this.passes.delete(o);
+      }
+    }
+    // long reverse (only a human does this)
+    if (!me.driver) {
+      if (pc.v < -0.4) { this.revT = (this.revT || 0) + dt; this.revD = (this.revD || 0) - pc.v * dt; }
+      else if (pc.v > 0.3) { this.revT = 0; this.revD = 0; this.revSaid = false; }
+      if (!this.revSaid && (this.revT > 5 || this.revD > 18) && this.cool('longReverse', 15)) { this.revSaid = true; this.emit('longReverse', { seconds: +this.revT.toFixed(1), dist: +this.revD.toFixed(0) }); }
+    }
+    if (this.phase !== 'park' || me.parked || !me.alive || !this.lastPick) return;
+    // keep the ring on a space that is still worth going for
+    const ring = this.lastPick.duel.bay;
+    const ringGone = !ring || ring.occupant || ring.state !== 'open' || (ring.claimedBy && ring.claimedBy.state === 'manoeuvre');
+    if (ringGone) {
+      this.reringT = (this.reringT || 0) - dt;
+      if (this.reringT <= 0) { this.reringT = 0.5; const nb = this.playerBayDistance().bay; if (nb) this.lastPick.duel.bay = nb; }
+    }
+    // overshooting the ringed space
+    const l = this.playerLoc;
+    if (ring && !ringGone && l && l.edge.id === ring.edgeId) {
+      const ahead = ring.s - l.s;
+      if (ahead > -2 && ahead < 40) this.approachRing = ring;
+      if (this.approachRing === ring && ahead < -11 && pc.v > 2 && !ring.overshotSaid) {
+        ring.overshotSaid = true; this.approachRing = null;
+        this.emit('overshot', { bay: ring, street: ring.street });
+      }
+    }
+  }
+
+  /** A rival has just taken a space another rival was lining up for. */
+  noteClaim(thief, bay) {
+    if (this.phase !== 'park' || !thief.comp) return;
+    for (const d of this.drivers) {
+      if (d === thief || !d.comp || d.comp.isPlayer || d.p.civilian || d.state !== 'seek' || d.target !== bay) continue;
+      const close = d.stopR !== null && d.stopR - d.r < 45;
+      if (!close || bay.robbedSaid) continue;
+      bay.robbedSaid = true;
+      if (thief.comp.isPlayer) continue;    // the player taking a rival's space is reported as 'stole'
+      this.emit('rivalRobbed', { thief: thief.comp, victim: d.comp, bay, street: bay.street });
+      d.thinkT = Math.min(d.thinkT, 0.2);   // the victim looks for somewhere else straight away
+      return;
+    }
+  }
+
+  /** Two or more drivers bearing down on the same free space. */
+  checkContested() {
+    if (!this.cool('contestedScan', 0.5)) return;
+    const me = this.playerComp, pc = this.player.car;
+    const l = this.playerLoc;
+    for (const b of this.bays) {
+      if (b.state !== 'open' || b.occupant || b.contestedSaid) continue;
+      if (b.claimedBy && b.claimedBy.state === 'manoeuvre') continue;
+      const who = [];
+      for (const d of this.drivers) {
+        if (!d.comp || d.comp.isPlayer || d.p.civilian || d.state !== 'seek' || d.target !== b || d.stopR === null) continue;
+        if (d.stopR - d.r < 45) who.push(d.comp.name);
+      }
+      if (me.alive && !me.parked && !me.driver && l && l.edge.id === b.edgeId && b.s - l.s > -3 && b.s - l.s < 35 && pc.v > -0.5) who.unshift(me.name);
+      else if (me.driver && me.driver.target === b && me.driver.state === 'seek' && me.driver.stopR - me.driver.r < 45) who.unshift(me.name);
+      if (who.length >= 2 && this.cool('contested', 6)) {
+        b.contestedSaid = true;
+        this.emit('contested', { bay: b, drivers: who, street: b.street });
+        return;
+      }
+    }
   }
 
   endRound() {
@@ -665,6 +893,9 @@ export class Game {
     }
     const results = [...this.competitors].sort((a, b) => (b.alive - a.alive) || ((b.outRound ?? 99) - (a.outRound ?? 99)) || (b.points - a.points));
     this.emit('roundEnd', { round: this.round, out, playerOut, survivors, results, result: this.pendingResult, final: this.final, focus: out[0] || null });
+    let lead = null;
+    for (const c of this.competitors) if (!lead || c.points > lead.points) lead = c;
+    if (lead && lead.points > 0 && lead.key !== this.leaderKey) { this.leaderKey = lead.key; this.emit('leader', { name: lead.name, points: lead.points, comp: lead, isPlayer: lead.isPlayer }); }
   }
 
   /** Player pressed "continue" on the results screen. */
@@ -684,13 +915,14 @@ export class Game {
     this.checkDrivingRules(dt, false);
     const bay = this.nearestBay(9);
     this.guide = null;
-    const stopped = Math.abs(pc.v) < 0.18;
+    const stopped = Math.abs(pc.v) < 0.22;
     if (bay) {
+      if (bay.state === 'open') this.parkAssist(bay, dt);
       const ev = evaluatePark(pc, bay);
       this.guide = { bay, ev, state: bay.state, taken: false };
       if (ev.valid && stopped && bay.state === 'open') {
         this.stopHold += dt;
-        if (this.stopHold > 0.8 && bay.occupant !== 'free') {
+        if (this.stopHold > 0.6 && bay.occupant !== 'free') {
           bay.occupant = 'free';
           const rating = ratingFor(ev.quality);
           this.score += Math.max(0, rating.points);
@@ -749,6 +981,7 @@ export class Game {
   onImpact(car, other, speed, kind) {
     const pc = this.player.car;
     const involvesPlayer = car === pc || other === pc;
+    if (involvesPlayer && other) { const o = car === pc ? other : car; const ps = this.passes && this.passes.get(o); if (ps) ps.contact = true; }
     if (!involvesPlayer) { if (speed > 2.5 && this.cool('aiCrash', 4)) this.emit('impact', { kind, speed, player: false, x: car.x, z: car.z }); return; }
     if (this.playerComp.driver) return;
     const otherCar = car === pc ? other : car;
