@@ -650,3 +650,12 @@ body.screen-on #dj-panel, body.screen-on #toasts, body.screen-on #target { displ
   #toasts, body.touch #hud.pk #toasts { top: calc(var(--st) + 160px); }
 }
 @media (orientation: portrait) and (max-width: 600px) { #toasts { top: calc(var(--st) + 340px); } }
+
+/* cycle 3: the PARK! slam lives in the upper band; the road stays visible */
+#flash.big { top: 24%; font-size: min(15vw, 150px); -webkit-text-stroke: 10px var(--ink); }
+.sf-tape.t2 { display: none; }
+.sf-tape.t1 { top: 4%; }
+.sf-white { background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,.6) 30%, transparent 55%); }
+@keyframes whiteout { 0% { opacity: .95; } 30% { opacity: .6; } 100% { opacity: 0; } }
+@media (max-height: 520px) { #flash.big { top: 30%; font-size: 84px; -webkit-text-stroke: 6px var(--ink); } .sf-tape.t1 { top: 2%; } }
+@media (orientation: portrait) and (max-width: 600px) { #flash.big { top: 30%; font-size: 92px; } .sf-tape.t1 { top: 18%; } }

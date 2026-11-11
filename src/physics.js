@@ -278,7 +278,7 @@ export class PhysicsWorld {
     for (let i = 0; i < 4; i++) {
       const p = cs[i], q = cs[(i + 1) % 4];
       for (const pt of [p, { x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 }]) {
-        const d = sdf.sample(pt.x, pt.z);
+        const d = sdf.sample(pt.x, pt.z) + (c.kerbOk || 0);   // kerbOk: allowed to pull half up on the pavement
         if (d < worst) { worst = d; wp = pt; }
       }
     }

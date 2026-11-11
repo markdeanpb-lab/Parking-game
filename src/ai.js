@@ -55,7 +55,7 @@ export const PERSONAS = {
   // used when the player car is on autopilot (tests / attract mode)
   auto: {
     key: 'auto', name: 'You', title: 'Autopilot', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
-    cruise: 8.2, seek: 13, reaction: [0.05, 0.15], manSpeed: 3.2, skill: 0.9, shuffles: [0, 0], aggression: 1, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 0.9,
+    cruise: 8.2, seek: 13, reaction: [0.05, 0.15], manSpeed: 3.2, skill: 0.9, shuffles: [0, 0], aggression: 1, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 1, smartTells: true,
   },
 };
 export const RIVAL_ORDER = ['mum', 'major', 'dazza', 'tarquin', 'poppy', 'sandra'];
@@ -200,11 +200,13 @@ export class Driver {
     this.car.kinematic = false;
     this.state = 'cruise'; this.target = null; this.stopR = null; this.indicator = 0; this.hazards = false;
     this.tellWatcher = !!this.p.watchesTells && this.game.rng.chance(this.p.watchesTells);
+    this.tellBay = null;
     this.wander(l.edge.id, l.s);
   }
   onMusicStop() {
     if (this.p.civilian || this.state === 'out') return;
     const g = this.game;
+    this.tellBay = null;
     this.reactT = g.rng.range(this.p.reaction[0], this.p.reaction[1]);
     this.state = 'react';
     // the learner panics when the music stops and stalls it
@@ -315,7 +317,10 @@ export class Driver {
       case 'cruise': {
         let speed = p.cruise * this.speedScale;
         if (p.anticipates && g.phase === 'music') speed = this.anticipate(speed);
-        if (g.phase === 'music' && g.tells.length && (p.anticipates || this.tellWatcher)) speed = this.hoverTell(speed);
+        if (g.phase === 'music' && g.tells.length) {
+          if (this.tellWatcher) speed = this.headForTell(speed);
+          else if (p.anticipates) speed = this.hoverTell(speed);
+        }
         // The final: two cars, one space, and your rival is not letting you out of their sight.
         if (g.final && g.phase === 'music' && this.comp && !p.civilian) {
           const pl = g.player.car, me = this.loc();
@@ -338,7 +343,7 @@ export class Driver {
           if (this.lorryStop > 0) { this.lorryStop -= dt; speed = 0; } else if (g.phase !== 'music') speed = 7.5;
           this.hazards = true;
         }
-        if (this.route.path.length - this.r < 160) {
+        if (!this.tellBay && this.route.path.length - this.r < 160) {
           const l = this.loc();
           if (l.s > 18 && l.s < l.edge.len - 18) this.wander(l.edge.id, l.s);
         }
@@ -373,6 +378,38 @@ export class Driver {
         return;
       }
     }
+  }
+
+  /** An observant driver (or the player's autopilot) heads for the nearest bay giving a tell and arrives as the music stops. */
+  headForTell(speed) {
+    const g = this.game;
+    if (!this.tellBay || !g.tells.includes(this.tellBay)) {
+      this.tellBay = null;
+      let best = null;
+      for (const b of g.tells) {
+        const q = this.distTo(b);
+        if (!q || q.passed || q.dist > 320) continue;
+        let score = q.dist;
+        // the expert also checks whether somebody else is nearer to it (no overtaking: they'd get it first)
+        if (this.p.smartTells) for (const o of g.drivers) {
+          if (o === this || !o.comp || o.state === 'out' || o.p.civilian) continue;
+          const oq = o.distTo(b);
+          if (oq && oq.dist < q.dist) score += 150;
+        }
+        if (!best || score < best.score) best = { b, q, score };
+      }
+      if (!best) return this.hoverTell(speed);
+      const me = this.loc();
+      const route = g.track.buildRoute(best.q.rt.edges.slice(), me.s);
+      this.setRoute(route);
+      const sr = route.rOf(best.b.edgeId, best.b.s + START_AHEAD);
+      if (sr === null) return speed;
+      this.tellBay = best.b; this.tellStopR = sr;
+    }
+    const remain = this.tellStopR - 4 - this.r;
+    const left = Math.max(0.6, (g.musicStopsAt ?? g.stopAt) - g.phaseT);
+    if (remain < 0) return Math.min(speed, 2);
+    return clamp(remain / left + 0.8, 2, Math.max(speed, this.p.seek * 0.85));
   }
 
   /** Spotted a council worker eyeing up the cones ahead: ease off and be first in line for it. */
@@ -414,7 +451,9 @@ export class Driver {
     this.projectOnRoute();
     // pure pursuit
     const look = clamp(2.6 + Math.abs(car.v) * 0.55, 3, 7.5);
-    const tp = path.at(Math.min(path.length, this.r + look));
+    const tp0 = path.at(Math.min(path.length, this.r + look));
+    const off = this.passT > 0 ? this.passOff : 0;
+    const tp = off ? { x: tp0.x - tp0.tz * off, z: tp0.z + tp0.tx * off } : tp0;
     const l = car.toLocal(tp.x, tp.z);
     const ld2 = l.f * l.f + l.r * l.r || 1;
     const delta = Math.atan((2 * l.r / ld2) * car.spec.wheelbase);
@@ -479,7 +518,13 @@ export class Driver {
     }
     // traffic in front
     const range = (this.state === 'cruise' ? 17 : 7) + car.v * car.v / 5;
-    const ob = obstacleAhead(car, g.world.cars, range, precise ? 0.15 : 0.3);
+    if (this.passT > 0) {
+      this.passT -= dt;
+      const lp = this.passing && car.toLocal(this.passing.x, this.passing.z);
+      if (!lp || lp.f < -(this.passing.len / 2 + car.len / 2 + 0.5) || Math.abs(this.passing.v) > 1.5) this.passT = 0;
+      else speed = Math.min(speed, 3.2);
+    }
+    const ob = obstacleAhead(car, this.passT > 0 ? g.world.cars.filter((c) => c !== this.passing) : g.world.cars, range, precise ? 0.15 : 0.3);
     let blocked = false;
     if (ob.other && this.ignoreT <= 0) {
       const o = ob.other;
@@ -497,6 +542,33 @@ export class Driver {
       }
     }
     if (!blocked) this.waitT = Math.max(0, this.waitT - dt * 2);
+    // Something stopped dead in front (somebody reversing into a space, a stall, a car waiting): if there's room,
+    // go round it rather than queueing for ever.
+    if (blocked && this.waitT > 1.2 && this.passT <= 0 && ob.other && !p.lorry && (this.passCheckT = (this.passCheckT || 0) - dt) <= 0) {
+      this.passCheckT = 0.6;
+      const o = ob.other;
+      if (Math.abs(o.v) < 0.4 && !o.parked) {
+        const lo = car.toLocal(o.x, o.z);
+        for (const mag of [1.0, 1.4, 1.8, 2.2]) {
+          const side = lo.r > 0 ? -1 : 1;
+          if (this.laneClear(side * mag, o)) { this.passOff = side * mag; this.passT = 6; this.passing = o; this.waitT = 0; break; }
+          if (this.laneClear(-side * mag, o)) { this.passOff = -side * mag; this.passT = 6; this.passing = o; this.waitT = 0; break; }
+        }
+      }
+    }
+    // Stopped with somebody stuck behind: pull in tight (half up the kerb if need be) to let them by.
+    if (Math.abs(car.v) < 0.3 && (blocked || car.stalled > 0) && !p.lorry) this.stillT = (this.stillT || 0) + dt;
+    else { this.stillT = 0; if (Math.abs(car.v) > 1.5) { car.kerbOk = 0; this.tuck = 0; } }
+    if (this.stillT > 1 && (this.tuck || 0) < 1.1) {
+      let behind = false;
+      for (const o of g.world.cars) { if (o === car || o.ghost) continue; const lb = car.toLocal(o.x, o.z); if (lb.f < -1 && lb.f > -16 && Math.abs(lb.r) < 2.2) { behind = true; break; } }
+      if (behind) {
+        if (!this.tuckSide) this.tuckSide = this.roomTo(1) >= this.roomTo(-1) ? 1 : -1;
+        const step = 0.5 * dt, rx = -Math.sin(car.h) * this.tuckSide, rz = Math.cos(car.h) * this.tuckSide;
+        car.kerbOk = 0.45;
+        if (this.canSit(car.x + rx * step, car.z + rz * step, car.h, car.len, car.wid, null, 0.45)) { car.x += rx * step; car.z += rz * step; this.tuck = (this.tuck || 0) + step; }
+      }
+    } else if (this.stillT === 0) this.tuckSide = 0;
     if (this.ignoreT > 0) { this.ignoreT -= dt; speed = Math.min(speed, 1.6); }
 
     const dv = speed - car.v;
@@ -520,6 +592,36 @@ export class Driver {
     } else this.stuckT = Math.max(0, (this.stuckT || 0) - dt);
   }
 
+  /** Is there room for this car, as a box, at (x, z, h)? Kerbs (with `kerb` of pavement allowed), residents, cones, other cars. */
+  canSit(x, z, h, len, wid, ignore, kerb = 0) {
+    const g = this.game, sdf = g.track.sdf;
+    const c = Math.cos(h), s = Math.sin(h), hl = len / 2, hw = wid / 2;
+    for (const [f, r] of [[hl, hw], [hl, -hw], [-hl, hw], [-hl, -hw], [0, hw], [0, -hw]]) {
+      if (sdf.sample(x + c * f - s * r, z + s * f + c * r) < 0.05 - kerb) return false;
+    }
+    const probe = { x, z, h, len, wid };
+    for (const st of g.world.near(x, z, [])) if (!st.ghost && obbOverlap(probe, st)) return false;
+    for (const o of g.world.cars) if (o !== this.car && o !== ignore && !o.ghost && obbOverlap(probe, o)) return false;
+    return true;
+  }
+  /** Can we drive along a line `off` metres to our right of where we are, for the next dozen metres? */
+  laneClear(off, passing) {
+    const car = this.car, c = Math.cos(car.h), s = Math.sin(car.h);
+    for (const f of [1.5, 4, 6.5, 9, 11.5]) {
+      const x = car.x + c * f - s * off, z = car.z + s * f + c * off;
+      if (!this.canSit(x, z, car.h, car.len * 0.7, car.wid + 0.2, null)) return false;
+    }
+    void passing;
+    return true;
+  }
+  /** How far could we slide sideways (+1 right, -1 left)? */
+  roomTo(side) {
+    const car = this.car;
+    let k = 0;
+    for (let d = 0.2; d <= 1.2; d += 0.2) { if (!this.canSit(car.x - Math.sin(car.h) * side * d, car.z + Math.cos(car.h) * side * d, car.h, car.len, car.wid, null, 0.45)) break; k = d; }
+    return k;
+  }
+
   // ---- parking ----------------------------------------------------------
   beginManoeuvre() {
     const g = this.game, p = this.p, bay = this.target;
@@ -533,7 +635,7 @@ export class Driver {
     };
     const shuffles = g.rng.int(p.shuffles[0], p.shuffles[1]);
     this.poses = planReversePark(this.car, bay, err, shuffles);
-    this.pi = 0; this.blockT = 0; this.pauseT = 0.25 + bad * 0.8 + (p.key === 'human' ? g.rng.range(0.3, 1.6) : 0);
+    this.pi = 0; this.blockT = 0; this.pauseT = p.key === 'auto' ? 0.1 : 0.25 + bad * 0.8 + (p.key === 'human' ? g.rng.range(0.3, 1.6) : 0);
     this.state = 'manoeuvre';
     this.car.kinematic = true; this.car.v = 0;
     this.indicator = p.indicates ? bay.side : 0;

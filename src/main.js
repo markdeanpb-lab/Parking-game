@@ -361,6 +361,7 @@ const PENALTY = { kerb: 'KERBED IT', bump: 'BUMP', wrongWay: 'WRONG WAY', loiter
 let slowmo = 0;
 
 game.on((type, d) => {
+  if (type === 'roundIntro') dj.silence();      // no stale line from last round's scramble over the new intro
   dj.handle(type, d, game);
   const pc = game.player.car;
   switch (type) {
@@ -505,8 +506,10 @@ function tick(now) {
     // grow with distance so a name stays readable down the street; only fade when right on top of the camera
     const k = clamp(dc / 16, 1, 2.6);
     m.tag.scale.set(3.2 * k, 1.0 * k, 1); m.tag.position.y = m.baseY + (k - 1) * 0.35;
-    m.tag.material.opacity = replay ? 0 : clamp((dc - 3.5) / 2.5, 0, 1);
-    if (m.ring) { m.ring.visible = c.alive && !replay; m.ring.material.opacity = c.parked ? 0.45 : 0.6 + 0.3 * Math.sin(time * 6); }
+    const offStage = replay || celebration || game.phase === 'victory' || game.phase === 'gameover' || !!ui.screen;
+    m.tag.visible = !offStage;
+    m.tag.material.opacity = clamp((dc - 3.5) / 2.5, 0, 1);
+    if (m.ring) { m.ring.visible = c.alive && !offStage; m.ring.material.opacity = c.parked ? 0.45 : 0.6 + 0.3 * Math.sin(time * 6); }
   }
 
   if (celebration) {
@@ -515,7 +518,7 @@ function tick(now) {
     if (celebration.next <= 0) { celebration.next = 0.55 + Math.random() * 0.5; firework(celebration.x + (Math.random() - 0.5) * 30, 12 + Math.random() * 10, celebration.z + (Math.random() - 0.5) * 30); confetti(celebration.x, celebration.z, 40); }
   }
   updateParticles(dt);
-  world.update(time, dt, game.phase, game.phase === 'park' && !game.playerComp.parked && game.lastPick ? game.lastPick.duel.bay : null);
+  world.update(time, dt, game.phase, game.phase === 'park' && !game.playerComp.parked && game.lastPick ? game.lastPick.duel.bay : null, game.player && game.player.car);
   updateCamera(dt, time);
 
   const pc = game.player.car, playing = ['music', 'park', 'free'].includes(game.phase);

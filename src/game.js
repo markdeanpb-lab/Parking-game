@@ -315,7 +315,7 @@ export class Game {
 
     this.phase = 'intro'; this.phaseT = 0; this.timeScale = 1;
     this.fakeTip = null; this.eventDone = false; this.eventT = 0; this.van = null; this.lastPick = null;
-    this.release = null; this.tells = []; this.tellSaid = false; this.tellNear = null;
+    this.release = null; this.musicStopsAt = null; this.tells = []; this.tellSaid = false; this.tellNear = null;
     this.loiter = 0; this.loiterPenalty = false; this.gearChanges = 0; this.lastGear = 0; this.struggleSaid = 0;
     this.stopHold = 0; this.illegalHold = 0; this.wrongWayT = 0; this.speedT = 0; this.cooldowns = {};
     this.trail = []; this.passes = new Map(); this.approachRing = null; this.revT = 0; this.revD = 0; this.revSaid = false;
@@ -451,7 +451,7 @@ export class Game {
         let pick = null;
         if (this.final) { const p = this.pickRelease(1); if (p && p.bays.length && (p.fair || this.phaseT > this.stopAt + 12)) pick = p; }
         else pick = this.planRelease(this.nBays);
-        if (pick) { this.release = pick; this.tellT0 = this.phaseT; this.tells = pick.bays.slice(); }
+        if (pick) { this.release = pick; this.tellT0 = this.phaseT; this.musicStopsAt = this.phaseT + TELL_LEAD; this.tells = pick.bays.slice(); }
       }
     }
     if (this.release) {
@@ -480,23 +480,41 @@ export class Game {
     const me = this.playerComp, pc = this.player.car, l = this.track.locate(pc.x, pc.z), pp = l.edge.path.at(l.s);
     const withFlow = Math.cos(pc.h) * pp.tx + Math.sin(pc.h) * pp.tz > -0.2;
     const distOf = (c, b) => { if (c.driver) { const q = c.driver.distTo(b); return q ? q.dist : Infinity; } return this.playerDistTo(b, l, withFlow); };
+    const ahead = (b) => { const dm = distOf(me, b); let k = 0; for (const c of this.alive()) if (c !== me && distOf(c, b) < dm) k++; return k; };
     const chosen = [], owner = [];
     for (const c of this.rng.shuffle(this.alive())) {
       const opts = cands.filter((b) => !chosen.includes(b) && chosen.every((o) => Math.hypot(o.x - b.x, o.z - b.z) > 14))
         .map((b) => ({ b, d: distOf(c, b) })).filter((o) => Number.isFinite(o.d)).sort((x, y) => x.d - y.d);
       const inWindow = opts.filter((o) => o.d > 75 && o.d < 210);
-      const pool = inWindow.length ? inWindow.slice(0, 3) : opts.filter((o) => o.d > 40).slice(0, 2);
+      // (for the player: the nearest one where they aren't stuck behind two or more rivals; still a race)
+      const pool = c === me ? (inWindow.filter((o) => ahead(o.b) <= 1).slice(0, 1).concat(inWindow).slice(0, 1))
+        : inWindow.length ? inWindow.slice(0, 3) : opts.filter((o) => o.d > 40).slice(0, 2);
+      if (!pool.length) pool.push(...opts.filter((o) => o.d > 40).slice(0, 2));
       const pick = pool.length ? this.rng.pick(pool) : opts[0];
       if (pick) { chosen.push(pick.b); owner.push(c); }
     }
     // withhold one at random (the player is half as likely as a rival to be the one: a nudge, not a promise)
     if (chosen.length > n) {
-      const w = owner.map((c) => (c === me ? 0.5 : 1)), tot = w.reduce((a, x) => a + x, 0);
+      const w = owner.map((c) => (c === me ? 0.35 : 1)), tot = w.reduce((a, x) => a + x, 0);
       let r = this.rng() * tot, k = 0;
       while (k < w.length - 1 && (r -= w[k]) > 0) k++;
       chosen.splice(k, 1);
     }
     const bays = chosen.slice(0, n);
+    // The player always gets at least one CONTESTABLE space within a realistic drive: not a free seat (a rival
+    // can still beat a dawdler to it), but never a round that was lost before the music stopped.
+    const pv = Math.max(4, Math.abs(pc.v));
+    const reachable = (b) => { const d = distOf(me, b) - pv * TELL_LEAD; return d > 25 && d < 190 && ahead(b) <= 1; };
+    if (me.alive && !bays.some(reachable)) {
+      const alt = cands.filter((b) => !bays.includes(b) && reachable(b) && bays.every((o) => Math.hypot(o.x - b.x, o.z - b.z) > 14));
+      if (alt.length) {
+        // prefer one that a rival is also in range of: a race, not a gift
+        const contest = alt.filter((b) => ahead(b) === 1 || this.alive().some((c) => c !== me && c.driver && Math.abs(distOf(c, b) - distOf(me, b)) < 60));
+        const pick = this.rng.pick(contest.length ? contest : alt);
+        const swapIdx = bays.findIndex((b, i) => owner[chosen.indexOf(b)] !== me) ;
+        bays[swapIdx >= 0 ? swapIdx : 0] = pick;
+      }
+    }
     for (const b of this.rng.shuffle(cands)) { if (bays.length >= n) break; if (!bays.includes(b)) bays.push(b); }
     return bays.length === n ? { bays } : null;
   }

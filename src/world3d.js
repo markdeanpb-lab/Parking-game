@@ -109,6 +109,11 @@ function wallAO(y, top) {
   return 0.94 + Math.min(1, (y - 0.7) / 2) * 0.06;
 }
 
+function distSeg(px, pz, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1e-9;
+  const t = clamp(((px - ax) * dx + (pz - az) * dz) / l2, 0, 1);
+  return Math.hypot(px - ax - dx * t, pz - az - dz * t);
+}
 function shapeFromPoly(poly) {
   const s = new THREE.Shape(poly.outer.map(V2));
   for (const h of poly.holes || []) s.holes.push(new THREE.Path(h.map(V2)));
@@ -134,21 +139,21 @@ const PALETTES = {
     trim: 0xf6f4ee, lintel: 'band', bay: 0, canopy: 'hood', front: 'railwall', sash: 2,
   },
   bernard: {         // mixed dark brick, red brick and white painted; white lintels, stone sills
-    houses: [['brick', 0x6a5650], ['brick', 0x55545a], ['brick', 0xae5a3d], ['brick', 0xb8683f], ['render', 0xf0eee7], ['brick', 0x9c4f38], ['render', 0xe9e3d1], ['brick', 0x7a5446]],
+    houses: [['render', 0xf2f0e9], ['render', 0xebe4cf], ['brick', 0x4f4a4c], ['brick', 0x5e4a42], ['render', 0xf2f0e9], ['brick', 0xae5a3d], ['render', 0xe3ddca], ['brick', 0x3f3d42], ['brick', 0xb8683f], ['render', 0xdfe2df]],
     trim: 0xf3f1ea, lintel: 'white', bay: 0, canopy: 'surround', front: 'railwall', sash: 2,
   },
   grange: {          // red brick, white surrounds, ground-floor bays
-    houses: [['brick', 0xa9543a], ['brick', 0x9e4d37], ['brick', 0xb25d3f], ['brick', 0x96503b], ['brick', 0xa7583f]],
+    houses: [['brick', 0xb4583a], ['brick', 0xa94f35], ['brick', 0xbd623f], ['brick', 0xa9543a], ['render', 0xf1efe8]],
     trim: 0xf4f2ec, lintel: 'surround', bay: 0.9, canopy: 'porch', front: 'wall', sash: 1,
   },
   dalton: {          // red brick, white stucco lintels, picket fences
-    houses: [['brick', 0xa9543a], ['brick', 0xb15f40], ['brick', 0x9b4c36], ['brick', 0xa65b40]],
+    houses: [['brick', 0x9a4630], ['brick', 0x8f4430], ['brick', 0xa04c34], ['brick', 0x93492f]],
     trim: 0xf4f2ec, lintel: 'white', bay: 0.15, canopy: 'hood', front: 'picket', sash: 2,
   },
   junction: { houses: [['brick', 0xa9563c]], trim: 0xf4f2ec, lintel: 'white', bay: 0, canopy: 'hood', front: 'gardenwall', sash: 2, door: 0x1f2a3a },
   gault: { houses: [['brick', 0xd9c896]], trim: 0xf4f2ec, lintel: 'white', bay: 0, canopy: 'hood', front: 'railwall', sash: 2, door: 0x141518 },
   other: {
-    houses: [['brick', 0xa8563c], ['brick', 0x9c5b3e], ['brick', 0xb26a44], ['brick', 0x8e4f3b], ['brick', 0xc9ae76], ['render', 0xe9e5d8], ['render', 0xd9d6cc], ['brick', 0x9c5b3e]],
+    houses: [['brick', 0xc9ae76], ['render', 0xe9e5d8], ['brick', 0x9c5b3e], ['render', 0xd9d6cc], ['brick', 0xbfa06a], ['brick', 0x8e4f3b], ['render', 0xcfd3cf], ['brick', 0x6e5a50]],
     trim: 0xf1efe8, lintel: 'white', bay: 0.25, canopy: 'hood', front: 'mixed', sash: 1,
   },
 };
@@ -262,6 +267,54 @@ export function buildWorld(scene, track, quality) {
   const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: grass, roughness: 1 }));
   ground.position.set((b.minX + b.maxX) / 2, -0.02, (b.minZ + b.maxZ) / 2); ground.receiveShadow = true;
   scene.add(ground);
+
+  // Generic backdrop OUTSIDE the mapped (OSM) area, so the neighbourhood sits in a town rather than in fields.
+  // Deliberately anonymous: repeated instanced terrace blocks, back streets and trees. Nothing here is real data.
+  {
+    const br = makeRng(4040), C = 38, M = 14, R = 300;
+    const blocks = [], roads = new GB(), trees = [];
+    const tarmacC = col(0x55585c);
+    for (let gx = b.minX - R; gx < b.maxX + R; gx += C) for (let gz = b.minZ - R; gz < b.maxZ + R; gz += C) {
+      const cx = gx + C / 2, cz = gz + C / 2;
+      if (cx > b.minX - M - C / 2 && cx < b.maxX + M + C / 2 && cz > b.minZ - M - C / 2 && cz < b.maxZ + M + C / 2) continue;
+      const ang = 0.5 * Math.sin(cx * 0.004) + 0.4 * Math.cos(cz * 0.005), F = frameH(cx, cz, ang);
+      roads.quad(F.p(-C / 2, 0.01, 3), F.p(C / 2, 0.01, 3), F.p(C / 2, 0.01, -3), F.p(-C / 2, 0.01, -3), tarmacC);
+      for (const sd of [-1, 1]) {
+        let x = -C / 2 + 1;
+        while (x < C / 2 - 6) {
+          const L = Math.min(C / 2 - 1 - x, br.range(14, 34)); if (L < 6) break;
+          if (br() > 0.12) {
+            const p = F.p(x + L / 2, 0, sd * 9.2);
+            blocks.push({ x: p[0], z: p[2], h: ang, L, D: 8.4, H: 5.9 + br() * 0.8, c: br.pick([0x9c5a42, 0xa86048, 0x8d5440, 0xb59a70, 0xd9d4c6, 0x9c5a42]), r: br.pick([0x5d636c, 0x646a73, 0x6a625a]) });
+          } else if (br() < 0.8) { const p = F.p(x + L / 2 + br.range(-4, 4), 0, sd * br.range(10, 15)); trees.push(p); }
+          x += L + br.range(1, 4);
+        }
+        if (br() < 0.5) { const p = F.p(br.range(-C / 2, C / 2), 0, sd * br.range(14, 17)); trees.push(p); }
+      }
+    }
+    const wallGeo = new THREE.BoxGeometry(1, 1, 1); wallGeo.translate(0, 0.5, 0);
+    const roofGeo = new THREE.BufferGeometry();
+    roofGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+      -0.5, 0, -0.5, -0.5, 1, 0, 0.5, 1, 0, -0.5, 0, -0.5, 0.5, 1, 0, 0.5, 0, -0.5,
+      0.5, 0, 0.5, 0.5, 1, 0, -0.5, 1, 0, 0.5, 0, 0.5, -0.5, 1, 0, -0.5, 0, 0.5,
+      -0.5, 0, 0.5, -0.5, 1, 0, -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 1, 0, 0.5, 0, 0.5], 3));
+    roofGeo.computeVertexNormals();
+    const wm = new THREE.InstancedMesh(wallGeo, new THREE.MeshStandardMaterial({ roughness: 0.95 }), blocks.length);
+    const rm = new THREE.InstancedMesh(roofGeo, new THREE.MeshStandardMaterial({ roughness: 0.85, side: THREE.DoubleSide }), blocks.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), cc = new THREE.Color();
+    blocks.forEach((k, i) => {
+      q.setFromAxisAngle(up, -k.h);
+      m4.compose(new THREE.Vector3(k.x, 0, k.z), q, new THREE.Vector3(k.L, k.H, k.D)); wm.setMatrixAt(i, m4); wm.setColorAt(i, cc.set(k.c));
+      m4.compose(new THREE.Vector3(k.x, k.H, k.z), q, new THREE.Vector3(k.L + 0.4, 2.3, k.D + 0.6)); rm.setMatrixAt(i, m4); rm.setColorAt(i, cc.set(k.r));
+    });
+    wm.receiveShadow = rm.receiveShadow = false;
+    scene.add(wm, rm);
+    roads.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), false, false);
+    const tg = new THREE.IcosahedronGeometry(2.6, 0); tg.translate(0, 4.2, 0);
+    const tm = new THREE.InstancedMesh(tg, new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), trees.length);
+    trees.forEach((p, i) => { const s2 = br.range(0.8, 1.4); m4.compose(new THREE.Vector3(p[0], 0, p[2]), q.identity(), new THREE.Vector3(s2, s2, s2)); tm.setMatrixAt(i, m4); tm.setColorAt(i, cc.set(br.pick([0x4f8a3c, 0x5d9a45, 0x3f7534]))); });
+    scene.add(tm);
+  }
 
   const addFlat = (polys, y, mat, uvScale, shadow = true) => {
     const g = polys && polys.length ? flatGeometry(polys, y, uvScale) : null;
@@ -390,7 +443,16 @@ export function buildWorld(scene, track, quality) {
       if (!best || A < best.A) best = { A, ux, uz, mnU, mxU, mnV, mxV };
     }
     const roofC = col(rng.pick([0x5d636c, 0x646a73, 0x6a625a, 0x575b62, 0x6e7074]));
-    const rectish = best && area / best.A > 0.8 && !small;
+    let rectish = best && area / best.A > 0.8 && !small;
+    if (rectish) {       // an L-shaped footprint would leave a roof slab hanging over thin air: every rectangle corner must be near the wall
+      const { ux, uz, mnU, mxU, mnV, mxV } = best;
+      for (const [u, v] of [[mnU, mnV], [mnU, mxV], [mxU, mnV], [mxU, mxV]]) {
+        const x = u * ux - v * uz, z = u * uz + v * ux;
+        let dmin = 1e9;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], c = ring[(i + 1) % ring.length]; dmin = Math.min(dmin, distSeg(x, z, a.x, a.z, c.x, c.z)); }
+        if (dmin > 0.9) { rectish = false; break; }
+      }
+    }
     const fasciaC = col(0x2a2b2e);
     let info = null;
     if (rectish) {
@@ -674,7 +736,7 @@ export function buildWorld(scene, track, quality) {
         scaffold(props, F, x0, x1, d, H);
       }
       // --- rear garden behind the house: fences, patio, lawn, the odd shed
-      if (!isShop) rearGarden(F, x0, x1, bi.ring, u === units - 1, hrng);
+      if (!isShop && !quality.low) rearGarden(F, x0, x1, bi.ring, u === units - 1, hrng);
     }
     // --- chimney stacks on the party walls
     const info = roofInfo[seg.bi];
@@ -1190,7 +1252,7 @@ export function buildWorld(scene, track, quality) {
       g.font = '20px Arial'; g.fillStyle = '#1d5c3a'; g.fillText('CITY AND DISTRICT OF ST ALBANS', w / 2, 92);
     }, false);
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.37), new THREE.MeshStandardMaterial({ map: nameTex[name], roughness: 0.6, side: THREE.DoubleSide }));
-    m.position.set(p.x, 0.95, p.z); m.rotation.y = -p.h + (side > 0 ? 0 : Math.PI); scene.add(m);
+    m.position.set(p.x, 0.95, p.z); m.rotation.y = -p.h + (side > 0 ? Math.PI : 0); scene.add(m);     // plate normal points at the carriageway
     for (const k of [-0.7, 0.7]) props.boxH(0.06, 1.15, 0.06, p.x + Math.cos(p.h) * k, 0.57, p.z + Math.sin(p.h) * k, p.h, col(0x1c1d20));
   };
   const signMat = {};
@@ -1259,7 +1321,7 @@ export function buildWorld(scene, track, quality) {
       }
       blobs.push({ x: s.x, z: s.z, h: 0, l: 1.4 * s.s, w: 1.4 * s.s, a: 0.5 });
     });
-    trunk.castShadow = true; leaves.castShadow = true; leaves.receiveShadow = true;
+    trunk.castShadow = !quality.low; leaves.castShadow = !quality.low; leaves.receiveShadow = true;
     scene.add(trunk, leaves);
   }
 
@@ -1272,7 +1334,7 @@ export function buildWorld(scene, track, quality) {
   roofsNear.mesh(scene, slateMat); roofsFar.mesh(scene, slateMat, false, true);
   det.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), !quality.low, true);
   glass.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.3 }), false, false);
-  props.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+  props.mesh(scene, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), !quality.low, true);
   {
     const g = new THREE.BufferGeometry();
     const pos = []; for (const p of wires) pos.push(...p);
@@ -1393,7 +1455,7 @@ export function buildWorld(scene, track, quality) {
   const permitMat = new THREE.MeshStandardMaterial({ map: permitTex, roughness: 0.6, side: THREE.DoubleSide });
   const glowMats = {}, beamMats = {};
   const glowMat = (c) => (glowMats[c] ||= new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-  const beamMat = (c, mine) => (beamMats[c + (mine ? 'm' : '')] ||= new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: mine ? 0.3 : 0.16, side: THREE.DoubleSide, depthWrite: false }));
+  const beamMat = (c, mine) => (beamMats[c + (mine ? 'm' : '')] ||= new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: mine ? 0.17 : 0.09, side: THREE.DoubleSide, depthWrite: false }));
   const markerMats = [false, true].map((perfect) => new THREE.SpriteMaterial({ map: pTex, transparent: true, depthTest: false, color: perfect ? 0xffe27a : 0xffffff }));
   // council worker in hi-vis (bay "tell": this bay is about to open)
   const workerGeo = (() => {
@@ -1454,7 +1516,7 @@ export function buildWorld(scene, track, quality) {
   }
   function makeWorker(bay, p) {
     const w = new THREE.Group();
-    const body = new THREE.Mesh(workerGeo, workerMat); body.castShadow = true;
+    const body = new THREE.Mesh(workerGeo, workerMat); body.castShadow = !quality.low;
     const carried = new THREE.Mesh(coneGeo, coneMat);
     w.add(body, carried);
     // stands at the kerb end of the bay, facing along it
@@ -1464,7 +1526,7 @@ export function buildWorld(scene, track, quality) {
   }
 
   /** Reflect bay state changes and animate the indicators. */
-  out.update = (t, dt, phase, hint = null) => {
+  out.update = (t, dt, phase, hint = null, player = null) => {
     const pulse = 0.3 + 0.18 * Math.sin(t * 6);
     for (const c in glowMats) glowMats[c].opacity = +c === 0x7a8894 ? 0.18 : pulse;
     for (const bay of track.bays) {
@@ -1493,14 +1555,18 @@ export function buildWorld(scene, track, quality) {
       }
       const live = (bay.state === 'open' || bay.state === 'blocked') && !bay.occupant;
       const showGlow = live || bay.state === 'permit' || (bay.state === 'open' && bay.occupant);
-      p.glow.visible = showGlow; p.marker.visible = live && bay.state === 'open'; p.beam.visible = live && bay.state === 'open';
+      // close to the player the HUD target marker takes over: the floating P shrinks away and the beam fades out
+      const near = player ? Math.hypot(player.x - bay.x, player.z - bay.z) : 99;
+      const fade = clamp((near - 12) / 13, 0, 1);
+      p.glow.visible = showGlow; p.marker.visible = live && bay.state === 'open' && fade > 0.02; p.beam.visible = live && bay.state === 'open' && fade > 0.05;
       if (showGlow) {
         const colour = bay.state === 'permit' ? 0xff3344 : bay.state === 'blocked' ? 0xffa51e : bay.occupant ? 0x7a8894 : bay.perfect ? 0xffd23c : 0x35e06a;
         const mine = bay === hint && !bay.occupant;                 // the space the player is first in the queue for
         p.glow.material = glowMat(colour); p.beam.material = beamMat(colour, mine);
-        p.marker.position.y = 3.6 + Math.sin(t * 3 + bay.id) * 0.35 + p.pop * 2;
-        const sc = (bay.perfect ? 2.4 : mine ? 2.6 + 0.3 * Math.sin(t * 8) : 1.7) * (1 + p.pop * 0.8);
-        p.beam.scale.set(mine ? 1.6 : 1, mine ? 1.5 : 1, mine ? 1.6 : 1);
+        const sc = (bay.perfect ? 2.0 : mine ? 2.0 + 0.2 * Math.sin(t * 8) : 1.5) * (1 + p.pop * 0.8) * (0.35 + 0.65 * fade);
+        p.marker.position.y = (2.4 + 1.2 * fade) + Math.sin(t * 3 + bay.id) * 0.3 * fade + p.pop * 2;
+        p.beam.scale.set(mine ? 1.3 : 1, (mine ? 1.2 : 1) * Math.max(0.05, fade), mine ? 1.3 : 1);
+        p.beam.position.y = 3.5 * Math.max(0.05, fade) * (mine ? 1.2 : 1);
         p.marker.scale.set(sc, sc, 1);
         p.marker.material = markerMats[bay.perfect ? 1 : 0];
       }

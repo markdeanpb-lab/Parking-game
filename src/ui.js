@@ -557,7 +557,7 @@ export class UI {
     if (!this.avoid || time - this.avoidT > 0.5) { this.avoidT = time; this.avoid = ['hud-left', 'hud-right', 'phase-banner', 'dj-panel', 'guide', 'speedo'].map((id) => $(id).getBoundingClientRect()).filter((r) => r.width > 0); }
     let showPin = onScreen && dist < 25;
     if (showPin) showPin = !this.avoid.some((r) => sx + 26 > r.left && sx - 26 < r.right && sy > r.top && sy - 66 < r.bottom);
-    if (showPin === this.targetHidden) { pin.classList.toggle('hidden', !showPin); this.targetHidden = !showPin; }
+    if (this.targetHidden !== !showPin) { pin.classList.toggle('hidden', !showPin); this.targetHidden = !showPin; }
     if (showPin) pin.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
   }
 

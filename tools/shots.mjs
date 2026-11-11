@@ -34,7 +34,7 @@ await page.waitForTimeout(1200);
 // Eye-level views: [name, edgeId, arc s, look direction (+1 = with competition flow, -1 = against), lateral offset (m, + = right of flow)]
 const STREET_VIEWS = [
   ['church-1-terraces', 'church', 150, -1, 0],
-  ['church-2-junction', 'grangeBC', 118, 1, 0.8, 'church', 12],
+  ['church-2-junction', 'grangeBC', 134, 1, 1.2, 'church', 16],
   ['grange-3-campervans', 'grangeAB', 10, 1, 0],
   ['grange-3b-mid', 'grangeBC', 30, 1, 0],
   ['dalton-4-terraces', 'dalton', 120, 1, 0],
