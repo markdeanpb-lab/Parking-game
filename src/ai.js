@@ -164,6 +164,7 @@ export class Driver {
     this.lorryT = 3; this.lorryStop = 0;
     this.honkCooldown = 0;
     this.noseTried = new Set();
+    this.passT = 0; this.passOff = 0; this.passing = null; this.tuck = 0; this.tuckSide = 0; this.stillT = 0; this.slowT = 0;
     this.stuckT = 0; this.unstickT = 0; this.unstickSteer = 0; this.stuckCount = 0;
     this.speedScale = 1;
     this.fooled = null;       // driveway the gullible learner is heading for
@@ -522,7 +523,7 @@ export class Driver {
       this.passT -= dt;
       const lp = this.passing && car.toLocal(this.passing.x, this.passing.z);
       if (!lp || lp.f < -(this.passing.len / 2 + car.len / 2 + 0.5) || Math.abs(this.passing.v) > 1.5) this.passT = 0;
-      else speed = Math.min(speed, 3.2);
+      else { speed = Math.min(speed, 3.2); car.kerbOk = 0.3; }
     }
     const ob = obstacleAhead(car, this.passT > 0 ? g.world.cars.filter((c) => c !== this.passing) : g.world.cars, range, precise ? 0.15 : 0.3);
     let blocked = false;
@@ -562,7 +563,7 @@ export class Driver {
       }
     }
     // Stopped with somebody stuck behind: pull in tight (half up the kerb if need be) to let them by.
-    if (Math.abs(car.v) < 0.3 && (blocked || car.stalled > 0) && !p.lorry) this.stillT = (this.stillT || 0) + dt;
+    if (Math.abs(car.v) < 0.3 && (blocked || car.stalled > 0 || this.slowT > 0.8) && !atStop && !p.lorry) this.stillT = (this.stillT || 0) + dt;
     else { this.stillT = 0; if (Math.abs(car.v) > 1.5) { car.kerbOk = 0; this.tuck = 0; } }
     if (this.stillT > 1 && (this.tuck || 0) < 1.1) {
       let behind = false;
@@ -614,7 +615,7 @@ export class Driver {
     const car = this.car, c = Math.cos(car.h), s = Math.sin(car.h);
     for (const f of [1.5, 4, 6.5, 9, 11.5]) {
       const x = car.x + c * f - s * off, z = car.z + s * f + c * off;
-      if (!this.canSit(x, z, car.h, car.len * 0.7, car.wid + 0.2, null)) return false;
+      if (!this.canSit(x, z, car.h, car.len * 0.7, car.wid + 0.06, null, 0.3)) return false;
     }
     void passing;
     return true;

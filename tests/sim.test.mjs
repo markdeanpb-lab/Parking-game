@@ -170,5 +170,28 @@ for (const e of ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 
   check(tellMismatch === 0, 'the bays that give a tell are exactly the ones that open');
   for (const e of ['contested', 'rivalRobbed', 'leader', 'lastSpace', 'tell']) check(seen.has(e), `event "${e}" is emitted`);
 }
+
+// ---------------------------------------------------------------- no endless queues: a stopped rival pulls in so you can squeeze by
+{
+  const fits = [];
+  for (const [edge, s0] of [['bernard', 60], ['church', 90], ['dalton', 80], ['grangeBC', 70]]) {
+    const game = new Game(buildTrack(map), { seed: 3, autoContinue: true });
+    game.start('classic');
+    while (game.phase !== 'music') game.update(1 / 60);
+    const d = game.drivers.find((q) => q.p.key === 'major'), e = game.track.edges[edge];
+    for (const o of game.drivers) if (o !== d && o.comp) { o.car.place(0, 8000 + o.car.id * 20, 0); o.state = 'idle'; }
+    const p = e.path.offsetAt(s0, e.laneOff); d.car.place(p.x, p.z, p.h); d.startCruise();
+    const pc = game.player.car, q = e.path.offsetAt(s0 - 9, e.laneOff); pc.place(q.x, q.z, q.h);
+    for (let i = 0; i < 60 * 5; i++) { d.car.stalled = 1; pc.ctrl.throttle = 0; pc.ctrl.handbrake = true; game.phaseT = 1; game.update(1 / 60); }
+    let fit = false;
+    const c = Math.cos(d.car.h), sn = Math.sin(d.car.h);
+    for (let off = -2.6; off <= 2.6 && !fit; off += 0.1) {
+      fit = [-3, 0, 3].every((f) => d.canSit(d.car.x + c * f - sn * off, d.car.z + sn * f + c * off, d.car.h, pc.len, pc.wid + 0.1, pc, 0));
+    }
+    fits.push(`${edge}:${d.tuck.toFixed(1)}m${fit ? '' : '(blocked)'}`);
+    check(d.tuck > 0.4 && fit, `a stalled rival on ${edge} pulls in and the player can squeeze past`);
+  }
+  console.log('squeeze past a stalled rival (tuck):', fits.join(' '));
+}
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nall simulations passed');
 process.exit(failures ? 1 : 0);
