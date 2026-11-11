@@ -200,6 +200,7 @@ function doorLine(M, x, yLo, yHi, w, wheels) {
 }
 function plate(M, x, y, front, wide = 0.5) {
   const s = front ? 1 : -1;
+  M.box(0.02, 0.145, wide + 0.035, x + s * 0.008, y, 0, F(TRIM));
   M.box(0.025, 0.12, wide, x + s * 0.0125, y, 0, F(front ? PLATE_W : PLATE_Y));
   M.decal('x', s, x + s * 0.026, y, 0, wide * 0.72, 0.05, F(INK));
 }
@@ -573,9 +574,26 @@ function parts(type) {
   M.geo(p.body);
   for (const w of p.wheelPos) M.geo(w.z < 0 ? p.wheelL : p.wheelR, null, new THREE.Matrix4().makeTranslation(w.x, w.y, w.z));
   for (const g of [p.headGeo, p.tailGeo, p.indGeo[-1], p.indGeo[1]]) if (g) M.geo(g);
-  p.baked = M.build();
+  p.baked = dropHidden(M.build());
   cache[type] = p;
   return p;
+}
+
+/** Remove triangles that face the ground (never seen, and not needed for sun shadows) from the merged parked mesh. */
+function dropHidden(g) {
+  const pa = g.attributes.position.array, na = g.attributes.normal.array, ca = g.attributes.color.array, ma = g.userData.mask;
+  const P = [], N = [], C = [], K = [];
+  for (let t = 0; t < pa.length; t += 9) {
+    if ((na[t + 1] + na[t + 4] + na[t + 7]) / 3 < -0.85) continue;
+    for (let j = 0; j < 9; j++) { P.push(pa[t + j]); N.push(na[t + j]); C.push(ca[t + j]); }
+    for (let j = 0; j < 3; j++) K.push(ma[t / 3 + j]);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  out.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  out.userData.mask = new Float32Array(K);
+  return out;
 }
 
 // Period paints for campervans (whatever colour the street generator asks for, campers come out like this)

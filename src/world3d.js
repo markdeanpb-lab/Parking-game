@@ -1338,13 +1338,13 @@ export function buildSky(scene, renderer, quality) {
     g.fillStyle = gr; g.fillRect(0, 0, w, h / 2);
     g.fillStyle = '#d6dbdc'; g.fillRect(0, h / 2, w, h / 2);
     // soft stratocumulus: lots of flattened gradient puffs, denser and greyer towards the horizon
-    for (let i = 0; i < 70; i++) {          // cloud banks: clusters of puffs with grey undersides, blue gaps between
-      const cy = h * 0.5 - Math.pow(rng(), 1.3) * h * 0.4, cx = rng() * w;
+    for (let i = 0; i < 34; i++) {          // cloud banks: clusters of puffs with grey undersides, blue gaps between
+      const cy = h * 0.47 - Math.pow(rng(), 0.8) * h * 0.38, cx = rng() * w;
       const sc = 0.35 + 0.65 * (1 - (h * 0.5 - cy) / (h * 0.5));
       for (let k = 0; k < 9; k++) {
         const x = cx + (rng() - 0.5) * 120 * sc, y = cy + (rng() - 0.6) * 22 * sc;
         const r = (12 + rng() * 26) * sc;
-        const shade = Math.floor(236 + rng() * 19), a = 0.55 + rng() * 0.35;
+        const shade = Math.floor(236 + rng() * 19), a = 0.35 + rng() * 0.35;
         for (const ox of [0, -w, w]) {
           const cg = g.createRadialGradient(x + ox, y - r * 0.3, 0, x + ox, y, r * 1.6);
           cg.addColorStop(0, `rgba(${shade},${shade},${shade + 3},${a})`); cg.addColorStop(0.55, `rgba(${shade - 18},${shade - 15},${shade - 10},${a * 0.6})`); cg.addColorStop(1, 'rgba(205,212,222,0)');

@@ -204,8 +204,8 @@ export class Game {
       const gap = dr - (dp + 6.6);                         // + = rival behind
       if (!sameQueue) {
         const dt = Math.abs(humanEta(dp + 6.6) - rivalEta(dr));
-        if (dt < 3.2 && (!race || dt < race.dt)) race = { b, dt, dp };
-      } else if (gap > 6 && gap < 32 && dp > 40 && (!duel || Math.abs(gap - 16) < Math.abs(duel.gap - 16))) duel = { b, gap, dp };
+        if (dt < 4 && (!race || dt < race.dt)) race = { b, dt, dp };
+      } else if (gap > 5 && gap < 55 && dp > 35 && (!duel || Math.abs(gap - 16) < Math.abs(duel.gap - 16))) duel = { b, gap, dp };
     }
     const late = this.phaseT > this.stopAt + 14;
     let pick = race || duel;
@@ -301,8 +301,10 @@ export class Game {
 
     for (const c of alive) { c.car.kinematic = false; c.car.ghost = false; c.car.stalled = 0; c.car.parked = false; }
     this.placeCars(alive.map((c) => c.car));
+    if (this.final) this.gridFinal(alive);
     for (const d of this.drivers) {
       if (d.comp && !d.comp.alive) { d.state = 'out'; d.target = null; d.assigned = null; continue; }   // eliminated drivers stay out
+      d.noseTried.clear();
       d.state = 'idle'; d.target = null; d.stopR = null; d.route = null; d.indicator = 0; d.hazards = false; d.fooled = null; d.blacklist.clear();
     }
     for (let i = 0; i < this.mode.traffic; i++) this.spawnTraffic('traffic');
@@ -313,6 +315,21 @@ export class Game {
     this.stopHold = 0; this.illegalHold = 0; this.wrongWayT = 0; this.speedT = 0; this.cooldowns = {};
     this.trail = []; this.passes = new Map(); this.approachRing = null; this.revT = 0; this.revD = 0; this.revSaid = false;
     this.emit('roundIntro', { round: this.round, total: this.totalRounds, cars: alive.length, bays: nBays, coned: this.bays.filter((b) => b.state === 'coned').length, final: this.final, event: this.event, mode: this.mode });
+  }
+
+  /** The final starts nose to tail: the rival sat right on your bumper, so it is a duel from the first note. */
+  gridFinal(alive) {
+    const pc = this.player.car, rival = alive.find((c) => !c.isPlayer);
+    if (!rival) return;
+    const pts = this.rng.shuffle(this.track.spawnPoints.filter((p) => p.s > 40 && this.track.edges[p.edgeId].len - p.s > 30));
+    for (const p of pts) {
+      const e = this.track.edges[p.edgeId], back = e.path.offsetAt(p.s - 26, e.laneOff);
+      const clear = this.bays.every((b) => b.state === 'closed' || (Math.hypot(b.x - p.x, b.z - p.z) > 9 && Math.hypot(b.x - back.x, b.z - back.z) > 9));
+      if (!clear) continue;
+      pc.place(p.x, p.z, p.h); pc.loc = { edgeId: p.edgeId, s: p.s };
+      rival.car.place(back.x, back.z, back.h); rival.car.loc = { edgeId: p.edgeId, s: p.s - 26 };
+      return;
+    }
   }
 
   startFree() {

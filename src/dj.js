@@ -74,6 +74,8 @@ const L = {
     "Round {round}. {cars} cars, {bays} spaces, and the cones have been moved by a council officer who has never once owned a car.",
     "Round {round}! The cones are out, the curtains are twitching, and there are {bays} spaces for {cars} cars.",
     "Round {round}. {bays} spaces. {cars} cars. And one very tired lollipop lady.",
+    { t: "Round {round}, and we have a NEW LEADER: {newLeader}, on {newLeaderPts} points! Somebody's been practising on the quiet. {bays} spaces.", w: 4 },
+    { t: "Round {round}, and our contestant goes into it TOP of the table on {youLead}! Window down, elbow out. {bays} spaces.", w: 4 },
     "Here we go, round {round}! {cars} still in it, {bays} spaces. Keep it clockwise, keep it civil, keep it under twenty.",
     { t: "Round {round}! I've just been told {cars} cars are left and the residents' association has called an emergency meeting. About me.", when: (c) => c.round >= 3 },
     { t: "Round {round}. {cars} cars, {bays} spaces. If you're just joining us: no, this isn't normal. Yes, it is every morning.", when: (c) => c.round >= 2 },
@@ -153,6 +155,9 @@ const L = {
     "Don't relax. I could stop this at any moment. It's the only power I have.",
     "Getting twitchy? I am. Fourth coffee.",
     "Eyes on the cones. Eyes on the cones.",
+    "Is it now? Is it now? ~ It might be now.",
+    "My finger's hovering. Like a hatchback outside a primary school.",
+    "Not long now. Keep it moving. Keep it scouting. I'm watching.",
   ],
   banterBluff: [
     { t: "I'm stopping it... NOW! ~ No I'm not. Sorry. Couldn't resist.", when: (c) => c.round >= 2 },
@@ -379,6 +384,11 @@ const L = {
     { t: "ONE SPACE! {STREET}! {HUNTERS}! It's between you! {secs} SECONDS!", when: (c) => c.nHunt === 2 },
     "DOWN TO ONE! {STREET}! {secs} seconds on the clock and no manners left on the street!",
   ],
+  finalClock: [
+    "I'm cutting the clock! {secs} SECONDS FOR THE GOLDEN PERMIT!",
+    "Clock's cut! {secs} seconds! One space, two cars, no prisoners!",
+    "{secs} SECONDS! That's all you get! I've cut it! I'm drunk on power!",
+  ],
   whistle: [
     "TIME! But they're still reversing in! I'm allowing it!",
     "ON THE WHISTLE! Half in! The stewards are muttering, but I'll allow it!",
@@ -572,6 +582,9 @@ const L = {
     "You've gone PAST IT! The space on {street} is behind you!",
     "Overshot! The bay's behind you on {street}! IT'S BEHIND YOU! It's like a pantomime!",
     "Missed it! Drove right past the space on {street}! Back up!",
+    "That was your space! On {street}! You waved at it as you went past!",
+    "Past it again on {street}! It's not a drive-through!",
+    "Sailed straight past the bay on {street}! The residents are pointing at it! All of them!",
   ],
   longReverse: [
     "Our contestant's been reversing for {seconds} seconds. That's not parking, that's a commute.",
@@ -656,7 +669,7 @@ const L = {
   speeding: [
     "{mph} in a twenty zone! This is {street}, not Silverstone!",
     "{mph} miles an hour past the terraces! The community speed watch need a bigger clipboard!",
-    "It's a TWENTY zone! You're doing {mph}! There's a lollipop lady somewhere having palpitations!",
+    "It's a TWENTY zone! You're doing {mph}! Somewhere a crossing patrol is having palpitations!",
   ],
   loiter1: [
     "Keep moving, please! No hovering next to the cones. We've all seen that trick.",
@@ -738,9 +751,9 @@ const L = {
   man_sandra: ["Sandra's slotting into {street}. She's done this one before. About four thousand times."],
   man: ["{name}'s going in on {street}!", "{name}'s reversing in on {street}! Beep, beep, beep!"],
   parkCount: [
-    "{free} spaces left, {nHunt} cars still looking. Not all of them are going to make it, and frankly, that's showbiz.",
-    "{free} spaces, {nHunt} cars. Even I can do that maths, and I failed GCSE.",
-    "Still {free} spaces out there. {Hunters}, I'm looking at you.",
+    { t: "{free} spaces left, {nHunt} cars still looking. Not all of them are going to make it, and frankly, that's showbiz.", when: (c) => c.free >= 2 },
+    { t: "{free} spaces, {nHunt} cars. Even I can do that maths, and I failed GCSE.", when: (c) => c.free >= 2 },
+    { t: "Still {free} spaces out there. {Hunters}, I'm looking at you.", when: (c) => c.free >= 2 },
   ],
   ring: [
     "Follow the yellow ring! It's on {ringStreet}!",
@@ -1268,6 +1281,7 @@ export class DJ {
       case 'roundIntro': {
         this.frantic = false; m.roundRob = null; m.perfectStreet = null; m.stash = []; m.photo = null; m.endSaid = false; m.struggleRound = 0;
         const c = this.ctx({ ...d, label: d.mode && d.mode.label, rivals: (d.cars || 1) - 1 });
+        if (m.leader && m.leader.fresh && d.round > 1) { c.newLeader = m.leader.isPlayer ? null : m.leader.name; c.youLead = m.leader.isPlayer ? Math.round(m.leader.points) : null; c.newLeaderPts = Math.round(m.leader.points); m.leader.fresh = false; }
         let keys;
         if (d.round === 1) {
           const mk = d.mode && d.mode.key;
@@ -1277,21 +1291,21 @@ export class DJ {
           if (r) { c.rival = r.name; c.rivalTitle = r.title.replace(/^The /, 'the '); }
           keys = ['finalIntro', 'roundIntro'];
         } else keys = ['roundIntro'];
-        this.say(keys, c, 3, { delay: 0.9, ttl: 6 });
+        this.say(keys, c, 3, { delay: 0.6, ttl: 6 });
         if (d.event && d.round > 1 && rnd() < 0.5) this.say('eventTease', c, 2, { ttl: 4 });
         break;
       }
       case 'leader': {
         const lw = this.who(d.name);
         const isPlayer = d.name === 'You' || lw.isPlayer || (d.comp && d.comp.isPlayer);
-        m.leader = { name: isPlayer ? 'Our contestant' : nameOf(d.name) || d.name, points: d.points };
+        m.leader = { name: isPlayer ? 'Our contestant' : nameOf(d.name) || d.name, points: d.points, isPlayer, fresh: true };
         this.say('leader', this.ctx({ ...lw, name: isPlayer ? 'our contestant' : lw.name || d.name, points: Math.round(d.points), isPlayer }), 2, { ttl: 7 });
         break;
       }
       case 'freeStart': this.say('freeStart', {}, 3); break;
       case 'musicStart': {
         const c = this.ctx(d);
-        this.say(d.final ? ['musicStartFinal', 'musicStart'] : ['musicStart'], c, 2, { ttl: 3 });
+        this.say(d.final ? ['musicStartFinal', 'musicStart'] : ['musicStart'], c, 2, { ttl: 5 });
         break;
       }
       case 'banter': {
@@ -1346,7 +1360,7 @@ export class DJ {
         if (d.t === 5) this.say('tick5', c, 3, { ttl: 1.0 });
         break;
       }
-      case 'lastSpace': this.say('lastSpace', this.ctx(d), 3, { ttl: 5 }); this.react('gasp'); break;
+      case 'lastSpace': this.say(g.final ? ['finalClock', 'lastSpace'] : ['lastSpace'], this.ctx(d), 3, { ttl: 5 }); this.react('gasp'); break;
       case 'whistle': this.say('whistle', this.ctx(d), 3, { ttl: 2 }); break;
       case 'parked': this.onParked(d, g, w); break;
       case 'lastGasp': {

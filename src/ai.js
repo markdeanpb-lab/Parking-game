@@ -126,6 +126,28 @@ export function planReversePark(car, bay, err, shuffles) {
   return poses;
 }
 
+/** Poses for driving forwards into a bay from behind it (the cheeky nose-in while someone else lines up to reverse). */
+export function planNoseIn(car, bay, err) {
+  const c = Math.cos(bay.h), s = Math.sin(bay.h), sgn = -bay.side;
+  const toWorld = (u, w, a) => ({ x: bay.x + c * u - s * w * sgn, z: bay.z + s * u + c * w * sgn, h: bay.h + a * sgn });
+  const dx = car.x - bay.x, dz = car.z - bay.z;
+  const us = dx * c + dz * s, ws = (-dx * s + dz * c) * sgn, as = wrapAngle(car.h - bay.h) * sgn;
+  const slack = Math.max(0, (bay.len - car.len) / 2 - 0.1);
+  const uf = clamp(err.along + slack * 0.4, -slack, slack);
+  const wf = -bay.wid / 2 + 0.3 + car.wid / 2 + err.lat;
+  const du = uf - us, dw = ws - wf;
+  if (du < 3.6) return null;
+  const poses = [];
+  const n = Math.ceil(Math.hypot(du, dw) / 0.1);
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, S = t * t * (3 - 2 * t), dS = 6 * t * (1 - t);
+    const a = -Math.atan2(dw * dS, du) + as * (1 - t) * (1 - t) + err.angle * t * t;
+    poses.push({ ...toWorld(us + du * t, ws - dw * S, a), v: 1, steer: (t < 0.5 ? 1 : -1) * 0.45 * sgn });
+  }
+  poses.clearIdx = Math.round(n * 0.7);
+  return poses;
+}
+
 export class Driver {
   constructor(game, car, persona) {
     this.game = game; this.car = car; this.p = persona;
@@ -141,6 +163,7 @@ export class Driver {
     this.stallT = game.rng.range(6, 14);
     this.lorryT = 3; this.lorryStop = 0;
     this.honkCooldown = 0;
+    this.noseTried = new Set();
     this.stuckT = 0; this.unstickT = 0; this.unstickSteer = 0; this.stuckCount = 0;
     this.speedScale = 1;
     this.fooled = null;       // driveway the gullible learner is heading for
@@ -286,6 +309,15 @@ export class Driver {
       case 'cruise': {
         let speed = p.cruise * this.speedScale;
         if (p.anticipates && g.phase === 'music') speed = this.anticipate(speed);
+        // The final: two cars, one space, and your rival is not letting you out of their sight.
+        if (g.final && g.phase === 'music' && this.comp && !p.civilian) {
+          const pl = g.player.car, me = this.loc();
+          if (pl.loc) {
+            const gap = g.track.pathDistance(me.edge.id, me.s, pl.loc.edgeId, pl.loc.s);
+            if (gap > 14 && gap < 160) speed = Math.max(speed, Math.min(p.seek * this.speedScale, p.cruise * 1.3));   // reel them in
+            else if (gap > 0 && gap < 10) speed = Math.min(speed, Math.max(2, pl.v));
+          }
+        }
         if (p.stalls) {
           this.stallT -= dt;
           if (this.stallT <= 0 && Math.abs(car.v) > 2 && g.phase === 'music') { car.stalled = 2.2; car.v *= 0.2; this.stallT = g.rng.range(11, 20); this.hazards = true; g.emit('stall', { driver: this }); }
@@ -401,6 +433,13 @@ export class Driver {
         if (this.target && this.target.edgeId === me.edge.id && this.target.s + START_AHEAD < line) continue;
         speed = Math.min(speed, Math.sqrt(Math.max(0, 2 * 2.5 * (line - me.s))));
       }
+      // the autopilot player hesitating before reversing in: same temptation as with a human (balance testing)
+      if (d.comp && d.comp.isPlayer && this.state === 'seek' && this.comp && g.phase === 'park' && d.state === 'manoeuvre' && d.pi < 1 && d.pauseT > 0.15 &&
+          me.s > line - 9 && me.s < line + 2 && Math.abs(car.v) < 3 && !this.noseTried.has(b)) {
+        this.noseTried.add(b);
+        const chance = (g.final ? 0.3 : 0.05) + this.p.aggression * (g.final ? 0.55 : 0.4);
+        if (g.rng.chance(chance) && this.beginNoseIn(b)) { d.abortManoeuvre(); return; }
+      }
     }
     // ...and behind the player, when they are obviously lining up to reverse into one
     const pl = g.player.car;
@@ -410,6 +449,13 @@ export class Driver {
         if (pl.loc.s > b.s - 3 && pl.loc.s < b.s + 13) {
           const line = b.s - b.slotLen / 2 - 1.2 - car.len / 2;
           if (me.s < line + 1.5) speed = Math.min(speed, Math.sqrt(Math.max(0, 2 * 2.5 * (line - me.s))));
+          // ...unless you're the sort to nip in nose-first while they faff about with reverse gear
+          if (this.state === 'seek' && this.comp && g.phase === 'park' && me.s > line - 9 && me.s < line + 2 && Math.abs(car.v) < 3 &&
+              Math.abs(pl.v) < 1.3 && pl.loc.s > b.s + 1 && !(b.claimedBy && b.claimedBy !== this && b.claimedBy.state === 'manoeuvre') && !this.noseTried.has(b)) {
+            this.noseTried.add(b);
+            const chance = (g.final ? 0.3 : 0.05) + this.p.aggression * (g.final ? 0.55 : 0.4);
+            if (g.rng.chance(chance) && this.beginNoseIn(b)) return;
+          }
         }
       }
     }
@@ -469,11 +515,30 @@ export class Driver {
     };
     const shuffles = g.rng.int(p.shuffles[0], p.shuffles[1]);
     this.poses = planReversePark(this.car, bay, err, shuffles);
-    this.pi = 0; this.blockT = 0; this.pauseT = 0.25 + bad * 0.8;
+    this.pi = 0; this.blockT = 0; this.pauseT = 0.25 + bad * 0.8 + (p.key === 'human' ? g.rng.range(0.3, 1.6) : 0);
     this.state = 'manoeuvre';
     this.car.kinematic = true; this.car.v = 0;
     this.indicator = p.indicates ? bay.side : 0;
     g.emit('manoeuvre', { driver: this, bay });
+  }
+
+  /** Dive into `bay` forwards from behind it. Returns false if there isn't room to. */
+  beginNoseIn(bay) {
+    const g = this.game, p = this.p;
+    if (bay.state !== 'open' || bay.occupant) return false;
+    const bad = 1 - p.skill;
+    const poses = planNoseIn(this.car, bay, { angle: g.rng.range(-1, 1) * bad * 0.25, lat: g.rng.range(0.05, 1) * bad * 0.45, along: g.rng.range(-1, 1) * bad * 0.4 });
+    if (!poses) return false;
+    if (this.target && this.target !== bay) this.releaseClaim();
+    this.target = bay;
+    const prev = bay.claimedBy;
+    if (prev && prev !== this) prev.thinkT = 0;
+    bay.claimedBy = this; g.noteClaim(this, bay);
+    this.poses = poses; this.pi = 0; this.blockT = 0; this.pauseT = 0.1;
+    this.state = 'manoeuvre'; this.car.kinematic = true; this.car.v = 0;
+    this.indicator = p.indicates ? bay.side : 0;
+    g.emit('manoeuvre', { driver: this, bay, noseIn: true });
+    return true;
   }
 
   updateManoeuvre(dt) {
