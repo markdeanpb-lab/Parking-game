@@ -394,8 +394,13 @@ export class UI {
       const [x, y] = this.mmT(b.x, b.z);
       if (b.state === 'coned') {
         if (game.phase === 'park') { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fillStyle = '#5d6f93'; g.fill(); continue; }
-        g.beginPath(); g.moveTo(x, y - 7); g.lineTo(x + 6, y + 5); g.lineTo(x - 6, y + 5); g.closePath();
-        g.fillStyle = '#ff7a1a'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#071a3d'; g.stroke();
+        // gameplay's "tell": cones that are about to come off wobble and warm up slightly (a hint, not a giveaway)
+        const tell = game.phase === 'music' ? Math.min(1, Math.max(0, b.tell || 0)) : 0;
+        g.save(); g.translate(x, y);
+        if (tell > 0) { g.rotate(Math.sin(t * 11 + b.id) * 0.32 * tell); g.scale(1 + 0.18 * tell * (0.5 + 0.5 * Math.sin(t * 7)), 1 + 0.18 * tell * (0.5 + 0.5 * Math.sin(t * 7))); }
+        g.beginPath(); g.moveTo(0, -7); g.lineTo(6, 5); g.lineTo(-6, 5); g.closePath();
+        g.fillStyle = tell > 0.05 ? `rgb(255,${Math.round(122 + 80 * tell)},${Math.round(26 + 20 * tell)})` : '#ff7a1a'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#071a3d'; g.stroke();
+        g.restore();
         continue;
       }
       if (b.state === 'open') {

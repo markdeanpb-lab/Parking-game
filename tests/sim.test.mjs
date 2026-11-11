@@ -141,6 +141,7 @@ for (const e of ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 
 {
   let roundsSeen = 0, badBays = 0, stuckRounds = 0, longest = 0, ends = 0;
   const seen = new Set();
+  let told = null, tellMismatch = 0;
   const N = 20;
   for (let i = 0; i < N; i++) {
     const track = buildTrack(map);
@@ -148,6 +149,8 @@ for (const e of ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 
     let ended = false, roundT = 0;
     game.on((type, d) => {
       seen.add(type);
+      if (type === 'tell') told = d.bays.map((b) => b.id).sort().join();
+      if (type === 'musicStop' && told !== null) { if (told !== game.bays.filter((b) => b.state === 'open' || b.state === 'blocked').map((b) => b.id).sort().join()) tellMismatch++; told = null; }
       if (type === 'gameover' || type === 'victory') ended = true;
       if (type === 'musicStop') { roundsSeen++; if (d.bays !== d.cars - 1) badBays++; }
     });
@@ -164,7 +167,8 @@ for (const e of ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 
   console.log(`termination: ${ends}/${N} games ended, ${roundsSeen} music stops, longest round ${longest.toFixed(0)} s`);
   check(ends === N && stuckRounds === 0, 'every round and every game terminates');
   check(badBays === 0, 'there is always exactly one fewer space than cars when the music stops');
-  for (const e of ['contested', 'rivalRobbed', 'leader', 'lastSpace']) check(seen.has(e), `event "${e}" is emitted`);
+  check(tellMismatch === 0, 'the bays that give a tell are exactly the ones that open');
+  for (const e of ['contested', 'rivalRobbed', 'leader', 'lastSpace', 'tell']) check(seen.has(e), `event "${e}" is emitted`);
 }
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nall simulations passed');
 process.exit(failures ? 1 : 0);

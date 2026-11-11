@@ -132,7 +132,7 @@ function setTagState(tag, st) {
   const u = tag.userData; if (u.state === st) return;
   u.state = st; tag.material.map = u.maps[st] ||= u.make(st); tag.material.needsUpdate = true;
 }
-const ringGeo = new THREE.RingGeometry(2.45, 2.85, 40); ringGeo.rotateX(-Math.PI / 2);
+const ringGeo = new THREE.RingGeometry(2.25, 3.0, 40); ringGeo.rotateX(-Math.PI / 2);
 function addMesh(car, persona, driver, tagged, comp) {
   if (meshes.has(car)) return;
   const mesh = createCarMesh(car.type, car.colour ?? persona.colour, { learner: persona.learner, roofBox: persona.key === 'mum', beacon: persona.lorry });

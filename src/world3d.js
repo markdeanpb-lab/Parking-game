@@ -667,6 +667,8 @@ export function buildWorld(scene, track, quality) {
         scaffoldDone.n++;
         scaffold(props, F, x0, x1, d, H);
       }
+      // --- rear garden behind the house: fences, patio, lawn, the odd shed
+      if (!isShop) rearGarden(F, x0, x1, bi.ring, u === units - 1, hrng);
     }
     // --- chimney stacks on the party walls
     const info = roofInfo[seg.bi];
@@ -756,6 +758,34 @@ export function buildWorld(scene, track, quality) {
     det.box(F, 0.0, len, 3.05, 3.14, d, d + 0.22, col(0xf3f1ea), 'fblrt');
     // striped awning over the windows
     roofs.quad(F.p(0.3, 2.35, d + 1.0), F.p(len - 0.3, 2.35, d + 1.0), F.p(len - 0.3, 2.48, d + 0.15), F.p(0.3, 2.48, d + 0.15), col(0x2f7a4b), [0, 0, 0, 0, 0, 0, 0, 0]);
+  }
+  function rearGarden(F, x0, x1, ring, last, r) {
+    const xm = (x0 + x1) / 2;
+    let depthB = 0.2;
+    while (depthB < 20) { const p = F.p(xm, 0, -depthB); if (!pointInRing(p[0], p[2], ring)) break; depthB += 0.4; }
+    let hit = null;
+    for (let t = 0.6; t < 32; t += 0.6) {
+      const p = F.p(xm, 0, -(depthB + t));
+      if (inBuilding(p[0], p[2]) || sdf.sample(p[0], p[2]) > -PAVE - 0.3 || inCtx(p[0], p[2])) { hit = t; break; }
+    }
+    const gd = hit === null ? 11 : Math.min(14, hit / 2 - 0.1);
+    if (gd < 2.2 || depthB >= 20) return;
+    const z0 = -depthB + 0.05, z1 = -(depthB + gd);
+    const timber = col(r.pick([0x7a5b3e, 0x8a6a48, 0x6b5440, 0x94754f]));
+    const lawn = col(r.pick([0x6f9653, 0x7a9d58, 0x668d4c, 0x83a35e])), patio = col(r.pick([0xa9a49a, 0xb7ad9c, 0x9c968c]));
+    const pz = Math.max(z1 + 0.5, z0 - 1.8);
+    props.quad(F.p(x0, 0.006, z0), F.p(x1, 0.006, z0), F.p(x1, 0.006, pz), F.p(x0, 0.006, pz), patio);
+    props.quad(F.p(x0, 0.006, pz), F.p(x1, 0.006, pz), F.p(x1, 0.006, z1), F.p(x0, 0.006, z1), lawn);
+    props.shade = (x, y) => (y < 0.05 ? 0.7 : 1);
+    const fh = 1.6 + r() * 0.2;
+    for (const fx of last ? [x0, x1] : [x0]) props.box(F, fx - 0.03, fx + 0.03, 0, fh, z1, z0, timber, 'lrt');
+    props.box(F, x0, x1, 0, fh, z1 - 0.03, z1 + 0.03, timber, 'fbt');
+    props.shade = null;
+    if (r() < 0.35 && x1 - x0 > 3) {       // shed in the far corner
+      const sx0 = r() < 0.5 ? x0 + 0.15 : x1 - 2.05, sc = col(r.pick([0x4f6b4a, 0x7b5a3c, 0x5d6d73, 0x8c6c48]));
+      props.box(F, sx0, sx0 + 1.9, 0, 1.95, z1 + 0.1, z1 + 1.7, sc, 'fblr');
+      roofs.quad(F.p(sx0 - 0.1, 1.95, z1 + 1.8), F.p(sx0 + 2.0, 1.95, z1 + 1.8), F.p(sx0 + 2.0, 2.2, z1), F.p(sx0 - 0.1, 2.2, z1), col(0x3c3f44), [0, 0, 0.8, 0, 0.8, 0.7, 0, 0.7]);
+    }
   }
   function fenceRun(F, xa, xb, y0 = 0, hgt = 1.75) {      // close-boarded timber fence, posts every 1.8 m
     const t1 = col(0x8a6a48), t2 = col(0x765a3d);
@@ -1099,7 +1129,8 @@ export function buildWorld(scene, track, quality) {
     }
   }
   for (const k of cornerKerbs) for (const inset of [0.2, 0.42]) {
-    strip([{ x: k.a.x + k.gr.x * inset, z: k.a.z + k.gr.z * inset }, { x: k.c.x + k.gr.x * inset, z: k.c.z + k.gr.z * inset }], 0.09, yellowC, 0.033);
+    const A = { x: k.a.x + k.gr.x * inset, z: k.a.z + k.gr.z * inset }, C = { x: k.c.x + k.gr.x * inset, z: k.c.z + k.gr.z * inset };
+    strip([A, C], 0.09, yellowC, 0.033); strip([C, A], 0.09, yellowC, 0.033);
   }
   marks.mesh(scene, new THREE.MeshStandardMaterial({ map: wearTex, vertexColors: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), false, true);
   // painted flow arrows + 20 roundels
