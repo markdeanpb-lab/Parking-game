@@ -50,7 +50,7 @@ export const PERSONAS = {
   // through the streets, takes a couple of goes to get into a space)
   human: {
     key: 'human', name: 'You', title: 'Typical Human', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
-    cruise: 7.6, seek: 9.2, reaction: [0.6, 1.3], manSpeed: 1.25, skill: 0.6, shuffles: [0, 2], aggression: 0.6, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 0.6,
+    cruise: 7.6, seek: 9.2, reaction: [0.6, 1.3], manSpeed: 1.25, skill: 0.6, shuffles: [0, 2], aggression: 0.6, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 0.7,
   },
   // used when the player car is on autopilot (tests / attract mode)
   auto: {
@@ -381,7 +381,7 @@ export class Driver {
     for (const b of this.game.tells) {
       if (b.edgeId !== me.edge.id) continue;
       const d = b.s + START_AHEAD - me.s;
-      if (d > -1 && d < 45) return Math.min(speed, clamp(d * 0.35, 3.2, speed));
+      if (d > -1 && d < 60) return Math.min(speed, clamp(d * 0.3, 3.2, speed));
     }
     return speed;
   }

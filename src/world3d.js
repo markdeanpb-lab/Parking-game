@@ -145,6 +145,7 @@ const PALETTES = {
     houses: [['brick', 0xa9543a], ['brick', 0xb15f40], ['brick', 0x9b4c36], ['brick', 0xa65b40]],
     trim: 0xf4f2ec, lintel: 'white', bay: 0.15, canopy: 'hood', front: 'picket', sash: 2,
   },
+  junction: { houses: [['brick', 0xa9563c]], trim: 0xf4f2ec, lintel: 'white', bay: 0, canopy: 'hood', front: 'gardenwall', sash: 2, door: 0x1f2a3a },
   gault: { houses: [['brick', 0xd9c896]], trim: 0xf4f2ec, lintel: 'white', bay: 0, canopy: 'hood', front: 'railwall', sash: 2, door: 0x141518 },
   other: {
     houses: [['brick', 0xa8563c], ['brick', 0x9c5b3e], ['brick', 0xb26a44], ['brick', 0x8e4f3b], ['brick', 0xc9ae76], ['render', 0xe9e5d8], ['render', 0xd9d6cc], ['brick', 0x9c5b3e]],
@@ -292,7 +293,8 @@ export function buildWorld(scene, track, quality) {
 
   // kerb stones (granite strip with joints) + gutter grime along every kerb line
   const kerbs = new GB();
-  const grime = [];          // quads for the gradient AO mesh: [a, b, c, d] with v=0 at the dark edge
+  const grime = [];
+  const cornerKerbs = [];     // kerb segments round the Church St / Grange St corners: double yellows follow them          // quads for the gradient AO mesh: [a, b, c, d] with v=0 at the dark edge
   {
     const kc = [col(0xc9c7c1), col(0xb9b7b0), col(0xd3d0c9)];
     for (const poly of map.road) for (const ringRaw of [poly.outer, ...poly.holes]) {
@@ -310,6 +312,8 @@ export function buildWorld(scene, track, quality) {
           kerbs.quad([p0.x - gr.x * o, 0.142, p0.z - gr.z * o], [p0.x, 0.142, p0.z], [p1.x, 0.142, p1.z], [p1.x - gr.x * o, 0.142, p1.z - gr.z * o], kc0);
         }
         const g2 = 0.42;
+        const nC = track.nodes.C;
+        if (nC && Math.hypot((a.x + c.x) / 2 - nC.x, (a.z + c.z) / 2 - nC.z) < 13.5) cornerKerbs.push({ a, c, gr });
         grime.push([[a.x, 0.024, a.z], [c.x, 0.024, c.z], [c.x + gr.x * g2, 0.024, c.z + gr.z * g2], [a.x + gr.x * g2, 0.024, a.z + gr.z * g2], 0.55]);
       }
     }
@@ -325,6 +329,7 @@ export function buildWorld(scene, track, quality) {
   const accessPts = map.accesses.map((a) => ({ x: a.at[0], z: -a.at[1] }));
   const forecourtAt = (edgeId, side, s) => (track.forecourts || []).find((f) => f.edgeId === edgeId && f.side === side && s > f.s0 - 0.5 && s < f.s1 + 0.5);
 
+  const shopSigns = [];
   const walls = new GB(1 / 1.4);      // brick masses + brick facades (brick texture)
   const render = new GB(1 / 2);       // painted render facades
   const roofs = new GB();             // slate (explicit UVs)
@@ -455,6 +460,16 @@ export function buildWorld(scene, track, quality) {
     }
   });
 
+  let shopSeg = null;
+  if (shopPt) {
+    let bestD = 11;
+    for (const sg of facadeSegs) {
+      const mx = (sg.a.x + sg.c.x) / 2, mz = (sg.a.z + sg.c.z) / 2, dd = Math.hypot(mx - shopPt.x, mz - shopPt.z);
+      if (dd < bestD && sg.len > 2.4 && sg.e.id.startsWith('catherine')) { bestD = dd; shopSeg = sg; }
+    }
+  }
+  let binIdx = 0;
+  const BIN_COLOURS = [0x2f6b3a, 0x1d1f22, 0x6e4224];       // green, black, brown (photo 5)
   let houseCount = 0;
   const scaffoldDone = { n: 0 };
   for (const seg of facadeSegs) {
@@ -469,11 +484,13 @@ export function buildWorld(scene, track, quality) {
     let key = streetKey(seg.e);
     const side = Math.sign(seg.lat) || 1;
     if (key === 'dalton' && side === -track.edges.dalton.baySide && seg.s > 205) key = 'gault';    // the yellow-brick house at the north end
-    const pal = PALETTES[key];
     const units = Math.max(1, Math.round(len / 4.6));
     const w = len / units;
     const gf = H > 7 ? 2.9 : H * 0.47;          // ground floor height
-    const isShop = shopPt && Math.hypot((seg.a.x + seg.c.x) / 2 - shopPt.x, (seg.a.z + seg.c.z) / 2 - shopPt.z) < 14 && seg.e.id.startsWith('catherine');
+    const isShop = seg === shopSeg;
+    if (seg.e.id === 'church' && seg.s < 34 && side === seg.e.baySide) key = 'junction';
+    if (isShop) shopSign(F, len, d);
+    let pal = PALETTES[key];
     const yardAt = (x) => {
       const p = F.p(x, 0, 0); const l = track.locate(p[0], p[2]); return Math.max(0, l.dist - l.edge.hw - PAVE);
     };
@@ -493,7 +510,7 @@ export function buildWorld(scene, track, quality) {
       const doorLeft = ((houseCount + (seg.bi % 2)) % 2) === 0;
       const doorX = narrow ? -99 : doorLeft ? x0 + 0.95 : x1 - 0.95;
       const winX = narrow ? (x0 + x1) / 2 : doorLeft ? x1 - 1.75 : x0 + 1.75;
-      const shop = isShop && u === Math.floor(units / 2);
+      const shop = isShop;
       const hasBay = !shop && !narrow && w >= 4.1 && hrng() < pal.bay;
       // openings: {x0,x1,y0,y1,kind}
       const ops = [];
@@ -565,19 +582,15 @@ export function buildWorld(scene, track, quality) {
           det.box(F, op.x0 - 0.12, op.x1 + 0.12, 0, 0.15, d - 0.02, d + 0.32, col(0xb9b5ab));             // step
           det.box(F, op.x0 + 0.42, op.x0 + 0.58, 1.0, 1.06, 0.06, 0.1, col(0xc9a24a), 'flrt');            // letterbox/knocker glint
           if (shop) continue;
-          if (pal.canopy === 'hood') {
-            det.box(F, op.x0 - 0.18, op.x1 + 0.18, op.y1 + 0.12, op.y1 + 0.24, d, d + 0.42, trimC);
-            for (const bx of [op.x0 - 0.12, op.x1 + 0.04]) det.box(F, bx, bx + 0.08, op.y1 - 0.12, op.y1 + 0.12, d, d + 0.3, trimC, 'flrt');
+          if (pal.canopy === 'hood' || (pal.canopy === 'porch' && !hasBay)) {
+            // door surround pilasters carrying a small lean-to slate hood (reads as one attached piece)
+            det.box(F, op.x0 - 0.16, op.x0, 0.15, op.y1 + 0.18, d - 0.01, d + 0.06, trimC, 'flrt');
+            det.box(F, op.x1, op.x1 + 0.16, 0.15, op.y1 + 0.18, d - 0.01, d + 0.06, trimC, 'flrt');
+            leanTo(F, op.x0 - 0.3, op.x1 + 0.3, d, d + 0.48, op.y1 + 0.18, op.y1 + 0.58, trimC);
           } else if (pal.canopy === 'surround') {
             det.box(F, op.x0 - 0.2, op.x0, 0, op.y1 + 0.05, d, d + 0.08, trimC, 'flrt');
             det.box(F, op.x1, op.x1 + 0.2, 0, op.y1 + 0.05, d, d + 0.08, trimC, 'flrt');
             det.box(F, op.x0 - 0.3, op.x1 + 0.3, op.y1 + 0.05, op.y1 + 0.3, d, d + 0.16, trimC);
-          } else if (pal.canopy === 'porch') {          // slate lean-to canopy on brackets
-            const zf = d + 0.85, yb0 = op.y1 + 0.15, yb1 = op.y1 + 0.55;
-            roofs.quad(F.p(op.x0 - 0.35, yb0, zf), F.p(op.x1 + 0.35, yb0, zf), F.p(op.x1 + 0.35, yb1, d), F.p(op.x0 - 0.35, yb1, d), col(0x5d636c), [0, 0, 0.6, 0, 0.6, 0.35, 0, 0.35]);
-            roofs.quad(F.p(op.x0 - 0.35, yb1, d), F.p(op.x1 + 0.35, yb1, d), F.p(op.x1 + 0.35, yb0, zf), F.p(op.x0 - 0.35, yb0, zf), col(0x3a3c40), [0, 0, 0, 0, 0, 0, 0, 0]);
-            det.box(F, op.x0 - 0.38, op.x1 + 0.38, yb0 - 0.14, yb0, zf - 0.04, zf + 0.02, trimC);
-            for (const bx of [op.x0 - 0.3, op.x1 + 0.22]) det.box(F, bx, bx + 0.08, op.y1 - 0.3, yb0, d, zf - 0.04, trimC, 'flrt');
           }
         }
       }
@@ -612,6 +625,13 @@ export function buildWorld(scene, track, quality) {
         det.quad(F.p(plo[0][0], 0.72, plo[0][1]), F.p(plo[1][0], 0.72, plo[1][1]), F.p(plo[2][0], 0.72, plo[2][1]), F.p(plo[3][0], 0.72, plo[3][1]), sillC);
         const ap = (x, y) => F.p(x, y, zb);
         const capC = col(0x585e66);
+        if (pal.canopy === 'porch' && !narrow) {
+          // one continuous slate canopy over the bay and the front door, resting on the bay cornice (photo 3)
+          const xa = Math.min(plo[0][0], doorX - 0.65), xb = Math.max(plo[3][0], doorX + 0.65), zf = zb + dp + ex;
+          leanTo(F, xa, xb, zb, zf, 2.6, 3.1, trimC);
+          const postX = doorX < cx ? xa + 0.06 : xb - 0.06;
+          det.box(F, postX - 0.06, postX + 0.06, 0, 2.6, zf - 0.14, zf - 0.02, trimC, 'fblr');
+        } else
         roofs.quad(F.p(plo[1][0], 2.6, plo[1][1]), F.p(plo[2][0], 2.6, plo[2][1]), ap(cx + fw * 0.8, 3.0), ap(cx - fw * 0.8, 3.0), capC, [0, 0, 0.6, 0, 0.6, 0.3, 0, 0.3]);
         roofs.tri(F.p(plo[0][0], 2.6, plo[0][1]), F.p(plo[1][0], 2.6, plo[1][1]), ap(cx - fw * 0.8, 3.0), capC, [0, 0, 0.3, 0, 0.15, 0.3]);
         roofs.tri(F.p(plo[2][0], 2.6, plo[2][1]), F.p(plo[3][0], 2.6, plo[3][1]), ap(cx + fw * 0.8, 3.0), capC, [0, 0, 0.3, 0, 0.15, 0.3]);
@@ -638,7 +658,7 @@ export function buildWorld(scene, track, quality) {
       if (hrng() < 0.33) {
         const ydp = yardAt(winX);
         const bz = ydp > 1.2 ? d + 0.55 : ydp + PAVE * 0.5 + 0.05;
-        const bc = [0x2f5a35, 0x1f2226, 0x6b3d1f, 0x2f5a35, 0x1f2226][hrng.int(0, 4)];
+        const bc = BIN_COLOURS[binIdx++ % 3];
         const bp = F.p(winX + hrng.range(-0.4, 0.4), 0, bz);
         wheelieBin(props, bp[0], bp[2], Math.atan2(F.tz, F.tx) + hrng.range(-0.25, 0.25), col(bc), ydp > 1.2 ? 0 : 0.14);
       }
@@ -718,6 +738,25 @@ export function buildWorld(scene, track, quality) {
     for (let x = xa + 0.04; x < xb - 0.03; x += 0.16) G.box(F, x, x + 0.075, 0.05, hgt - 0.05 + ((x * 7) % 1 > 0.5 ? 0.02 : 0), -0.02, 0.02, white, 'fblrt');
     for (const y of [0.25, hgt - 0.25]) G.box(F, xa, xb, y, y + 0.07, -0.05, -0.02, white, 'fbt');
   }
+  /** Lean-to slate canopy against the facade: x range, z from wall (zw) to front (zf), eaves y0 at the front, y1 at the wall. */
+  function leanTo(F, xa, xb, zw, zf, y0, y1, trimC) {
+    const capC = col(0x5a6069), uL = (xb - xa) / 2.6;
+    roofs.quad(F.p(xa, y0, zf), F.p(xb, y0, zf), F.p(xb, y1, zw), F.p(xa, y1, zw), capC, [0, 0, uL, 0, uL, 0.25, 0, 0.25]);
+    roofs.quad(F.p(xa, y0 - 0.12, zf), F.p(xa, y0 - 0.12, zw), F.p(xb, y0 - 0.12, zw), F.p(xb, y0 - 0.12, zf), col(0x2c2d30), [0, 0, 0, 0, 0, 0, 0, 0]);   // soffit
+    det.box(F, xa, xb, y0 - 0.16, y0 + 0.02, zf - 0.03, zf + 0.02, trimC, 'fblrt');                    // fascia board
+    for (const [x, sgn] of [[xa, -1], [xb, 1]]) {       // solid cheeks back to the wall
+      const P0 = F.p(x, y0 - 0.16, zw), P1 = F.p(x, y0 - 0.16, zf), P2 = F.p(x, y0 + 0.02, zf), P3 = F.p(x, y1 + 0.02, zw);
+      if (sgn < 0) det.quad(P0, P1, P2, P3, trimC); else det.quad(P1, P0, P3, P2, trimC);
+    }
+  }
+  function shopSign(F, len, d) {
+    const L = Math.max(2.4, len - 0.3);
+    shopSigns.push({ F, x0: (len - L) / 2, x1: (len + L) / 2, d });
+    det.box(F, 0.05, len - 0.05, 2.5, 3.05, d, d + 0.14, col(0x1d4a35), 'fblrt');
+    det.box(F, 0.0, len, 3.05, 3.14, d, d + 0.22, col(0xf3f1ea), 'fblrt');
+    // striped awning over the windows
+    roofs.quad(F.p(0.3, 2.35, d + 1.0), F.p(len - 0.3, 2.35, d + 1.0), F.p(len - 0.3, 2.48, d + 0.15), F.p(0.3, 2.48, d + 0.15), col(0x2f7a4b), [0, 0, 0, 0, 0, 0, 0, 0]);
+  }
   function fenceRun(F, xa, xb, y0 = 0, hgt = 1.75) {      // close-boarded timber fence, posts every 1.8 m
     const t1 = col(0x8a6a48), t2 = col(0x765a3d);
     props.shade = (x, y) => (y < y0 + 0.1 ? 0.7 : 1);
@@ -777,8 +816,14 @@ export function buildWorld(scene, track, quality) {
               // close-boarded timber fence flanking the forecourt only at its ends
               continue;
             }
+            // setpieces: Church St junction (photo 2) and the flush fronts of Bernard St (photo 6)
+            let zone = null;
+            if (l.edge.id === 'church' && sd === l.edge.baySide && l.s < 34) zone = l.s < 11 ? 'railtall' : Math.abs(l.s - 21) < 0.9 ? 'gate' : 'gardenwall';
+            else if ((l.edge.id === 'church' && sd !== l.edge.baySide && l.s < 16) || (l.edge.id === 'grangeBC' && sd !== l.edge.baySide && l.s > l.edge.len - 16)) zone = 'fence';
+            else if (l.edge.id === 'bernard' && l.s < 165) zone = 'none';
+            if (zone === 'none') continue;
             runLeft -= pl;
-            if (runLeft <= 0) {
+            if (zone) { style = zone; runLeft = 0; } else if (runLeft <= 0 || ['railtall', 'gate', 'gardenwall'].includes(style)) {
               const pal = PALETTES[key];
               let f = pal.front;
               if (key === 'church' && sd !== l.edge.baySide && l.s > 18 && l.s < l.edge.len - 8) f = 'hedge';
@@ -795,8 +840,22 @@ export function buildWorld(scene, track, quality) {
             const Z = (zz) => zz * flip;
             const zr = (z0, z1) => (flip > 0 ? [z0, z1] : [-z1, -z0]);
             const hw = pl / 2 + 0.01;
-            if (rr() < 0.07 && style !== 'hedge') continue;          // a gateway
-            if (style === 'wall') {
+            if (!zone && rr() < 0.07 && style !== 'hedge') continue;          // a gateway
+            if (style === 'gardenwall' || style === 'railtall') {      // long brick garden wall with piers; railings on a dwarf wall near the corner
+              const top = style === 'gardenwall' ? 1.75 : 0.62;
+              props.shade = (x, y) => (y < 0.05 ? 0.65 : 1);
+              props.box(F, -hw, hw, 0.13, top, ...zr(0.02, 0.3), brickW2, 'fblr');
+              props.shade = null;
+              props.box(F, -hw - 0.01, hw + 0.01, top, top + 0.08, ...zr(-0.02, 0.34), coping, 'fblrt');
+              if (style === 'railtall') {
+                props.box(F, -hw, hw, 1.62, 1.67, ...zr(0.14, 0.18), iron, 'fbt');
+                for (let q = -hw + 0.06; q < hw; q += 0.13) props.box(F, q - 0.013, q + 0.013, top + 0.08, 1.78, ...zr(0.145, 0.175), iron, 'fb');
+              }
+              if (Math.abs(((l.s % 2.6) + 2.6) % 2.6 - 1.3) < pl / 2) props.box(F, -0.22, 0.22, 0.13, (style === 'gardenwall' ? 1.75 : 1.85) + 0.12, ...zr(-0.03, 0.36), brickW, 'fblrt');   // pier
+            } else if (style === 'gate') {
+              props.box(F, -hw, hw, 0.13, 1.8, ...zr(0.1, 0.16), col(0x6e4a32), 'fblrt');
+              for (let q = -hw; q < hw; q += 0.12) props.box(F, q, q + 0.02, 0.16, 1.78, ...zr(0.06, 0.1), col(0x5c3d29), 'fb');
+            } else if (style === 'wall') {
               props.shade = (x, y) => (y < 0.05 ? 0.65 : 1);
               props.box(F, -hw, hw, 0.13, 0.85, ...zr(0.02, 0.24), rr() < 0.5 ? brickW : brickW2, 'fblr');
               props.shade = null;
@@ -873,6 +932,15 @@ export function buildWorld(scene, track, quality) {
       decoCars.push({ type, colour: fr.pick([0x1f3a63, 0x2d3036, 0x8d9299, 0xe9ebee, 0x9c2f2f]), x: p.x, z: p.z, h: p.h + Math.PI / 2 * f.side + fr.range(-0.06, 0.06), y: 0.146 });
     }
   }
+  if (shopSigns.length) {
+    const tex = canvasTex(1024, 128, (g, w, h) => {
+      g.fillStyle = '#1d4a35'; g.fillRect(0, 0, w, h); g.fillStyle = '#f3f1ea'; g.font = 'bold 70px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('NEWS  ·  FOOD  ·  WINE', w / 2, h / 2 + 4);
+    }, false);
+    const sg = new GB(); sg.uv = []; sg.us = 1;
+    for (const sh of shopSigns) sg.quad(sh.F.p(sh.x0, 2.53, sh.d + 0.145), sh.F.p(sh.x1, 2.53, sh.d + 0.145), sh.F.p(sh.x1, 3.02, sh.d + 0.145), sh.F.p(sh.x0, 3.02, sh.d + 0.145), col(0xffffff), [0, 0, 1, 0, 1, 1, 0, 1]);
+    sg.mesh(scene, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }), false, true);
+  }
   if (blockGeo.count) blockGeo.mesh(scene, new THREE.MeshStandardMaterial({ map: blockPave, vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }), false, true);
 
   // ------------------------------------------------------------ street furniture along the streets
@@ -940,7 +1008,7 @@ export function buildWorld(scene, track, quality) {
       const br = makeRng(66);
       for (let s = d.len - 60; s < d.len - 14; s += br.range(3, 7)) {
         const p = d.path.offsetAt(s, d.baySide * (d.hw + PAVE - 0.4));
-        wheelieBin(props, p.x, p.z, p.h + br.range(-0.3, 0.3), col(br.pick([0x2f5a35, 0x1f2226, 0x6b3d1f])), 0.14);
+        wheelieBin(props, p.x, p.z, p.h + br.range(-0.3, 0.3), col(BIN_COLOURS[binIdx++ % 3]), 0.14);
       }
     }
   }
@@ -1030,6 +1098,9 @@ export function buildWorld(scene, track, quality) {
       strip(pts, 0.09, yellowC, 0.033);
     }
   }
+  for (const k of cornerKerbs) for (const inset of [0.2, 0.42]) {
+    strip([{ x: k.a.x + k.gr.x * inset, z: k.a.z + k.gr.z * inset }, { x: k.c.x + k.gr.x * inset, z: k.c.z + k.gr.z * inset }], 0.09, yellowC, 0.033);
+  }
   marks.mesh(scene, new THREE.MeshStandardMaterial({ map: wearTex, vertexColors: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), false, true);
   // painted flow arrows + 20 roundels
   {
@@ -1103,10 +1174,10 @@ export function buildWorld(scene, track, quality) {
     if (e.len > 90) nameSign(e, e.len - 11, side);
     if (e.realOneway) {
       // one-way above a 20 on the same post (Church St junction, photo 2)
-      roundSign(oneWay, e, 4.5, side, false, 2.75, true, 'rect');
-      if (e.circuit && e.len > 60) roundSign(zone20, e, 4.5, side, false, 2.1, false);
-      for (const sd of [-1, 1]) roundSign(noEntry, e, e.len - 6.5, sd, true);   // you may not drive in from this end
-    } else if (e.circuit && e.len > 60) roundSign(zone20, e, 9, side, false);
+      roundSign(oneWay, e, 4.5, side, true, 2.75, true, 'rect');
+      if (e.circuit && e.len > 60) roundSign(zone20, e, 4.5, side, true, 2.1, false);
+      for (const sd of [-1, 1]) roundSign(noEntry, e, e.len - 6.5, sd, false);   // you may not drive in from this end
+    } else if (e.circuit && e.len > 60) roundSign(zone20, e, 9, side, true);
   }
 
   // ------------------------------------------------------------ trees

@@ -1073,7 +1073,7 @@ export class DJ {
     if (pri === 1 && !this.colourWindow(opts)) return false;
     // airtime budget: leave breathing room so the big moments land (colour first, then routine important lines)
     const busy = this.talkFrac();
-    if (pri === 1 && busy > 0.34 && !opts.tease) return false;
+    if (pri === 1 && busy > 0.3 && !opts.tease) return false;
     if (pri === 2 && busy > 0.48 && !opts.urgent) return false;
     if (pri === 2 && this.current && this.current.pri >= 3 && this.queue.some((q) => q.pri >= 2 && q.cat === cat)) return false;
     let ch = null, key = null;

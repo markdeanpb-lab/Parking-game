@@ -114,7 +114,7 @@ export class UI {
     };
     const assign = (id, k) => {
       if (this.pointers.get(id) === k) return;
-      if (k) { this.pointers.set(id, k); if (k === 'horn') cb.onKey('horn'); } else this.pointers.delete(id);
+      this.pointers.set(id, k); if (k === 'horn') cb.onKey('horn');
       sync();
     };
     pad.addEventListener('pointerdown', (e) => {
@@ -124,7 +124,7 @@ export class UI {
       assign(e.pointerId, b.dataset.k);
     });
     window.addEventListener('pointermove', (e) => { if (this.pointers.has(e.pointerId)) assign(e.pointerId, keyAt(e.clientX, e.clientY)); }, { passive: true });
-    const up = (e) => { if (this.pointers.has(e.pointerId)) assign(e.pointerId, null); };
+    const up = (e) => { if (this.pointers.has(e.pointerId)) { this.pointers.delete(e.pointerId); sync(); } };
     window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     window.addEventListener('blur', () => { this.pointers.clear(); sync(); });
     pad.addEventListener('contextmenu', (e) => e.preventDefault());

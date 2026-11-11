@@ -106,6 +106,7 @@ def polys(g):
 # ---- buildings (trimmed back from the stylised road corridor) ----
 # Church St's north side (right as you drive it) has front gardens with hedges and big overhanging trees.
 church_line = LineString([e['pts'] for e in edge_out if e['id'] == 'church'][0])
+bernard_line = LineString([e['pts'] for e in edge_out if e['id'] == 'bernard'][0])
 church_gardens = church_line.buffer(-(CHURCH_W / 2 + PAVE_W + 2.4), single_sided=True)
 buildings = []
 for wid, (tags, nd) in ways.items():
@@ -151,8 +152,11 @@ for bd in buildings:
         if Point(mid[0] + nx * 1.0, mid[1] + ny * 1.0).distance(road) > D - 0.8: continue    # not facing the road
         if Point(mid).distance(street_lines) > 16: continue
         yard = D - PAVE_W
-        if yard <= YARD_MAX or yard > 9: continue
-        sh = yard - YARD_TARGET
+        ymax, ytarget = YARD_MAX, YARD_TARGET
+        if Point(mid).distance(bernard_line) < 12 and bernard_line.project(Point(mid)) < 165:
+            ymax, ytarget = 0.45, 0.12          # straight part of Bernard St: houses flush to the pavement (photo 6)
+        if yard <= ymax or yard > 9: continue
+        sh = yard - ytarget
         quad = Polygon([a, b, (b[0] + nx * sh, b[1] + ny * sh), (a[0] + nx * sh, a[1] + ny * sh)])
         quad = quad.difference(others.difference(poly).buffer(0.3)).difference(corridor).difference(church_gardens)
         if quad.area > 2: add.append(quad)
