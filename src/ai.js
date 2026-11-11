@@ -442,7 +442,7 @@ export class Driver {
       if (d.comp && d.comp.isPlayer && this.state === 'seek' && this.comp && g.phase === 'park' && d.state === 'manoeuvre' && d.pi < 1 && d.pauseT > 0.15 &&
           me.s > line - 9 && me.s < line + 2 && Math.abs(car.v) < 3 && !this.noseTried.has(b)) {
         this.noseTried.add(b);
-        const chance = (g.final ? 0.3 : 0.05) + this.p.aggression * (g.final ? 0.55 : 0.4);
+        const chance = (g.final ? 0.3 : 0.02) + this.p.aggression * (g.final ? 0.55 : 0.25);
         if (g.rng.chance(chance) && this.beginNoseIn(b)) { d.abortManoeuvre(); return; }
       }
     }
@@ -458,7 +458,7 @@ export class Driver {
           if (this.state === 'seek' && this.comp && g.phase === 'park' && me.s > line - 9 && me.s < line + 2 && Math.abs(car.v) < 3 &&
               Math.abs(pl.v) < 1.3 && pl.loc.s > b.s + 1 && !(b.claimedBy && b.claimedBy !== this && b.claimedBy.state === 'manoeuvre') && !this.noseTried.has(b)) {
             this.noseTried.add(b);
-            const chance = (g.final ? 0.3 : 0.05) + this.p.aggression * (g.final ? 0.55 : 0.4);
+            const chance = (g.final ? 0.3 : 0.02) + this.p.aggression * (g.final ? 0.55 : 0.25);
             if (g.rng.chance(chance) && this.beginNoseIn(b)) return;
           }
         }

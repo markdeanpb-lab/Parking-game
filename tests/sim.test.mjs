@@ -3,6 +3,7 @@ import map from '../src/mapdata.js';
 import { buildTrack } from '../src/track.js';
 import { Game } from '../src/game.js';
 import { obbOverlap, evaluatePark } from '../src/physics.js';
+import { keyboardLap, quietGame, scriptedPark } from './keyboard.mjs';
 
 const verbose = process.argv.includes('-v');
 let failures = 0;
@@ -105,6 +106,65 @@ for (const e of ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 
   settle(0, 0.03);
   check(parked && parked.rating.key !== 'awful', 'a straight, centred, stationary car is accepted (' + (parked ? parked.rating.label : 'not parked') + ')');
   check(game.playerComp.parked && bay.occupant === game.playerComp, 'the bay now belongs to the player');
+}
+
+// ---------------------------------------------------------------- keyboard handling + parking with digital inputs only
+{
+  const lap = keyboardLap({ cruise: 11.5, laps: 1 });
+  console.log(`keyboard lap: ${lap.kerbHits} kerb hits, ${lap.carHits} scrapes, ${lap.lapTime.toFixed(0)} s, worst ${lap.maxLat.toFixed(2)} m off line`);
+  check(lap.finished, 'a keyboard-style driver gets round the loop');
+  check(lap.kerbHits <= 3, `keyboard lap hits the kerb rarely (${lap.kerbHits})`);
+  const res = { reverse: [0, 0], nose: [0, 0] }, fails = [];
+  for (const mode of ['reverse', 'nose']) {
+    for (const b0 of buildTrack(map).bays) {
+      if (b0.stub) continue;
+      const game = quietGame(5), bay = game.bays[b0.id];
+      // the hardest case: residents parked right up to both ends of the space
+      for (const o of game.bays) if (o !== bay && o.edgeId === bay.edgeId && Math.abs(o.s - bay.s) < 14) game.setBayState(o, 'closed');
+      game.setBayState(bay, 'open');
+      const r = scriptedPark(game, bay, mode);
+      res[mode][1]++; if (r.parked) res[mode][0]++; else fails.push(`${mode}#${bay.id}/${bay.kind}`);
+      if (mode === 'reverse') check(r.parked, `keyboard reverse park into ${bay.kind} bay #${bay.id} on ${bay.street}`);
+    }
+  }
+  console.log(`scripted keyboard parking: reverse ${res.reverse[0]}/${res.reverse[1]}, nose-in ${res.nose[0]}/${res.nose[1]}${fails.length ? ' (failed: ' + fails.join(' ') + ')' : ''}`);
+  check(res.nose[0] >= res.nose[1] * 0.8, 'nose-in parking works in most bays');
+  // an untidy but legal park counts; a precise one scores better
+  const g = quietGame(5), bay = g.bays.find((b) => !b.stub && b.state === 'open');
+  const pc = g.player.car, c = Math.cos(bay.h), sn = Math.sin(bay.h), sgn = -bay.side;
+  const at = (w, dh) => { pc.place(bay.x - sn * w * sgn, bay.z + c * w * sgn, bay.h + dh); return evaluatePark(pc, bay); };
+  const sloppy = at(0.6, 0.18), tidy = at(-bay.wid / 2 + 0.25 + pc.wid / 2, 0.02);
+  check(sloppy.valid && tidy.valid && tidy.quality > sloppy.quality + 30, `forgiving validity, precise rating (${sloppy.quality}${sloppy.issue || ""} vs ${tidy.quality})`);
+}
+
+// ---------------------------------------------------------------- termination and fairness over many seeds
+{
+  let roundsSeen = 0, badBays = 0, stuckRounds = 0, longest = 0, ends = 0;
+  const seen = new Set();
+  const N = 20;
+  for (let i = 0; i < N; i++) {
+    const track = buildTrack(map);
+    const game = new Game(track, { seed: 7000 + i * 101, autoplay: i % 4 !== 3, autoPersona: 'human', autoContinue: true });
+    let ended = false, roundT = 0;
+    game.on((type, d) => {
+      seen.add(type);
+      if (type === 'gameover' || type === 'victory') ended = true;
+      if (type === 'musicStop') { roundsSeen++; if (d.bays !== d.cars - 1) badBays++; }
+    });
+    game.start(i % 3 === 0 ? 'rush' : 'classic');
+    let n = 0;
+    while (!ended && n++ < 60 * 60 * 30) {
+      const before = game.round;
+      game.update(1 / 60); roundT += 1 / 60;
+      if (game.round !== before) { longest = Math.max(longest, roundT); roundT = 0; }
+      if (roundT > 200 && game.phase !== 'title') { stuckRounds++; break; }
+    }
+    if (ended) ends++;
+  }
+  console.log(`termination: ${ends}/${N} games ended, ${roundsSeen} music stops, longest round ${longest.toFixed(0)} s`);
+  check(ends === N && stuckRounds === 0, 'every round and every game terminates');
+  check(badBays === 0, 'there is always exactly one fewer space than cars when the music stops');
+  for (const e of ['contested', 'rivalRobbed', 'leader', 'lastSpace']) check(seen.has(e), `event "${e}" is emitted`);
 }
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nall simulations passed');
 process.exit(failures ? 1 : 0);

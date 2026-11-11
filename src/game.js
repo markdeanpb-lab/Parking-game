@@ -443,7 +443,7 @@ export class Game {
         this.fairT = 0.35;
         const pick = this.pickRelease(this.nBays);
         const fair = pick && pick.fair;
-        if (pick && pick.bays.length && (fair || this.phaseT > this.stopAt + 14)) this.stopMusic(pick);
+        if (pick && pick.bays.length && (fair || this.phaseT > this.stopAt + 18)) this.stopMusic(pick);
       }
     }
   }
@@ -465,8 +465,8 @@ export class Game {
     for (const b of pick.bays) this.setBayState(b, 'open');
     const d = Number.isFinite(pick.pd) ? pick.pd : 150;
     // the clock gets meaner as the field shrinks: generous while you learn the streets, tight by the end
-    const roundK = clamp(1.08 - 0.06 * (this.round - 1), 0.78, 1.08);
-    this.countdown = clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, 55) * (0.5 + 0.5 * this.mode.countdownK);
+    const roundK = clamp(1.08 - 0.045 * (this.round - 1), 0.82, 1.08);
+    this.countdown = clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, pick.pd > 220 ? 70 : 55) * (0.5 + 0.5 * this.mode.countdownK);
     this.lastSpace = false;
     if (this.extras.some((x) => x.kind === 'lorry')) this.countdown += 10;
     else if (this.extras.length) this.countdown += 5;

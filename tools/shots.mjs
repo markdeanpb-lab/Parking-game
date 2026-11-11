@@ -33,22 +33,23 @@ await page.waitForTimeout(1200);
 
 // Eye-level views: [name, edgeId, arc s, look direction (+1 = with competition flow, -1 = against), lateral offset (m, + = right of flow)]
 const STREET_VIEWS = [
-  ['church-1-terraces', 'church', 120, 1, 0],
-  ['church-2-junction', 'grangeBC', 128, 1, 0.5],
+  ['church-1-terraces', 'church', 150, -1, 0],
+  ['church-2-junction', 'grangeBC', 118, 1, 0.8, 'church', 12],
   ['grange-3-campervans', 'grangeAB', 10, 1, 0],
   ['grange-3b-mid', 'grangeBC', 30, 1, 0],
   ['dalton-4-terraces', 'dalton', 120, 1, 0],
   ['dalton-5-far-end', 'dalton', 220, 1, 0],
-  ['bernard-6-straight', 'bernard', 60, 1, 0],
-  ['bernard-7-curve', 'bernard', 150, 1, 0],
+  ['bernard-6-straight', 'bernard', 120, -1, 0],
+  ['bernard-7-curve', 'bernard', 200, -1, 0],
 ];
 async function streets() {
   await page.evaluate(() => { document.getElementById('screen-title').classList.add('hidden'); });
-  for (const [name, edgeId, s, dir, lat] of STREET_VIEWS) {
-    const v = await page.evaluate(([id, s, dir, lat]) => {
-      const e = window.__pp.track.edges[id]; const p = e.path.offsetAt(Math.min(s, e.len - 1), lat); const q = e.path.offsetAt(Math.max(0, Math.min(e.len, s + dir * 30)), lat);
+  for (const [name, edgeId, s, dir, lat, lookEdge, lookS] of STREET_VIEWS) {
+    const v = await page.evaluate(([id, s, dir, lat, le, ls]) => {
+      const T = window.__pp.track, e = T.edges[id]; const p = e.path.offsetAt(Math.min(s, e.len - 1), lat);
+      const q = le ? T.edges[le].path.offsetAt(ls, 0) : e.path.offsetAt(Math.max(0, Math.min(e.len, s + dir * 30)), lat);
       return [[p.x, 1.75, p.z], [q.x, 1.3, q.z]];
-    }, [edgeId, s, dir, lat]);
+    }, [edgeId, s, dir, lat, lookEdge || null, lookS || 0]);
     await cam(v[0], v[1]); await page.waitForTimeout(700); await shot('street-' + name);
   }
   await cam([-160, 60, 150], [-60, 0, 20]); await page.waitForTimeout(700); await shot('street-aerial');
