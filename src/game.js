@@ -545,7 +545,7 @@ export class Game {
     // the clock gets meaner as the field shrinks: generous while you learn the streets, tight by the end
     const roundK = clamp(1.08 - 0.045 * (this.round - 1), 0.82, 1.08);
     this.countdown = pick.assigned
-      ? clamp((pick.makespan * 1.25 + 10) * roundK, 24, 58) * (0.5 + 0.5 * this.mode.countdownK)
+      ? clamp((pick.makespan * 1.25 + 10) * Math.max(roundK, 0.95), 24, 58) * (0.5 + 0.5 * this.mode.countdownK)
       : clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, pick.pd > 220 ? 70 : 55) * (0.5 + 0.5 * this.mode.countdownK);
     for (const b of this.tells) b.tell = 0;
     this.tells = [];

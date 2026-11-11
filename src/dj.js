@@ -394,6 +394,10 @@ const L = {
     "Are those cones on {street} wobbling? Or is it my sixth coffee?",
     "A little bird says {street}. ~ The bird lives there.",
     "Psst. {street}. You didn't hear it from me.",
+    "Council van spotted near {street}. Just saying.",
+    "Hmm. {street}. No reason. ~ Every reason.",
+    "Is that a man in a hi-vis on {street}? Interesting.",
+    "If I were you, and I'm glad I'm not, I'd look at {street}.",
     "The WhatsApp group says {street}. It's never wrong. ~ Or right.",
     "Someone on {street} just took their bins in. That means something.",
   ],
@@ -643,6 +647,12 @@ const L = {
     "Attempt {count}! The whole street's come out to watch. Someone's brought a flask.",
     "Attempt {count}! Number twenty-three is filming it for the WhatsApp group. Crying-laughing emoji.",
     "{count} goes! A resident's offering to guide you in. He's waving his arms like he's landing a plane.",
+    "Attempt {count}! Forwards, backwards, forwards. It's not parking, it's line dancing.",
+    "Attempt {count}. Sandra's timing you. She's got a stopwatch and a face.",
+    "{count} goes and counting! The bay's starting to feel sorry for you.",
+    "Attempt {count}! Someone's put the kettle on for you. It's that kind of street.",
+    "Attempt {count}. Geoffrey's leaning on his gate, shaking his head very slightly.",
+    "Attempt {count}! You're closer! You're further! You're closer!",
     { t: "Attempt {count}. I've made a tea, had a biscuit and read the council's entire parking strategy.", when: (c) => c.count >= 8 },
   ],
   kerb: [
@@ -1023,6 +1033,7 @@ export class DJ {
     if (!bank) return null;
     const lastFirst = this.lastText ? this.lastText.split(/\s+/)[0].toUpperCase() : '';
     const cands = [];
+    const busy = this.talkFrac ? this.talkFrac() : 0;
     for (const raw of bank.lines) {
       const e = typeof raw === 'string' ? { t: raw } : raw;
       if (e.when) { let pass = false; try { pass = e.when(c); } catch (err) { pass = false; } if (!pass) continue; }
@@ -1033,7 +1044,8 @@ export class DJ {
       if (!text) continue;
       let w = e.w || 1;
       if (used) w *= 0.001 * (1 + this.clock - (this.usedAt.get(id) || 0));      // repeat banks: least recently used
-      if (text.split(/\s+/)[0].toUpperCase() === lastFirst) w *= 0.3;               // vary the openers
+      if (text.split(/\s+/)[0].toUpperCase() === lastFirst) w *= 0.3;
+      if (busy > 0.25) w *= Math.min(1.5, Math.pow(13 / text.split(/\s+/).length, 1.5));    // busy show: prefer short lines               // vary the openers
       cands.push({ id, text, w, tpl: e.t });
     }
     if (!cands.length) return null;
@@ -1062,7 +1074,7 @@ export class DJ {
     // airtime budget: leave breathing room so the big moments land (colour first, then routine important lines)
     const busy = this.talkFrac();
     if (pri === 1 && busy > 0.34 && !opts.tease) return false;
-    if (pri === 2 && busy > 0.52 && !opts.urgent) return false;
+    if (pri === 2 && busy > 0.48 && !opts.urgent) return false;
     if (pri === 2 && this.current && this.current.pri >= 3 && this.queue.some((q) => q.pri >= 2 && q.cat === cat)) return false;
     let ch = null, key = null;
     for (const k of keys) {

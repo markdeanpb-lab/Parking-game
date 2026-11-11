@@ -65,7 +65,7 @@ function runGame(seed, mode, track, persona = 'auto') {
         if (ds.length >= 2) { contestedSaid.add(b.id); fire('contested', { bay: b, drivers: ds.map((x) => x.comp.name), street: b.street }); }
       }
       // player-only incidents the autopilot never has
-      if (!game.playerComp.parked && Math.random() < 0.06) {
+      if (!game.playerComp.parked && Math.random() < 0.03) {
         const pick = Math.random();
         const rival = game.competitors.filter((c) => c.alive && !c.isPlayer)[0];
         if (pick < 0.3) { kerbs++; game.stats.kerbs++; fire('impact', { kind: 'kerb', speed: 3 + Math.random() * 2, player: true, kerbs: game.stats.kerbs, x: 0, z: 0 }); }
