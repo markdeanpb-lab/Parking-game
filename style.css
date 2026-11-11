@@ -662,5 +662,5 @@ body.screen-on #dj-panel, body.screen-on #toasts, body.screen-on #target { displ
 
 /* cycle 4: bold chevron in the navigator */
 #tg-nav .tg-arrow { width: 46px; height: 46px; }
-#tg-nav .tg-arrow svg { width: 32px; height: 32px; fill: none; stroke: var(--ink); }
+#tg-nav .tg-arrow svg { width: 32px; height: 32px; fill: var(--ink); stroke: none; }
 @media (max-height: 520px) { #tg-nav .tg-arrow { width: 38px; height: 38px; } #tg-nav .tg-arrow svg { width: 28px; height: 28px; } }

@@ -864,7 +864,7 @@ export function buildWorld(scene, track, quality) {
     props.shade = (x, y) => (y < y0 + 0.1 ? 0.7 : 1);
     props.box(F, xa, xb, y0, y0 + hgt, -0.03, 0.03, t1, 'fblrt');
     props.shade = null;
-    if (!quality.low) for (let x = xa; x < xb; x += 0.14) props.box(F, x, x + 0.02, y0 + 0.02, y0 + hgt - 0.02, 0.03, 0.045, t2, 'f');
+    if (!quality.low) for (let x = xa + 0.06; x < xb - 0.04; x += 0.14) { props.box(F, x, x + 0.02, y0 + 0.02, y0 + hgt - 0.02, 0.03, 0.045, t2, 'f'); props.box(F, x, x + 0.02, y0 + 0.02, y0 + hgt - 0.02, -0.045, -0.03, t2, 'b'); }
     for (let x = xa; x <= xb + 0.01; x += 1.8) props.box(F, x - 0.05, x + 0.05, y0, y0 + hgt + 0.08, -0.07, 0.07, t2, 'fblrt');
     props.box(F, xa, xb, y0 + hgt - 0.02, y0 + hgt + 0.04, -0.05, 0.05, t2, 'fbt');
   }
@@ -892,6 +892,7 @@ export function buildWorld(scene, track, quality) {
   const railStep = quality.low ? 0.26 : 0.14;
   const hedgeC = [col(0x3f6b3a), col(0x4a7a41), col(0x35592f), col(0x456f3b)];
   const churchTrees = [];
+  const cornerFence = [];
   {
     const brickW = col(0x9c5b3e), brickW2 = col(0xa8563c), coping = col(0xc2bcae), iron = col(0x1c1d20), timber = col(0x8a6a48), timber2 = col(0x9b7a52);
     for (const p of map.pave) {
@@ -971,6 +972,8 @@ export function buildWorld(scene, track, quality) {
             } else if (style === 'picket') {
               picketRun(props, frame(px - tx * hw + ox * 0.12, pz - tz * hw + oz * 0.12, tx, tz), 0, 2 * hw, 1.0);
               props.box(F, -hw, hw, 0.13, 0.3, ...zr(0.02, 0.24), brickW2, 'fblrt');
+            } else if (style === 'fence' && zone === 'fence') {
+              cornerFence.push({ x: px + ox * 0.08, z: pz + oz * 0.08, tx, tz });      // drawn later as one continuous run
             } else if (style === 'fence') {
               // panels overlap their neighbours slightly and every panel end gets a post, so bends never open a gap
               const ext = hw + 0.07;
@@ -988,6 +991,23 @@ export function buildWorld(scene, track, quality) {
               }
             }
           }
+        }
+      }
+    }
+    // the close-boarded fence on the Church St corner: one continuous run through the piece midpoints, posts on the joints
+    {
+      const chains = [];
+      for (const p of cornerFence) {
+        const last = chains.length && chains[chains.length - 1][chains[chains.length - 1].length - 1];
+        if (last && Math.hypot(p.x - last.x, p.z - last.z) < 2.2) chains[chains.length - 1].push(p); else chains.push([p]);
+      }
+      for (const ch of chains) {
+        if (ch.length < 2) continue;
+        const ends = (a, b2) => { const dx = a.x - b2.x, dz = a.z - b2.z, l = Math.hypot(dx, dz) || 1; return { x: a.x + dx / l * 0.75, z: a.z + dz / l * 0.75 }; };
+        const pts = [ends(ch[0], ch[1]), ...ch, ends(ch[ch.length - 1], ch[ch.length - 2])];
+        for (let i = 0; i < pts.length - 1; i++) {
+          const a = pts[i], c = pts[i + 1], L = Math.hypot(c.x - a.x, c.z - a.z); if (L < 0.05) continue;
+          fenceRun(frame(a.x, a.z, (c.x - a.x) / L, (c.z - a.z) / L), 0, L + 0.04, 0.13, 1.8);
         }
       }
     }
@@ -1290,7 +1310,7 @@ export function buildWorld(scene, track, quality) {
   const fillTrees = [];
   {
     const fr = makeRng(777), CELL = 22, alot = new GB();
-    const isEmpty = (x, z) => sdf.sample(x, z) < -7 && !inCtx(x, z) && !buildingRings.some((r) => pointInRing(x, z, r)) &&
+    const isEmpty = (x, z) => sdf.sample(x, z) < -5.5 && !inCtx(x, z) && !buildingRings.some((r) => pointInRing(x, z, r)) &&
       !buildingRings.some((r) => r.some((p) => Math.abs(p.x - x) < 5 && Math.abs(p.z - z) < 5));
     for (let x = b.minX + 6; x < b.maxX - CELL; x += CELL) for (let z = b.minZ + 6; z < b.maxZ - CELL; z += CELL) {
       let ok = true;
