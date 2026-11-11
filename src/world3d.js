@@ -236,8 +236,8 @@ export function buildWorld(scene, track, quality) {
     g.fillStyle = '#5d5550'; g.fillRect(0, 0, w, h);
     const u = 16;
     for (let y = 0; y < h; y += u) for (let x = 0; x < w; x += u * 2) {
-      const v = 150 + Math.floor(texRng() * 30), red = texRng() < 0.35;
-      g.fillStyle = red ? `rgb(${v + 6},${v - 22},${v - 32})` : `rgb(${v - 6},${v - 10},${v - 14})`;
+      const v = 132 + Math.floor(texRng() * 18), red = texRng() < 0.3;
+      g.fillStyle = red ? `rgb(${v + 4},${v - 14},${v - 20})` : `rgb(${v - 6},${v - 8},${v - 10})`;
       if (((x / u) + (y / u)) % 4 < 2) g.fillRect(x + ((y / u) % 2) * u + 1, y + 1, u * 2 - 2, u - 2);
       else { g.fillRect(x + 1, y + 1, u - 2, u - 2); g.fillRect(x + u + 1, y + 1, u - 2, u - 2); }
     }
@@ -730,7 +730,7 @@ export function buildWorld(scene, track, quality) {
     rows.forEach(([ya, yb], ri) => {
       for (let c = 0; c < cols; c++) {
         const xa = x0 + fr + c * ((x1 - x0 - 2 * fr) / cols) + (c ? 0.022 : 0), xb = x0 + fr + (c + 1) * ((x1 - x0 - 2 * fr) / cols) - (c < cols - 1 ? 0.022 : 0);
-        const gc = col(ri === 0 && net && mode !== 3 ? 0xcfccc2 : r.pick(GLASS));
+        const gc = col(mode === 3 ? 0xf2dfa8 : ri === 0 && net ? 0xcfccc2 : r.pick(GLASS));     // shop windows read as lit
         glass.shade = (x, y) => (y > yb - 0.05 ? 1.55 : 1);
         glass.box(F, xa, xb, ya, yb, z - 0.01, z, gc, 'f');
         glass.shade = null;
@@ -762,7 +762,7 @@ export function buildWorld(scene, track, quality) {
   function shopSign(F, len, d) {
     const L = Math.max(2.4, len - 0.3);
     shopSigns.push({ F, x0: (len - L) / 2, x1: (len + L) / 2, d });
-    det.box(F, 0.05, len - 0.05, 2.5, 3.05, d, d + 0.14, col(0x1d4a35), 'fblrt');
+    det.box(F, 0.05, len - 0.05, 2.5, 3.05, d, d + 0.14, col(0x23664a), 'fblrt');
     det.box(F, 0.0, len, 3.05, 3.14, d, d + 0.22, col(0xf3f1ea), 'fblrt');
     // striped awning over the windows
     roofs.quad(F.p(0.3, 2.35, d + 1.0), F.p(len - 0.3, 2.35, d + 1.0), F.p(len - 0.3, 2.48, d + 0.15), F.p(0.3, 2.48, d + 0.15), col(0x2f7a4b), [0, 0, 0, 0, 0, 0, 0, 0]);
@@ -1063,7 +1063,7 @@ export function buildWorld(scene, track, quality) {
       let s = 146;
       while (track.bays.some((bay) => bay.edgeId === 'church' && Math.abs(bay.s - s) < bay.len / 2 + 3)) s += 2;
       const F = frameH(e.path.at(s).x, e.path.at(s).z, e.path.at(s).h);
-      const tab = new GB(0.5);
+      const tab = new GB(0.9);
       const hw = e.hw - 0.02, top = 0.075;
       tab.quad(F.p(-1.6, top, hw), F.p(1.6, top, hw), F.p(1.6, top, -hw), F.p(-1.6, top, -hw), col(0xffffff));
       tab.quad(F.p(-2.4, 0.022, hw), F.p(-1.6, top, hw), F.p(-1.6, top, -hw), F.p(-2.4, 0.022, -hw), col(0xd8d8d8));
