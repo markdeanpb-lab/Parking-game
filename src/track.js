@@ -121,6 +121,7 @@ export function buildTrack(map) {
   });
 
   layoutKerbside(track);
+  placeCampervans(track);
 
   track.locate = (x, z) => locate(track, x, z);
   track.buildRoute = (edgeIds, startS = 0) => buildRoute(track, edgeIds, startS);
@@ -282,6 +283,24 @@ function layoutOppositeRow(track, e, side, cfg, s0, s1, accesses, rng) {
     s += len;
   }
   if (s1 - runStart > 3) track.parkingRuns.push({ edgeId: e.id, side, s0: runStart, s1, wid: 1.9, kerb: !!cfg.kerb });
+}
+
+/** The reference photo of Grange Street has two vintage campervans parked nose to tail near the Dalton St end. */
+function placeCampervans(track) {
+  const big = (p) => CAR_TYPES[p.type].len >= 4.4;
+  for (const id of ['grangeAB', 'grangeBC']) {
+    const row = track.parked.filter((p) => p.edgeId === id).map((p) => ({ p, s: track.edges[id].path.project(p.x, p.z).s, side: p.side }));
+    for (const side of [-1, 1]) {
+      const r = row.filter((q) => q.side === side).sort((a, b) => a.s - b.s);
+      for (let i = 0; i + 1 < r.length; i++) {
+        if (big(r[i].p) && big(r[i + 1].p) && r[i + 1].s - r[i].s < 6.5) {
+          r[i].p.type = 'camper'; r[i].p.colour = 0xe8dfc4; r[i + 1].p.type = 'camper'; r[i + 1].p.colour = 0x7c8a3a;
+          track.campervans = [r[i].p, r[i + 1].p];
+          return;
+        }
+      }
+    }
+  }
 }
 
 function parkedPose(e, s, side, spec, rng) {

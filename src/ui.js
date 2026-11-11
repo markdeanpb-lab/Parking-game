@@ -252,7 +252,7 @@ export class UI {
   // ---------------------------------------------------------------- end screens
   results(d) {
     const n = d.results.length;
-    const head = '<div class="lg-row lg-head" style="--i:0"><span class="lg-pos">POS</span><span></span><span>DRIVER</span><span class="lg-status">THIS ROUND</span><span class="lg-rp">+</span><span class="lg-tot">TOTAL</span></div>';
+    const head = '<div class="lg-row lg-head" style="--i:0"><span class="lg-pos">POS</span><span></span><span>DRIVER</span><span class="lg-status">THIS ROUND</span><span class="lg-rp">RND</span><span class="lg-tot">TOTAL</span></div>';
     const rows = d.results.map((c, i) => {
       const outNow = d.out.includes(c);
       const status = c.alive

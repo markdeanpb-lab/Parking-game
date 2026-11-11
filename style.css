@@ -297,6 +297,8 @@ body.touch #street { display: none; }
   #flash small { font-size: 12px; }
   #toasts { top: 58%; } .toast { font-size: 13px; }
   .sf-tape { height: 32px; } .sf-tape span { font-size: 14px; }
+  .lg-row { grid-template-columns: 26px 5px 1fr 84px 40px 46px; gap: 6px; } .lg-name small, .lg-time { display: none; }
+  .lg-status .badge { white-space: normal; line-height: 1.15; } .lg-stamp { right: 60px; font-size: 13px; } .lg-rp { font-size: 13px; } .lg-tot { font-size: 17px; }
   body.touch #t-steer button { width: 84px; height: 84px; }
   body.touch #t-steer button:last-child { left: calc(var(--sl) + 98px); }
   body.touch #t-pedals .gas { width: 84px; height: 120px; }
@@ -467,7 +469,7 @@ button.toggle[aria-pressed="true"]::after { background-color: var(--green); back
 @keyframes rowIn { from { transform: translateX(-40px); opacity: 0; } }
 .lg-head { background: none; font: 900 10px var(--sign); letter-spacing: 2px; color: #8f9bbb; padding-top: 0; padding-bottom: 0; animation: none; }
 .lg-pos { font: 22px/1 var(--display); text-align: center; color: #fff; background: rgba(255,255,255,.1); align-self: stretch; display: grid; place-items: center; margin: -6px 0 -5px; }
-.lg-head .lg-pos { background: none; font: inherit; }
+.lg-head .lg-pos, .lg-head .lg-rp, .lg-head .lg-tot { background: none; font: inherit; color: inherit; }
 .lg-sw { width: 8px; height: 26px; border-radius: 2px; }
 .lg-name b { font: 900 15px var(--sign); } .lg-name small { display: block; font: 600 11.5px var(--sign); color: #9aa6c4; }
 .lg-status { text-align: right; font-size: 12px; white-space: nowrap; }
