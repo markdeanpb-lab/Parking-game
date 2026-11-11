@@ -50,7 +50,7 @@ export const PERSONAS = {
   // through the streets, takes a couple of goes to get into a space)
   human: {
     key: 'human', name: 'You', title: 'Typical Human', car: 'hatch', carName: 'hatchback', colour: 0xffc928,
-    cruise: 7.6, seek: 9.2, reaction: [0.6, 1.3], manSpeed: 1.25, skill: 0.6, shuffles: [0, 2], aggression: 0.6, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 0.5,
+    cruise: 7.6, seek: 9.2, reaction: [0.6, 1.3], manSpeed: 1.25, skill: 0.6, shuffles: [0, 2], aggression: 0.6, gap: 2.0, pushy: false, indicates: true, greedy: true, watchesTells: 0.6,
   },
   // used when the player car is on autopilot (tests / attract mode)
   auto: {

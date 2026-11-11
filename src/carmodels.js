@@ -643,7 +643,7 @@ function addLivery(chassis, p, type, body, comp, opts) {
   // roof board (magnetic game-show sign), readable from the chase camera
   const numMat = new THREE.MeshStandardMaterial({ map: numberTexture(comp.number, acc, ink, 0), roughness: 0.5 });
   const board = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.62), [numMat, numMat, accMat, accMat, accMat, accMat]);
-  const bx = opts.learner ? f.roofX0 + 0.3 : opts.roofBox ? f.roofX1 - 0.25 : (f.roofX0 + f.roofX1) / 2 - 0.1;
+  const bx = opts.learner || opts.roofBox ? f.roofX0 + 0.3 : (f.roofX0 + f.roofX1) / 2 - 0.1;
   board.position.set(bx, f.roofY + 0.19, 0); board.castShadow = true; chassis.add(board);
   const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.5), new THREE.MeshStandardMaterial({ color: 0x1e2024 }));
   foot.position.set(bx, f.roofY + 0.015, 0); chassis.add(foot);

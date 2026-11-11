@@ -16,7 +16,7 @@ export const CHAMPIONSHIP = [
   { key: 'champ', heat: 2, label: 'Heat 2: The Semi-Final', rivals: ['major', 'poppy', 'sandra', 'mum', 'dazza'], traffic: 1, countdownK: 0.92, music: [10, 18], eventsFrom: 1, aiBoost: 1.04 },
   { key: 'champ', heat: 3, label: 'Heat 3: The Grand Final', rivals: RIVAL_ORDER, traffic: 2, countdownK: 0.82, music: [8, 16], eventsFrom: 1, aiBoost: 1.12 },
 ];
-const TELL_LEAD = 6;          // s of warning (wobbling cones, council worker) before the music stops
+const TELL_LEAD = 7;          // s of warning (wobbling cones, council worker) before the music stops
 const LOOP_ORDER = ['dalton', 'grangeAB', 'grangeBC', 'church', 'bernard', 'bernardS', 'catherine'];
 const EVENTS = ['binLorry', 'permit', 'schoolRun', 'fakeSpace', 'deliveryVan', 'perfectSpot'];
 
@@ -545,7 +545,7 @@ export class Game {
     // the clock gets meaner as the field shrinks: generous while you learn the streets, tight by the end
     const roundK = clamp(1.08 - 0.045 * (this.round - 1), 0.82, 1.08);
     this.countdown = pick.assigned
-      ? clamp((pick.makespan * 1.2 + 8) * roundK, 22, 55) * (0.5 + 0.5 * this.mode.countdownK)
+      ? clamp((pick.makespan * 1.25 + 10) * roundK, 24, 58) * (0.5 + 0.5 * this.mode.countdownK)
       : clamp(Math.max(pick.makespan * 1.3 + 10, pick.pEta * 1.5 + 8) * roundK, 20, pick.pd > 220 ? 70 : 55) * (0.5 + 0.5 * this.mode.countdownK);
     for (const b of this.tells) b.tell = 0;
     this.tells = [];

@@ -389,13 +389,13 @@ const L = {
   ],
   tell: [
     "I'm hearing whispers from the council about {street}...",
-    "My sources tell me something's stirring on {street}. My sources are a man at a bus stop.",
+    "Something's stirring on {street}. My source? A man at a bus stop.",
     "Keep an eye on {street}. I'm saying nothing. ~ I've said {street}.",
     "Are those cones on {street} wobbling? Or is it my sixth coffee?",
-    "A little bird tells me {street} might be worth a look. The bird lives on {street}. It's biased.",
+    "A little bird says {street}. ~ The bird lives there.",
     "Psst. {street}. You didn't hear it from me.",
-    "Rumour on the WhatsApp group: {street}. The group's never been wrong. It's never been right, either.",
-    "Somebody on {street} has just taken their recycling in. That usually means something.",
+    "The WhatsApp group says {street}. It's never wrong. ~ Or right.",
+    "Someone on {street} just took their bins in. That means something.",
   ],
   finalClock: [
     "I'm cutting the clock! {secs} SECONDS FOR THE GOLDEN PERMIT!",
@@ -1061,8 +1061,8 @@ export class DJ {
     if (pri === 1 && !this.colourWindow(opts)) return false;
     // airtime budget: leave breathing room so the big moments land (colour first, then routine important lines)
     const busy = this.talkFrac();
-    if (pri === 1 && busy > 0.42 && !opts.tease) return false;
-    if (pri === 2 && busy > 0.62 && !opts.urgent) return false;
+    if (pri === 1 && busy > 0.34 && !opts.tease) return false;
+    if (pri === 2 && busy > 0.52 && !opts.urgent) return false;
     if (pri === 2 && this.current && this.current.pri >= 3 && this.queue.some((q) => q.pri >= 2 && q.cat === cat)) return false;
     let ch = null, key = null;
     for (const k of keys) {
@@ -1393,6 +1393,7 @@ export class DJ {
         const lw = this.who(d.name);
         const isPlayer = d.name === 'You' || lw.isPlayer || (d.comp && d.comp.isPlayer);
         m.leader = { name: isPlayer ? 'Our contestant' : nameOf(d.name) || d.name, points: d.points, isPlayer, fresh: true };
+        if (g.phase === 'roundEnd' || g.phase === 'intro') break;     // the next round's intro announces it
         this.say('leader', this.ctx({ ...lw, name: isPlayer ? 'our contestant' : lw.name || d.name, points: Math.round(d.points), isPlayer }), 2, { ttl: 7 });
         break;
       }
@@ -1563,7 +1564,7 @@ export class DJ {
         // cones wobbling on a bay that's about to open: the DJ drops a hint, once or twice a round at most
         const street = d.street || (d.bay && d.bay.street);
         if (!street || (this.mem.tells || 0) >= 2) break;
-        if (this.say('tell', this.ctx({ street }), 1, { cat: 'tell', tease: true, gap: 1.2, ttl: 2 })) this.mem.tells = (this.mem.tells || 0) + 1;
+        if (this.say('tell', this.ctx({ street }), 2, { cat: 'tell', urgent: true, ttl: 1.5 })) this.mem.tells = (this.mem.tells || 0) + 1;
         break;
       }
       case 'loiter': this.say(d.level === 2 ? 'loiter2' : 'loiter1', this.ctx(), d.level === 2 ? 3 : 2, { urgent: true }); break;
