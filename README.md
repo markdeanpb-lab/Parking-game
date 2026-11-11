@@ -6,8 +6,8 @@ of Snorbens FM 104.7 (Hertfordshire's third-best breakfast show), who believes t
 spectacle the county has ever seen.
 
 ![Title screen](docs/title.jpg)
-![The music stops](docs/park.jpg)
-![Overhead parking camera](docs/overhead.jpg)
+![The final](docs/park.jpg)
+![Bernard Street](docs/overhead.jpg)
 
 ## Play it
 
