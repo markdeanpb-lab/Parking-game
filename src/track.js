@@ -181,7 +181,7 @@ function layoutKerbside(track) {
     if (e.id === 'grangeNW') s1 = e.len - 5;            // real dead end
     if (e.id === 'grangeSE') s1 = e.len - 17;           // barrier
     if (both) {
-      e.laneOff = 0;                                    // parked cars both sides: drive down the middle
+      e.laneOff = e.id === 'church' ? 0.35 : 0;                                  // parked cars both sides: drive down the middle
       layoutOppositeRow(track, e, -side, both, s0, s1, accessByEdge[e.id] || [], rowRng);
     } else {
       track.yellow.push({ edgeId: e.id, side: -side, s0: sA, s1: e.id === 'grangeNW' ? e.len - 1 : sB });
