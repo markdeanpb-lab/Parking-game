@@ -548,7 +548,7 @@ export class Driver {
     if (Math.abs(car.v) < 0.4 && !atStop && (this.state === 'seek' || this.state === 'cruise')) this.slowT = (this.slowT || 0) + dt; else this.slowT = 0;
     if (this.slowT > 1.8 && this.passT <= 0 && !p.lorry && (this.passCheckT = (this.passCheckT || 0) - dt) <= 0) {
       this.passCheckT = 0.6;
-      const o = obstacleAhead(car, g.world.cars, 12, 0.3).other;
+      const o = obstacleAhead(car, g.world.cars, 18, 0.3).other;
       const od = o && g.drivers.find((q) => q.car === o);
       // never cut round somebody still swinging into a space
       const swinging = od && od.state === 'manoeuvre' && od.pi < od.poses.clearIdx;
