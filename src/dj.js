@@ -721,6 +721,21 @@ const L = {
     { t: "That's stall number {stalls} from {name}! Her instructor has started billing by the stall.", when: (c) => c.key === 'poppy' && c.stalls >= 2, w: 3 },
     { t: "Stall number {stalls} for {name}. I've started a tally on the studio window.", when: (c) => c.stalls >= 3, w: 3 },
   ],
+  abortedOvershot: [
+    "{name} came in far too hot and sailed straight past the space on {street}! Brakes are a suggestion in that van.",
+    "{name} has overshot {street}! Clearly been told the space was 'just down here on the left'.",
+    "Straight past it! {name} parks the way he delivers: near enough, then drive off.",
+  ],
+  noseIn: [
+    "{name}'s going in NOSE FIRST on {street}! Bold! Wrong, but bold!",
+    "{name} is diving in forwards on {street}! That's not parallel parking, that's a lunge.",
+    "Nose first from {name}! The back end's still in the road, and {name} does not care.",
+  ],
+  overtime: [
+    "The clock's gone, but there's still a space! SUDDEN DEATH! Next car in wins!",
+    "We're into OVERTIME! First one parked takes it! The Mayor's cancelled his dentist for this!",
+    "Time's up and the bay's still empty! SUDDEN DEATH PARKING! I've never felt so alive!",
+  ],
   aborted: [
     "{name} has bottled it and pulled back out! That space on {street} is still open!",
     "{name}'s given up on {street}! It's back on the market. Round here that means it'll go over the asking price.",
@@ -1360,7 +1375,8 @@ export class DJ {
         if (d.t === 5) this.say('tick5', c, 3, { ttl: 1.0 });
         break;
       }
-      case 'lastSpace': this.say(g.final ? ['finalClock', 'lastSpace'] : ['lastSpace'], this.ctx(d), 3, { ttl: 5 }); this.react('gasp'); break;
+      case 'lastSpace': if (d.overtime) { this.say(['overtime'], this.ctx(d), 3, { ttl: 5 }); this.react('gasp'); break; }
+        this.say(g.final ? ['finalClock', 'lastSpace'] : ['lastSpace'], this.ctx(d), 3, { ttl: 5 }); this.react('gasp'); break;
       case 'whistle': this.say('whistle', this.ctx(d), 3, { ttl: 2 }); break;
       case 'parked': this.onParked(d, g, w); break;
       case 'lastGasp': {
@@ -1478,7 +1494,8 @@ export class DJ {
         this.say(['stallAgain', ...this.pk('stall', w.key, 0.7)], c, 1, { cat: 'stall', gap: 0.8 });
         break;
       }
-      case 'aborted': if (d.bay) this.say('aborted', this.ctx({ ...w, street: d.bay.street }), 1, { gap: 0.8 }); break;
+      case 'manoeuvre': if (d.noseIn) this.say('noseIn', this.ctx({ ...w, street: d.bay.street }), 1, { gap: 0.8 }); break;
+      case 'aborted': if (d.bay) this.say(d.overshot ? ['abortedOvershot', 'aborted'] : 'aborted', this.ctx({ ...w, street: d.bay.street }), 1, { gap: 0.8 }); break;
       case 'cushion': if (d.speed > 9) this.say('cushion', this.ctx(), 1); break;
       case 'roundEnd': this.onRoundEnd(d, g); break;
       case 'victory':
