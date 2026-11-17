@@ -6,7 +6,12 @@ const CSS = `
 .mr-num{color:var(--yellow);-webkit-text-stroke:calc(var(--u)*.38) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.3) 0 rgba(0,0,0,.35)}
 .mr-panel{background:linear-gradient(180deg,#3d86ff,#2457c8);border:calc(var(--u)*.32) solid var(--ink);border-radius:calc(var(--u)*.9);transform:skewX(-10deg);box-shadow:0 calc(var(--u)*.45) 0 rgba(0,0,0,.35)}
 .mr-panel>.mr-unskew{transform:skewX(10deg)}
-.mr-top{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*1.8);display:flex;gap:calc(var(--u)*1);align-items:stretch}
+.mr-top{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*1.8);display:flex}
+.mr-pill{display:flex;align-items:center;gap:calc(var(--u)*.7);background:rgba(20,22,48,.78);border-radius:99px;padding:calc(var(--u)*.35) calc(var(--u)*1.1);font-size:calc(var(--u)*1.35);line-height:1.2}
+.mr-pill b{font-weight:400;color:var(--yellow)}
+.mr-pill .mr-dot{width:calc(var(--u)*.7);height:calc(var(--u)*.7);border-radius:50%;background:#ff3d5a;display:inline-block}
+.mr-pill .mr-sep{width:1px;align-self:stretch;background:rgba(255,255,255,.3)}
+.mr-pill .mr-clk{font-family:Nunito,sans-serif;font-weight:800;font-size:.8em;opacity:.65}
 .mr-live{background:var(--pink);padding:calc(var(--u)*.5) calc(var(--u)*1.2);font-size:calc(var(--u)*1.5);display:flex;align-items:center;gap:calc(var(--u)*.5)}
 .mr-live i{width:calc(var(--u)*.9);height:calc(var(--u)*.9);border-radius:50%;background:#fff;display:inline-block;animation:mrblink 1s infinite}
 @keyframes mrblink{50%{opacity:.25}}
@@ -16,26 +21,26 @@ const CSS = `
 .mr-dist{padding:calc(var(--u)*.3) calc(var(--u)*1.2);font-size:calc(var(--u)*1.4);display:flex;flex-direction:column;justify-content:center;min-width:calc(var(--u)*11)}
 .mr-bar{height:calc(var(--u)*.7);background:rgba(0,0,0,.35);border-radius:9px;margin-top:calc(var(--u)*.3);overflow:hidden;border:2px solid var(--ink)}
 .mr-bar>i{display:block;height:100%;background:var(--yellow);width:0}
-.mr-tower{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*8.2);width:calc(var(--u)*28)}
-.mr-row{position:absolute;left:0;width:100%;height:calc(var(--u)*4.1);display:flex;align-items:center;transition:transform .55s cubic-bezier(.3,1.4,.5,1),opacity .3s}
-.mr-row .mr-pos{width:calc(var(--u)*5.2);font-size:calc(var(--u)*3.3);text-align:center;line-height:1}
+.mr-tower{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*5.2);width:calc(var(--u)*19)}
+.mr-row{position:absolute;left:0;width:100%;height:calc(var(--u)*2.9);display:flex;align-items:center;transition:transform .55s cubic-bezier(.3,1.2,.5,1),opacity .35s}
+.mr-row.off{opacity:0}
+.mr-row .mr-pos{width:calc(var(--u)*3.8);font-size:calc(var(--u)*2.2);text-align:center;line-height:1}
 .mr-row .mr-pos small{font-size:.42em;margin-right:2px;vertical-align:middle;color:#fff}
 .mr-row .mr-pos sup{font-size:.45em;vertical-align:top;margin-left:1px}
-.mr-row .mr-card{flex:1;height:calc(var(--u)*3.4);display:flex;align-items:center;padding:0 calc(var(--u)*.8) 0 0;background:rgba(20,22,48,.82);border:calc(var(--u)*.25) solid var(--ink);border-radius:calc(var(--u)*.6);transform:skewX(-10deg);overflow:hidden}
+.mr-row .mr-card{flex:1;min-width:0;height:calc(var(--u)*2.4);display:flex;align-items:center;padding:0 calc(var(--u)*.6) 0 0;background:rgba(20,22,48,.72);border-radius:calc(var(--u)*.45);transform:skewX(-10deg);overflow:hidden}
 .mr-row .mr-card>*{transform:skewX(10deg)}
-.mr-row .mr-chip{width:calc(var(--u)*1.6);align-self:stretch;margin-right:calc(var(--u)*.8)}
-.mr-row .mr-name{flex:1;min-width:0;font-size:calc(var(--u)*1.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mr-row .mr-gap{font-family:Nunito,"Arial Rounded MT Bold",sans-serif;font-weight:900;font-size:calc(var(--u)*1.2);color:#cfe0ff;margin-left:calc(var(--u)*.5)}
+.mr-row .mr-chip{width:calc(var(--u)*.8);align-self:stretch;margin-right:calc(var(--u)*.6)}
+.mr-row .mr-name{flex:1;min-width:0;font-size:calc(var(--u)*1.25);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mr-row .mr-gap{font-family:Nunito,"Arial Rounded MT Bold",sans-serif;font-weight:900;font-size:calc(var(--u)*.95);color:#cfe0ff;margin-left:calc(var(--u)*.5)}
 .mr-row.lead .mr-card{background:linear-gradient(90deg,rgba(255,210,63,.95),rgba(255,160,40,.92));color:var(--ink)}
 .mr-row.lead .mr-gap{color:var(--ink)}
 .mr-row.fin .mr-gap{color:#7dff9a}
 .mr-row.lead.fin .mr-gap{color:var(--ink)}
 .mr-badge{display:inline-flex;align-items:center;gap:.2em;background:var(--bc,#fff);color:var(--ink);border:calc(var(--u)*.18) solid var(--ink);border-radius:99px;font-size:calc(var(--u)*1.05);padding:.05em .55em;margin-left:calc(var(--u)*.35);line-height:1.2;box-shadow:0 calc(var(--u)*.15) 0 rgba(0,0,0,.35);white-space:nowrap}
-.mr-row .mr-badges{position:absolute;left:100%;top:50%;transform:translateY(-50%);display:flex;gap:calc(var(--u)*.25);margin-left:calc(var(--u)*.6)}
-.mr-row .mr-badges .mr-badge{margin:0;font-size:calc(var(--u)*1.25)}
-.mr-row.backed .mr-card{box-shadow:0 0 0 calc(var(--u)*.22) var(--bc,#ffd23f),0 0 calc(var(--u)*1.2) var(--bc,#ffd23f)}
-.mr-tag .mr-tb{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);display:flex;gap:calc(var(--u)*.2);margin-bottom:calc(var(--u)*.3)}
-.mr-tag .mr-tb .mr-badge{margin:0;font-size:calc(var(--u)*1.15)}
+.mr-inis{display:inline-flex;gap:calc(var(--u)*.2);margin-left:calc(var(--u)*.4);flex-shrink:0}
+.mr-ini{display:inline-flex;align-items:center;justify-content:center;width:calc(var(--u)*1.25);height:calc(var(--u)*1.25);border-radius:50%;background:var(--bc);color:var(--ink);font-family:Nunito,sans-serif;font-weight:900;font-size:calc(var(--u)*.8);line-height:1;border:1px solid rgba(26,20,32,.6)}
+
+.mr-tag .mr-tb{display:inline-flex;gap:calc(var(--u)*.15)}
 .mr-title{position:absolute;left:41%;top:9%;width:max-content;max-width:64%;transform:translate(-50%,-30%) scale(.8);opacity:0;text-align:center;transition:all .6s cubic-bezier(.3,1.5,.5,1)}
 .mr-title.on{opacity:1;transform:translate(-50%,0) scale(1)}
 .mr-title .mr-t0{display:inline-block;font-size:calc(var(--u)*1.7);background:var(--pink);padding:.1em .9em;border:calc(var(--u)*.3) solid var(--ink);border-radius:calc(var(--u)*.8);transform:skewX(-10deg)}
@@ -48,16 +53,17 @@ const CSS = `
 @keyframes mrpulse{50%{transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg) scale(1.04)}}
 .mr-market .mr-m2{position:absolute;left:60%;top:22%;transform:translateX(-50%);font-size:calc(var(--u)*2.3);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill;white-space:nowrap}
 .mr-market .mr-mt{position:absolute;right:calc(var(--u)*3);top:calc(var(--u)*25);font-size:calc(var(--u)*1.6);background:var(--ink);padding:.2em .8em;border-radius:calc(var(--u)*.6)}
-.mr-map{position:absolute;right:calc(var(--u)*2.2);top:calc(var(--u)*1.8);width:calc(var(--u)*17);height:calc(var(--u)*21);padding:calc(var(--u)*.5)}
+.mr-map{position:absolute;right:calc(var(--u)*2.2);top:calc(var(--u)*1.8);width:calc(var(--u)*11);height:calc(var(--u)*13.5);padding:calc(var(--u)*.4);transition:opacity .5s}
+.mr-hud.mr-nomap .mr-map{opacity:0}
 .mr-map canvas{position:relative;width:100%;height:100%;display:block}
-.mr-mapwrap{position:absolute;inset:0;background:rgba(255,255,255,.88);border:calc(var(--u)*.32) solid var(--ink);border-radius:calc(var(--u)*1.2);box-shadow:0 calc(var(--u)*.45) 0 rgba(0,0,0,.3)}
-.mr-banner{position:absolute;left:50%;top:74%;transform:translate(-50%,-50%) scale(0);text-align:center;white-space:nowrap;transition:transform .35s cubic-bezier(.3,1.7,.5,1)}
+.mr-mapwrap{position:absolute;inset:0;background:rgba(255,255,255,.72);border-radius:calc(var(--u)*1)}
+.mr-banner{position:absolute;left:50%;top:13%;transform:translate(-50%,-50%) scale(0);text-align:center;white-space:nowrap;transition:transform .35s cubic-bezier(.3,1.7,.5,1)}
 .mr-banner.on{transform:translate(-50%,-50%) scale(1)}
-.mr-banner .mr-b1{display:inline-block;padding:calc(var(--u)*.3) calc(var(--u)*2.4);font-size:calc(var(--u)*4.2);line-height:1.05;background:var(--pink);border:calc(var(--u)*.4) solid var(--ink);border-radius:calc(var(--u)*1.2);transform:skewX(-10deg) rotate(-3deg);box-shadow:0 calc(var(--u)*.6) 0 rgba(0,0,0,.35)}
+.mr-banner .mr-b1{display:inline-block;padding:calc(var(--u)*.2) calc(var(--u)*1.6);font-size:calc(var(--u)*2.8);line-height:1.05;background:var(--pink);border:calc(var(--u)*.4) solid var(--ink);border-radius:calc(var(--u)*1.2);transform:skewX(-10deg) rotate(-3deg);box-shadow:0 calc(var(--u)*.6) 0 rgba(0,0,0,.35)}
 .mr-banner .mr-b1 span{display:inline-block;transform:skewX(10deg)}
 .mr-banner .mr-b2{display:block;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*1.8);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill}
 .mr-tags{position:absolute;inset:0}
-.mr-tag{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;display:flex;align-items:center;gap:calc(var(--u)*.35);font-size:calc(var(--u)*1.25);will-change:transform;transition:opacity .25s}
+.mr-tag{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;display:flex;align-items:center;gap:calc(var(--u)*.3);font-size:calc(var(--u)*1.05);will-change:transform;transition:opacity .25s}
 .mr-tag .mr-tp{background:var(--ink);color:var(--yellow);border-radius:calc(var(--u)*.5);padding:0 calc(var(--u)*.45);font-size:calc(var(--u)*1.35)}
 .mr-tag .mr-tn{padding:calc(var(--u)*.05) calc(var(--u)*.6);border:calc(var(--u)*.22) solid var(--ink);border-radius:calc(var(--u)*.6);-webkit-text-stroke:calc(var(--u)*.22) var(--ink);paint-order:stroke fill;box-shadow:0 calc(var(--u)*.25) 0 rgba(0,0,0,.3)}
 .mr-tag:after{content:"";position:absolute;left:50%;bottom:calc(var(--u)*-.75);border:calc(var(--u)*.45) solid transparent;border-top-color:var(--ink);transform:translateX(-50%)}
@@ -99,12 +105,7 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
   if (!document.getElementById('mr-hud-css')) { const st = document.createElement('style'); st.id = 'mr-hud-css'; st.textContent = CSS; document.head.appendChild(st); }
   const root = document.createElement('div'); root.className = 'mr-hud mr-dim';
   root.innerHTML = `
-    <div class="mr-top">
-      <div class="mr-panel mr-live"><div class="mr-unskew"><i></i> LIVE</div></div>
-      <div class="mr-panel mr-clock"><div class="mr-unskew mr-num" data-k="clock">0:00</div></div>
-      <div class="mr-panel mr-lap"><div class="mr-unskew">LAP <b class="mr-num" data-k="lap">1</b>/2</div></div>
-      <div class="mr-panel mr-dist"><div class="mr-unskew"><span data-k="dist">0.0 KM</span><div class="mr-bar"><i data-k="bar"></i></div></div></div>
-    </div>
+    <div class="mr-top"><div class="mr-pill"><i class="mr-dot"></i><span>LAP <b data-k="lap">1</b>/2</span><span class="mr-sep"></span><span data-k="dist">0.0 KM</span><span class="mr-clk" data-k="clock">0:00</span></div></div>
     <div class="mr-tower"></div>
     <div class="mr-map"><div class="mr-mapwrap"></div><canvas></canvas></div>
     <div class="mr-tags"></div>
@@ -123,23 +124,23 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
   const tags = {};
   for (const r of runners) {
     const row = document.createElement('div'); row.className = 'mr-row';
-    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(shortOf(r))}</div><div class="mr-gap"></div></div><span class="mr-badges"></span>`;
+    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(shortOf(r))}</div><span class="mr-inis"></span><div class="mr-gap"></div></div>`;
     tower.appendChild(row); rows[r.id] = { el: row, pos: row.querySelector('.mr-pos'), gap: row.querySelector('.mr-gap'), last: '' };
     const tag = document.createElement('div'); tag.className = 'mr-tag';
-    tag.innerHTML = `<span class="mr-tb"></span><span class="mr-tp mr-num"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(shortOf(r))}</span>`;
+    tag.innerHTML = `<span class="mr-tp mr-num"></span><span class="mr-tb"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(shortOf(r))}</span>`;
     tag.style.opacity = '0';
     q('.mr-tags').appendChild(tag); tags[r.id] = { el: tag, pos: tag.querySelector('.mr-tp'), x: 0, y: 0, vis: false };
   }
   // backer badges on the tower rows and name tags (rebuildable after betting)
+  // backers: tiny player initials (the spatial ground ring in the 3D scene carries the main signal)
   function setBackedBy(bb = {}) {
     for (const r of runners) {
       const bl = (bb[r.id] || []).filter((n) => n != null && n !== '');
-      const backers = bl.map((n) => `<span class="mr-badge" style="--bc:${backerColour(n)}">${isEmoji(n) ? '' : '★'}${esc(String(n)).slice(0, 10)}</span>`).join('');
+      const inis = bl.map((n) => `<span class="mr-ini" style="--bc:${backerColour(n)}">${esc(initialOf(n))}</span>`).join('');
       const row = rows[r.id].el;
       row.classList.toggle('backed', bl.length > 0);
-      if (bl.length) row.style.setProperty('--bc', backerColour(bl[0])); else row.style.removeProperty('--bc');
-      row.querySelector('.mr-badges').innerHTML = backers;
-      tags[r.id].el.querySelector('.mr-tb').innerHTML = backers;
+      row.querySelector('.mr-inis').innerHTML = inis;
+      tags[r.id].el.querySelector('.mr-tb').innerHTML = inis;
     }
   }
   setBackedBy(backedBy);
@@ -174,33 +175,48 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
   mapBg = drawMapBg();
   function redrawMap() { mapBg = drawMapBg(); }
 
-  let bannerT = 0;
+  // one banner at a time, <= 1.5 s each; newer ones queue, stale ones (> 2 s old) are dropped
+  let bannerT = 0, hudClock = 0;
+  const bannerQ = [];
   const banner = q('.mr-banner');
-  function showBanner(text, sub = '', colour = '#ff3d8b', secs = 2.4) {
-    banner.querySelector('.mr-b1 span').textContent = text;
-    banner.querySelector('.mr-b1').style.background = colour;
-    banner.querySelector('.mr-b2').textContent = sub;
+  function popBanner() {
+    while (bannerQ.length && hudClock - bannerQ[0].at > 2) bannerQ.shift();
+    const b = bannerQ.shift(); if (!b) return;
+    banner.querySelector('.mr-b1 span').textContent = b.text;
+    banner.querySelector('.mr-b1').style.background = b.colour;
+    banner.querySelector('.mr-b2').textContent = '';
     banner.classList.remove('on'); void banner.offsetWidth; banner.classList.add('on');
-    bannerT = secs;
+    bannerT = Math.min(1.5, b.secs);
+  }
+  function showBanner(text, _sub = '', colour = '#ff3d8b', secs = 1.4) {
+    if (bannerQ.length >= 3) bannerQ.shift();
+    bannerQ.push({ text, colour, secs, at: hudClock });
+    if (bannerT <= 0) popBanner();
   }
 
   // per-frame update
   // state: { raceS, leaderM, lap, order:[{id, m, gapS, finished, place}], tags:[{id, x, y, visible, pos}] }
   let lastOrderKey = '';
   function update(dt, s) {
-    if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) banner.classList.remove('on'); }
+    hudClock += dt;
+    if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) { banner.classList.remove('on'); bannerT = -0.25; } }
+    else if (bannerT < 0) { bannerT = Math.min(0, bannerT + dt); if (bannerT === 0) popBanner(); }
     if (!s) return;
+    if (s.map != null) root.classList.toggle('mr-nomap', !s.map);
     if (s.raceS != null) K.clock.textContent = fmt(s.raceS);
     if (s.leaderM != null) {
       K.lap.textContent = s.leaderM >= 2500 ? '2' : '1';
       K.dist.textContent = `${(Math.min(5000, s.leaderM) / 1000).toFixed(1)} KM`;
-      K.bar.style.width = `${Math.min(100, (s.leaderM / 5000) * 100)}%`;
     }
     if (s.order) {
       const h = tower.clientHeight || 0; const rowH = (tower.querySelector('.mr-row')?.offsetHeight || 40) + 6;
+      let slot = 0;
       s.order.forEach((o, i) => {
         const r = rows[o.id]; if (!r) return;
-        r.el.style.transform = `translateY(${i * rowH}px)`;
+        r.el.classList.toggle('off', !!o.hidden);
+        if (o.hidden) return;
+        if (slot === 3) slot += 0.35; // small gap before backed runners outside the top 3
+        r.el.style.transform = `translateY(${slot * rowH}px)`; slot++;
         const key = `${i}|${o.gapText}|${o.finished}`;
         const key2 = key + (o.posHtml || '');
         if (key2 !== r.last) {
@@ -226,7 +242,7 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
   }
   function setDim(b) { root.classList.toggle('mr-dim', !!b); }
   function setDimTop(b) { root.classList.toggle('mr-dimtop', !!b); }
-  function clearBanner() { bannerT = 0; banner.classList.remove('on'); }
+  function clearBanner() { bannerT = 0; bannerQ.length = 0; banner.classList.remove('on'); }
   function introCard(r) {
     const c = q('.mr-card3');
     if (!r) { c.classList.remove('on'); return; }
@@ -274,6 +290,7 @@ const BACKER_COLS = ['#ffd23f', '#ff8fc8', '#7fe0ff', '#9dff8a', '#ffb067', '#c7
 const backerIdx = new Map();
 export function backerColour(name) { if (!backerIdx.has(name)) backerIdx.set(name, backerIdx.size); return BACKER_COLS[backerIdx.get(name) % BACKER_COLS.length]; }
 const isEmoji = (s) => /\p{Extended_Pictographic}/u.test(String(s));
+export function initialOf(n) { const t = String(n).trim(); if (isEmoji(t)) return [...t][0]; const w = t.split(/\s+/).filter(Boolean); return (w.length > 1 && w[0].length <= 3 ? w[0][0] + w[1][0] : t[0] || '?').toUpperCase(); }
 function shade(hex, k) {
   const c = parseInt(hex.slice(1), 16); let r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
   const f = (v) => Math.max(0, Math.min(255, Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k)));
