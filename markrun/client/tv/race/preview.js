@@ -25,7 +25,7 @@ window.view = view; window.__create = createRaceView; window.__data = { course, 
 const onEvent = (e) => { if (e.kind === 'commentary') sub.textContent = e.text; if (e.kind === 'countdown') sub.textContent = e.text; };
 const actions = {
   intro: () => view.playIntro(() => { sub.textContent = '(betting would happen here)'; if (qs.get('auto') !== '0') setTimeout(actions.race, 1500); }),
-  race: () => view.playRace(onEvent, () => { sub.textContent = 'Race over'; setTimeout(actions.podium, 2500); }),
+  race: () => (sub.textContent = '', view.playRace(onEvent, () => { sub.textContent = 'Race over'; setTimeout(actions.podium, 2500); })),
   podium: () => view.showPodium(null),
   pause: (() => { let p = false; return () => view.setPaused((p = !p)); })(),
 };

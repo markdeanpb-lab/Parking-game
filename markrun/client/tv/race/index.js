@@ -205,7 +205,15 @@ export function createRaceView(container, opts = {}) {
   // ---------- name tags / HUD state ----------
   const proj = new THREE.Vector3();
   let _rects = null, _rectsAt = -1;
-  const hudRects = () => { if (_rectsAt !== wall || !_rects) { const cr = canvas.getBoundingClientRect(); _rects = [...hud.root.querySelectorAll('.mr-tower, .mr-map, .mr-top')].map((e) => { const r = e.getBoundingClientRect(); return { left: r.left - cr.left, right: r.right - cr.left, top: r.top - cr.top, bottom: (e.classList.contains('mr-tower') ? r.top + (e.querySelectorAll('.mr-row').length * ((e.querySelector('.mr-row')?.offsetHeight || 40) + 6)) : r.bottom) - cr.top }; }); _rectsAt = wall; } return _rects; };
+  const hudRects = () => { if (_rectsAt !== wall || !_rects) { const cr = canvas.getBoundingClientRect(); _rects = [...hud.root.querySelectorAll('.mr-tower, .mr-map, .mr-top')].filter((e) => getComputedStyle(e).opacity !== '0').map((e) => {
+        const r = e.getBoundingClientRect(); let right = r.right, bottom = r.bottom;
+        if (e.classList.contains('mr-tower')) {
+          // the tower element has no height (rows are absolute) and the backer badges hang off its right edge
+          bottom = r.top + e.querySelectorAll('.mr-row').length * ((e.querySelector('.mr-row')?.offsetHeight || 40) + 6);
+          for (const bdg of e.querySelectorAll('.mr-badges')) { const br = bdg.getBoundingClientRect(); if (br.width) right = Math.max(right, br.right); }
+        }
+        return { left: r.left - cr.left, right: right - cr.left, top: r.top - cr.top, bottom: bottom - cr.top };
+      }); _rectsAt = wall; } return _rects; };
   function hudState(st, showTags = true) {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const tags = [];
@@ -215,8 +223,9 @@ export function createRaceView(container, opts = {}) {
       const dist = proj.distanceTo(camera.position);
       proj.project(camera);
       let vis = showTags && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && proj.y < 0.82 && proj.y > -0.62 && dist > 9.5 && dist < 150;
-      const sx = (proj.x * 0.5 + 0.5) * w, sy = (-proj.y * 0.5 + 0.5) * h;
-      if (vis && hudRects().some((rc) => sx > rc.left - 40 && sx < rc.right + 40 && sy > rc.top - 10 && sy < rc.bottom + 40)) vis = false;
+      // tight close-up of this runner (body fills > ~30% of the frame height): the face is enough, no tag
+      const pxTall = (r.height / Math.max(0.1, dist)) * (h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
+      if (pxTall > h * 0.3) vis = false;
       tags.push({ id, x: (proj.x * 0.5 + 0.5) * w, y: (-proj.y * 0.5 + 0.5) * h, visible: vis, pos: st ? st.order.indexOf(id) + 1 : 0, scale: Math.max(0.7, Math.min(1.15, 30 / dist)), dist });
     }
     // de-overlap (push farther tags upward)
@@ -227,6 +236,10 @@ export function createRaceView(container, opts = {}) {
       const tw = (shortOf(pubById[t.id]).length * 12 + 60) * t.scale;
       for (let k = 0; k < 8; k++) { const hit = placed.find((p) => Math.abs(p.x - t.x) < (p.tw + tw) / 2 && Math.abs(p.y - t.y) < 30 * Math.max(p.scale, t.scale)); if (!hit) break; t.y = hit.y - 31 * Math.max(hit.scale, t.scale); }
       t.tw = tw;
+      // hide tags whose box (incl. the backer chips above it) would touch the tower, its badges, the top bar or minimap
+      const th = (backedBy[t.id]?.length ? 62 : 34) * t.scale, pad = 12;
+      const box = { l: t.x - tw / 2 - 40 * t.scale, r: t.x + tw / 2, t: t.y - th, b: t.y + 8 };
+      if (hudRects().some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) { t.visible = false; continue; }
       placed.push(t);
     }
     if (!st) {
