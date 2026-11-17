@@ -657,3 +657,6 @@ body.phase-RACE .react .avatar { display: none; }
 .faceoff .rh { font-size: 84px; top: 20px; }
 .rv.winner-big { transform: rotateY(180deg) scale(1.05); }
 .srow .dl.flat { color: var(--ink); }
+.fo-card { min-height: 430px; }
+body.phase-FINALE #subs { width: 1180px; }
+.optgrid .set .btn.small { min-height: 48px; font-size: 22px; }

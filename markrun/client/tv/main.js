@@ -281,7 +281,7 @@ function spawnReaction(pid, emoji) {
     x = (r.left + r.width / 2 - sr.left) / sc + (Math.random() - 0.5) * 160;
   } else {
     const idx = S?.players.findIndex((x2) => x2.id === pid) ?? 0;
-    x = (idx % 2 === 0 ? 70 : 1790) + (Math.random() - 0.5) * 80; // corners: never over the runners
+    x = (S?.phase === 'RACE' ? 1790 - idx * 90 : idx % 2 === 0 ? 70 : 1790) + (Math.random() - 0.5) * 60; // corners only (race: bottom-right; the money pills live bottom-left)
   }
   const n = el(`<div class="react" style="left:${Math.round(x - 60)}px;--rot:${Math.round((Math.random() - 0.5) * 40)}deg"><span class="e">${esc(emoji)}</span>${p ? avatarHtml(p.avatar, 46) : ''}</div>`);
   reactEl.appendChild(n);
