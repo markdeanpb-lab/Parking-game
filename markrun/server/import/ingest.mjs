@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import { historyDb, DATA, tx } from '../db.mjs';
 import { directSegment, extractSegment, buildProgress, typicalShape, features, haversine, N_PTS } from './pacing.mjs';
 import { computeFacts } from './facts.mjs';
+import { computeDiversions } from './diversions.mjs';
 
 const RAW = path.join(DATA, 'raw');
 const FORCE = process.argv.includes('--force');
@@ -176,7 +177,7 @@ function buildPerformances(db) {
       method: 'direct', samples: st.time.length,
       sampleInterval: Math.round((st.time.at(-1) / st.time.length) * 10) / 10,
       recordedDuration: p.recordedDuration, officialDuration: r.time_s,
-      durationDiff: p.recordedDuration - r.time_s, gpsDistance: Math.round(p.gpsDistance),
+      durationDiff: p.recordedDuration - r.time_s, gpsDistance: Math.round(p.gpsDistance), i0: seg.i0, i1: seg.i1,
     };
     q.grade = Math.abs(q.durationDiff) <= 20 && q.gpsDistance > 4700 && q.gpsDistance < 5300 ? 'good' : 'fair';
     if (st.location) { startPts.push(st.location[seg.i0]); finishPts.push(st.location[seg.i1]); }
@@ -200,7 +201,7 @@ function buildPerformances(db) {
       if (seg) {
         const p = buildProgress(st, seg.i0, seg.i1, r.time_s);
         const q = { method: 'embedded', samples: st.time.length, recordedDuration: p.recordedDuration, officialDuration: r.time_s,
-          durationDiff: p.recordedDuration - r.time_s, gpsDistance: Math.round(p.gpsDistance), segmentStartIndex: seg.i0,
+          durationDiff: p.recordedDuration - r.time_s, gpsDistance: Math.round(p.gpsDistance), segmentStartIndex: seg.i0, i0: seg.i0, i1: seg.i1,
           finishMiss_m: Math.round(seg.dFin) };
         q.grade = Math.abs(q.durationDiff) <= 30 ? 'good' : 'fair';
         built.push({ r, p, q, source: 'strava_1hz_extracted', activity: getAct.get(r.activity_id) });
@@ -279,6 +280,8 @@ export function ingestAll() {
     ingestStreams(db);
     buildPerformances(db);
     ingestWeather(db);
+    const nd = computeDiversions(db);
+    log('course diversions found:', nd);
     const nf = computeFacts(db);
     log('facts written:', nf);
     db.prepare("INSERT OR REPLACE INTO meta(key,value) VALUES ('last_ingest',?)").run(nowIso());

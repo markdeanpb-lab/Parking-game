@@ -152,11 +152,18 @@ export function broadcastToRace(timeMap, b) {
 export function buildRacePlan(roundId, runners, opts = {}) {
   const a = analyse(runners);
   const timeMap = buildTimeMap(runners, opts);
-  const events = a.events.map((e) => ({ ...e, broadcastS: Math.round(raceToBroadcast(timeMap, e.raceS) * 100) / 100 }));
+  const evts = [...a.events];
+  // Real course diversions from GPS (funfair weekends): the runner's own trace left the usual route here.
+  for (const r of runners) for (const [i, d] of (r.diversions || []).entries()) {
+    evts.push({ type: 'diversion', who: r.id, lap: i + 1, raceS: timeAtDistance(r.progress, d.fromM), endRaceS: timeAtDistance(r.progress, d.toM), fromM: d.fromM, toM: d.toM });
+  }
+  evts.sort((x, y) => x.raceS - y.raceS);
+  const events = evts.map((e) => ({ ...e, broadcastS: Math.round(raceToBroadcast(timeMap, e.raceS) * 100) / 100,
+    ...(e.endRaceS != null ? { endBroadcastS: Math.round(raceToBroadcast(timeMap, e.endRaceS) * 100) / 100 } : {}) }));
   return {
     roundId,
     courseLengthM: 5000,
-    runners: runners.map((r) => ({ id: r.id, officialS: r.officialS, progress: r.progress, pacingSource: r.pacingSource })),
+    runners: runners.map((r) => ({ id: r.id, officialS: r.officialS, progress: r.progress, pacingSource: r.pacingSource, diversions: r.diversions || null })),
     timeMap,
     events,
     finishOrder: a.finishOrder,

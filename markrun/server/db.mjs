@@ -66,6 +66,9 @@ function open(file, schema) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;');
   db.exec(schema);
+  // additive migrations
+  const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+  if (schema === HIST_SCHEMA && !cols('performances').includes('diversions')) db.exec('ALTER TABLE performances ADD COLUMN diversions TEXT');
   return db;
 }
 
