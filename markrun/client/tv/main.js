@@ -7,7 +7,7 @@ import { $, $$, esc, el, money, signedMoney, ordinalHtml, avatarHtml, countUp, r
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
-import { Race3D } from './race-bridge.js';
+import { Race3D, introPlan } from './race-bridge.js';
 
 const params = new URLSearchParams(location.search);
 const SPEED = Math.max(0.25, Number(params.get('speed')) || 1);
@@ -364,6 +364,7 @@ async function makeRaceView(opts, { allow2d = true } = {}) {
     try {
       raceView = await Race3D.createRaceView(raceLayer, full);
       raceViewKind = '3d';
+      window.__markrun.raceView = raceView;
       log({ type: 'raceview', kind: '3d' });
       return raceView;
     } catch (e) {
@@ -389,44 +390,60 @@ function introScreen(st) {
   const box = $('.stagebox', root);
   const bail = (st.bailouts || []).map((b) => `${esc(st.players.find((p) => p.id === b.playerId)?.name || '')} got a ${money(b.amount)} bailout from the Bank of Mum &amp; Dad`).join('<br>');
 
-  (async () => {
-    // try the 3D intro fly-by behind the cards
-    let introDone3d = Promise.resolve();
-    if (!FORCE_2D && Race3D?.createRaceView) {
-      const v = await makeRaceView({ round, plan: null, backedBy: {} }, { allow2d: false }).catch(() => null);
-      if (v && !tok.cancelled) {
-        document.body.classList.add('racing');
-        root.querySelector('.clouds')?.remove(); root.querySelector('.hills')?.remove();
-        introDone3d = new Promise((res) => { try { v.playIntro(res); } catch { res(); } setTimeout(res, T(90000)); });
-      }
-    }
-    if (tok.cancelled) return;
-    box.innerHTML = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
-    audio.play('fanfare');
-    say(`Welcome to Finsbury Park for round ${round.number}: ${round.title}!`, 'jeff', 3);
-    await waitVoice(tok, 4200, 7000);
-    for (let i = 0; i < runners.length && !tok.cancelled; i++) {
-      const r = runners[i];
-      $$('.intro-dots i', root).forEach((d, j) => d.classList.toggle('on', j === i));
-      box.innerHTML = `<div class="rcard-wrap anim-left"><div class="rcard panel slant" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 300)}</div><div class="unslant">
+  const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
+  const cardHtml = (r) => `<div class="rcard-wrap anim-left"><div class="rcard panel slant" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 300)}</div><div class="unslant">
         <div class="nick outlined">${esc(r.nickname)}</div>
         <div class="tagl">${esc(r.tagline || '')}</div>
         ${r.intro ? `<div class="introline">“${esc(r.intro)}”</div>` : ''}
         ${r.publicClue ? `<div class="clue"><span class="k">CLUE</span><span>${esc(r.publicClue.text)}</span></div>` : ''}
       </div><div class="lane">LANE ${r.lane}</div><div class="odds-badge"><div class="ol">ODDS</div><div class="ov outlined">${esc(r.odds?.display || '')}</div></div></div></div>`;
-      audio.play('whoosh');
-      say(r.intro || `${r.nickname}. ${r.tagline || ''}`, i % 2 ? 'pam' : 'jeff', 3);
-      await waitVoice(tok, 5200, 12000);
-      if (!tok.cancelled) await sleepT(700, tok);
-    }
+  async function showRunner(i) {
+    const r = runners[i];
+    $$('.intro-dots i', root).forEach((d, j) => d.classList.toggle('on', j === i));
+    box.innerHTML = cardHtml(r);
+    audio.play('whoosh');
+    say(r.intro || `${r.nickname}. ${r.tagline || ''}`, i % 2 ? 'pam' : 'jeff', 3);
+    await waitVoice(tok, 4800, 12000);
+  }
+  async function finish() {
     if (tok.cancelled) return;
     $$('.intro-dots i', root).forEach((d) => d.classList.remove('on'));
     box.innerHTML = `<div class="bets-open"><div class="anim-pop"><div class="big outlined">BETS ARE OPEN!</div><div class="sub2 outlined white thin">📱 Grab your phones — your secret clues are waiting 🤫</div></div></div>`;
     audio.play('kaching');
     say('The book is open! Check your phones for your secret clues.', 'pam', 3);
-    await Promise.race([introDone3d, sleepT(100, tok)]);
     await waitVoice(tok, 3200, 6000);
     if (!tok.cancelled) send({ t: 'introDone', roundId: round.roundId });
+  }
+
+  (async () => {
+    // 3D: helicopter fly-over + a close-up per runner; our card + voice line hold each shot (onIntroRunner)
+    if (!FORCE_2D && Race3D?.createRaceView) {
+      const byId = new Map(runners.map((r, i) => [r.id, i]));
+      const v = await makeRaceView({
+        round, plan: introPlan(round), backedBy: {}, introCards: false,
+        onIntroRunner: (id) => (tok.cancelled ? undefined : showRunner(byId.get(id) ?? 0)),
+      }, { allow2d: false }).catch(() => null);
+      if (v && !tok.cancelled) {
+        document.body.classList.add('racing');
+        root.classList.add('over3d');
+        root.querySelector('.clouds')?.remove(); root.querySelector('.hills')?.remove();
+        box.innerHTML = titleHtml;
+        audio.play('fanfare');
+        say(`Welcome to Finsbury Park for round ${round.number}: ${round.title}!`, 'jeff', 3);
+        let done = false;
+        const guard = setTimeout(() => { if (!done) { done = true; finish(); } }, T(150000));
+        tok.timers.push(guard);
+        try { v.playIntro(() => { if (!done) { done = true; clearTimeout(guard); finish(); } }); } catch (e) { console.error(e); done = true; finish(); }
+        return;
+      }
+    }
+    if (tok.cancelled) return;
+    box.innerHTML = titleHtml;
+    audio.play('fanfare');
+    say(`Welcome to Finsbury Park for round ${round.number}: ${round.title}!`, 'jeff', 3);
+    await waitVoice(tok, 4200, 7000);
+    for (let i = 0; i < runners.length && !tok.cancelled; i++) { await showRunner(i); if (!tok.cancelled) await sleepT(700, tok); }
+    await finish();
   })();
   return { destroy: () => { cancelToken(tok); } };
 }
@@ -557,14 +574,18 @@ function raceScreen(st) {
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }
     document.body.classList.add('racing');
-    audio.play('horn');
-    setTimeout(() => audio.play('crowd', { dur: 3, peak: 0.25 }), 300);
-    say("And they're off!", 'jeff', 3);
+    if (raceViewKind !== '3d') { // the 3D broadcast has its own pre-roll countdown (horn plays on GO)
+      audio.play('horn');
+      setTimeout(() => audio.play('crowd', { dur: 3, peak: 0.25 }), 300);
+      say("And they're off!", 'jeff', 3);
+    } else audio.play('crowd', { dur: 4, peak: 0.2 });
     log({ type: 'race-start', kind: raceViewKind });
     v.playRace((e) => {
       if (tok.cancelled || !e) return;
       log({ type: 'race-event', e: e.type || 'line', text: e.text });
-      if (e.text) { voice.say(e.text, e.speaker || 'jeff', { priority: e.priority || 2 }); return; }
+      if (e.kind === 'countdown') { audio.play(e.n === 0 ? 'go' : 'beep'); if (e.n === 0) { audio.play('horn'); audio.play('crowd', { dur: 3, peak: 0.28 }); } return; }
+      if (e.kind === 'photo_finish') { audio.play('stamp'); say("It's a photo finish! Hold your breath!", 'pam', 3); return; }
+      if (e.text && (e.kind === 'commentary' || !e.type)) { voice.say(e.text, e.speaker || 'jeff', { priority: e.priority || 2 }); return; }
       switch (e.type) {
         case 'overtake': if (Date.now() - lastWhoosh > 1500) { lastWhoosh = Date.now(); audio.play('whoosh'); } break;
         case 'lead_change': audio.play('whoosh'); audio.play('crowd', { dur: 2, peak: 0.18 }); break;

@@ -237,6 +237,10 @@ function buildPerformances(db) {
 }
 
 // ---------------------------------------------------------------- weather (Meteostat hourly bulk CSV)
+export function startHourUtc(date) {
+  const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: 'numeric', hourCycle: 'h23' }).format(new Date(`${date}T09:00:00Z`));
+  return 9 - (Number(h) - 9); // 09:00Z shows as 10 in BST -> 08 UTC
+}
 function ingestWeather(db) {
   const dir = path.join(RAW, 'weather');
   if (!fs.existsSync(dir)) return;
@@ -246,6 +250,8 @@ function ingestWeather(db) {
     { file: 'meteostat_hourly_03772_heathrow.csv.gz', name: 'London Heathrow (Meteostat 03772)' },
   ];
   const dates = new Set(db.prepare('SELECT run_date FROM parkrun_results').all().map((r) => r.run_date));
+  if (FORCE || !db.prepare("SELECT 1 FROM meta WHERE key='weather_hour_rule' AND value='local09'").get()) db.exec('DELETE FROM weather');
+  db.prepare("INSERT OR REPLACE INTO meta(key,value) VALUES ('weather_hour_rule','local09')").run();
   const have = new Set(db.prepare('SELECT run_date FROM weather').all().map((r) => r.run_date));
   const st = db.prepare(`INSERT INTO weather(run_date,station,obs_hour,temp_c,dewpoint_c,rhum,prcp_mm,wdir,wind_kmh,gust_kmh,pressure,coco,source_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(run_date) DO NOTHING`);
@@ -258,10 +264,11 @@ function ingestWeather(db) {
     tx(db, () => {
       for (const line of lines) {
         const c = line.split(',');
-        if (c[1] !== '9' && c[1] !== '09') continue; // 09:00 local-ish (Meteostat is UTC; 09 UTC = 09/10 local) - use 09 UTC
+        // parkrun starts 09:00 UK local time; Meteostat hours are UTC (08 UTC in British Summer Time, 09 UTC otherwise)
         if (!dates.has(c[0]) || have.has(c[0])) continue;
+        if (Number(c[1]) !== startHourUtc(c[0])) continue;
         const num = (x) => (x === '' || x === undefined ? null : Number(x));
-        st.run(c[0], s.name, `${c[0]}T09:00Z`, num(c[2]), num(c[3]), num(c[4]), num(c[5]), num(c[7]), num(c[8]), num(c[9]), num(c[10]), num(c[12]), src.id);
+        st.run(c[0], s.name, `${c[0]}T${String(startHourUtc(c[0])).padStart(2, '0')}:00Z`, num(c[2]), num(c[3]), num(c[4]), num(c[5]), num(c[7]), num(c[8]), num(c[9]), num(c[10]), num(c[12]), src.id);
         have.add(c[0]); n++;
       }
     });
