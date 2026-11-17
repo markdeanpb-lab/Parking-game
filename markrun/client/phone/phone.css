@@ -209,3 +209,14 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 .card.det .dd { font-weight: 900; margin-top: 6px; }
 .card.det .dm { font-size: 13px; color: #4a5080; font-weight: 800; margin-top: 2px; }
 .card.det ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; font-weight: 700; color: #333a6b; }
+
+.mybet.push { background: #eef3ff; }
+@media (max-width: 370px) {
+  .topbar .bank .v { font-size: 24px; }
+  .topbar .nm { max-width: 96px; font-size: 18px; }
+  .net-big { font-size: 52px; }
+  .mybet .s { font-size: 17px; }
+  .mybet .lb { font-size: 14px; }
+  .hero-title { font-size: 38px; }
+}
+.net-big { white-space: nowrap; max-width: 100%; overflow: hidden; }

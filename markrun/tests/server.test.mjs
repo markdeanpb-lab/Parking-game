@@ -117,12 +117,12 @@ function startServer(db) {
   p.stdout.on('data', (d) => { out += d; }); p.stderr.on('data', (d) => { out += d; });
   return new Promise((res, rej) => {
     const t = setTimeout(() => rej(new Error(`no start: ${out}`)), 15000);
-    const iv = setInterval(() => { const m = out.match(/MARKRUN_READY port=(\d+)/); if (m) { clearInterval(iv); clearTimeout(t); res({ p, port: Number(m[1]) }); } }, 30);
+    const iv = setInterval(() => { const m = out.match(/MARKRUN_READY port=(\d+)/); if (m) { clearInterval(iv); clearTimeout(t); res({ p, port: Number(m[1]), key: (out.match(/\?key=([0-9a-f]+)/) || [])[1], out: () => out }); } }, 30);
   });
 }
 function stop(srv) { return new Promise((r) => { srv.p.once('exit', r); srv.p.kill('SIGTERM'); }); }
-function client(port, hello) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+function client(port, hello, host = '127.0.0.1') {
+  const ws = new WebSocket(`ws://${host}:${port}/ws`);
   const c = { ws, msgs: [], state: null, welcome: null };
   ws.on('message', (d) => { const m = JSON.parse(d); c.msgs.push(m); if (m.t === 'state') c.state = m.state; if (m.t === 'welcome') c.welcome = m; });
   c.ready = new Promise((r) => ws.on('open', () => { ws.send(JSON.stringify(hello)); r(); }));
@@ -203,7 +203,7 @@ test('static server: routes, redirect, no path traversal, data files', async () 
   const srv = await startServer(path.join(dir, 's.db'));
   const base = `http://127.0.0.1:${srv.port}`;
   const r = await fetch(`${base}/`, { redirect: 'manual' });
-  assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/tv');
+  assert.equal(r.status, 302); assert.match(r.headers.get('location'), /^\/tv\?key=[0-9a-f]+$/, 'host browser goes to the TV with its key');
   assert.equal((await fetch(`${base}/tv`)).status, 200);
   assert.equal((await fetch(`${base}/phone`)).status, 200);
   assert.equal((await fetch(`${base}/data/course.json`)).status, 200);
@@ -239,4 +239,80 @@ test('"Refresh Historical Data" only runs in the lobby and blocks starting while
   await assert.rejects(g.refreshData(() => {}), /only allowed in the lobby/);
   assert.equal(calls.length, 1);
   g.dispose();
+});
+
+test('safety timers are progress-based: a slow TV keeps the race alive, a stalled one gets skipped', async () => {
+  process.env.MARKRUN_STALL_MS = '45000';
+  const g = new Game({ state: newSessionState(), rounds, timeScale: 0.002 }); // 45 s -> 90 ms
+  const a = await g.join({ name: 'Mark' });
+  g.tvPresence(1);
+  await g.start(); await g.advance('INTRO');
+  await g.lock(a.id, []); await g.advance('BETTING');
+  assert.equal(g.s.phase, 'RACE');
+  const rid = g.s.round.public.roundId;
+  for (let i = 0; i < 8; i++) { g.raceTime(rid, i * 0.5); await new Promise((r) => setTimeout(r, 40)); } // slow but progressing (320 ms > 90 ms)
+  assert.equal(g.s.phase, 'RACE', 'still racing while the TV makes progress');
+  g.raceTime(rid, 1); // no progress (same value as an earlier beat would be ignored)
+  await new Promise((r) => setTimeout(r, 250));
+  await g.queue;
+  assert.equal(g.s.phase, 'RESULTS', 'stalled TV -> server moves on');
+  g.dispose();
+});
+
+test('seat takeover needs TV approval; the original phone always gets its seat back', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'markrun-test-'));
+  const srv = await startServer(path.join(dir, 's.db'));
+  const tv = client(srv.port, { t: 'hello', role: 'tv' }); await tv.ready;
+  const a = client(srv.port, { t: 'hello', role: 'phone' }); await a.ready;
+  a.send({ t: 'join', name: 'Jo', avatar: {} });
+  await a.until((c) => c.welcome?.token);
+  const tokenA = a.welcome.token, pid = a.welcome.playerId;
+  await a.close();
+  // a new device asks for Jo's seat: pending until the TV answers
+  const x = client(srv.port, { t: 'hello', role: 'phone' }); await x.ready;
+  await x.until((c) => c.welcome);
+  x.send({ t: 'claim', playerId: pid });
+  await x.until((c) => c.msgs.some((m) => m.t === 'claimPending'));
+  await tv.until((c) => c.msgs.some((m) => m.t === 'claimRequest'));
+  assert.ok(!x.state, 'no seat (and no secrets) before approval');
+  const req = tv.msgs.find((m) => m.t === 'claimRequest');
+  tv.send({ t: 'claimAnswer', reqId: req.reqId, allow: true });
+  await x.until((c) => c.welcome?.playerId === pid && c.state?.me);
+  // the original phone comes back with its own token: it wins, the claimer is kicked
+  const a2 = client(srv.port, { t: 'hello', role: 'phone', token: tokenA }); await a2.ready;
+  await a2.until((c) => c.state?.me?.id === pid);
+  await x.until((c) => c.msgs.some((m) => m.t === 'kicked'));
+  // a denied claim gets nothing
+  await a2.close();
+  const y = client(srv.port, { t: 'hello', role: 'phone' }); await y.ready;
+  await y.until((c) => c.welcome);
+  y.send({ t: 'claim', playerId: pid });
+  await tv.until((c) => c.msgs.filter((m) => m.t === 'claimRequest').length >= 2);
+  const req2 = tv.msgs.filter((m) => m.t === 'claimRequest').at(-1);
+  tv.send({ t: 'claimAnswer', reqId: req2.reqId, allow: false });
+  await y.until((c) => c.msgs.some((m) => m.code === 'claim_denied'));
+  assert.ok(!y.state);
+  await Promise.all([tv.close(), x.close(), y.close()]);
+  await stop(srv);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('TV role: loopback or TV key only', async () => {
+  const lan = Object.values(os.networkInterfaces()).flat().find((a) => a && a.family === 'IPv4' && !a.internal)?.address;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'markrun-test-'));
+  const srv = await startServer(path.join(dir, 's.db'));
+  assert.match(srv.key || '', /^[0-9a-f]{6,}$/, 'console prints the TV link with its key');
+  const local = client(srv.port, { t: 'hello', role: 'tv' }); await local.ready;
+  await local.until((c) => c.state?.role === 'tv');
+  if (lan) { // same machine, but through the LAN address: not loopback
+    const bad = client(srv.port, { t: 'hello', role: 'tv' }, lan); await bad.ready;
+    await bad.until((c) => c.msgs.some((m) => m.code === 'tv_auth'));
+    assert.ok(!bad.state, 'no TV state without the key');
+    const good = client(srv.port, { t: 'hello', role: 'tv', key: srv.key }, lan); await good.ready;
+    await good.until((c) => c.state?.role === 'tv');
+    await Promise.all([bad.close(), good.close()]);
+  }
+  await local.close();
+  await stop(srv);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

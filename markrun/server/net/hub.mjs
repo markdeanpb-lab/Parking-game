@@ -4,7 +4,11 @@
 import { WebSocketServer } from 'ws';
 import { GameError, REACTIONS } from './game.mjs';
 
-export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {}) {
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+export const isLoopback = (addr) => LOOPBACK.has(String(addr || ''));
+
+export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKey = null } = {}) {
+  const claims = new Map(); // reqId -> { c, playerId, timer }
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
   const clients = new Set();
 
@@ -45,8 +49,9 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
     });
     ws.on('close', () => {
       clients.delete(c);
+      for (const [id, r] of claims) if (r.c === c) { clearTimeout(r.timer); claims.delete(id); notifyTvs({ t: 'claimClosed', reqId: id }); }
       if (c.playerId) game.setConnected(c.playerId, -1);
-      if (c.role === 'tv') game.emit('tvs', countTvs());
+      if (c.role === 'tv') { game.emit('tvs', countTvs()); game.tvPresence(countTvs()); }
     });
   });
 
@@ -63,14 +68,26 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
     if (m.t === 'ping') return send(c, { t: 'pong', at: m.at, serverNow: Date.now() });
     if (m.t === 'hello') {
       if (m.role === 'tv') {
+        // the TV role is powerful (settings, kicks, race plan): only the host's own browser or a holder of the TV key
+        if (!isLoopback(c.ip) && !(tvKey && m.key === tvKey)) {
+          send(c, { t: 'error', code: 'tv_auth', msg: 'This screen is not authorised as the TV. Open the TV link printed in the host console (it includes ?key=…).' });
+          return undefined;
+        }
         c.role = 'tv';
-        send(c, { t: 'welcome', role: 'tv' });
+        send(c, { t: 'welcome', role: 'tv', key: tvKey });
         game.emit('tvs', countTvs());
+        game.tvPresence(countTvs());
+        for (const [id, r] of claims) send(c, { t: 'claimRequest', reqId: id, playerId: r.playerId, name: game.player(r.playerId)?.name });
         return push(c, true);
       }
       c.role = 'phone';
       const p = game.byToken(m.token);
       if (p) {
+        if (m.token === p.token && (p.claimTokens || []).length) { // the original phone is back: it always wins its seat
+          for (const o of clients) if (o !== c && o.playerId === p.id && o.token !== p.token) { send(o, { t: 'kicked', reason: 'reclaimed' }); game.setConnected(p.id, -1); o.playerId = null; }
+          game.revokeClaims(p);
+        }
+        c.token = m.token;
         bindPlayer(c, p);
         send(c, { t: 'welcome', role: 'phone', playerId: p.id, token: p.token });
         return push(c, true);
@@ -95,16 +112,22 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
   async function handlePhone(c, m) {
     if (m.t === 'join') {
       const p = await game.join({ name: m.name, avatar: m.avatar });
+      c.token = p.token;
       bindPlayer(c, p);
       send(c, { t: 'welcome', role: 'phone', playerId: p.id, token: p.token });
       return push(c, true);
     }
-    if (m.t === 'claim') {
-      const p = await game.claim(m.playerId);
-      // kick any stale socket still bound to that player (it was disconnected anyway)
-      bindPlayer(c, p);
-      send(c, { t: 'welcome', role: 'phone', playerId: p.id, token: p.token });
-      return push(c, true);
+    if (m.t === 'claim') { // taking over a disconnected seat from a NEW device needs approval on the TV
+      const target = game.player(m.playerId);
+      if (!target) return send(c, { t: 'error', msg: 'No such player.' });
+      if (game.isConnected(target.id)) return send(c, { t: 'error', msg: `${target.name} is still connected.` });
+      if (!countTvs()) return send(c, { t: 'error', msg: 'The TV needs to be on to approve this.' });
+      const reqId = Math.random().toString(36).slice(2, 10);
+      const timer = setTimeout(() => answerClaim(reqId, false, 'timeout'), 30_000);
+      timer.unref?.();
+      claims.set(reqId, { c, playerId: target.id, timer });
+      notifyTvs({ t: 'claimRequest', reqId, playerId: target.id, name: target.name });
+      return send(c, { t: 'claimPending', name: target.name });
     }
     if (m.t === 'lobbyInfo') return sendLobbyInfo(c);
     const pid = c.playerId;
@@ -136,8 +159,27 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
     }
   }
 
+  function notifyTvs(msg) { const s2 = JSON.stringify(msg); for (const o of clients) if (o.role === 'tv') send(o, s2); }
+  async function answerClaim(reqId, allow, why = '') {
+    const r = claims.get(reqId);
+    if (!r) return;
+    clearTimeout(r.timer);
+    claims.delete(reqId);
+    notifyTvs({ t: 'claimClosed', reqId });
+    if (!allow || r.c.ws.readyState !== 1) { send(r.c, { t: 'error', code: 'claim_denied', msg: why === 'timeout' ? 'Nobody approved that on the TV.' : 'The TV said no.' }); return; }
+    try {
+      const { player, token } = await game.claim(r.playerId);
+      r.c.token = token;
+      bindPlayer(r.c, player);
+      send(r.c, { t: 'welcome', role: 'phone', playerId: player.id, token });
+      push(r.c, true);
+    } catch (e) { send(r.c, { t: 'error', msg: e.message }); }
+  }
+
   async function handleTv(c, m) {
     switch (m.t) {
+      case 'claimAnswer': return answerClaim(m.reqId, !!m.allow);
+      case 'progress': return game.heartbeat(m.phase, m.roundId, m.value);
       case 'advance': return game.advance(m.from, m.stage);
       case 'start': return game.start();
       case 'introDone': return game.introDone(m.roundId);

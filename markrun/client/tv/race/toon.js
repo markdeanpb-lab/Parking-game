@@ -16,7 +16,8 @@ export function gradientMap() {
 
 const matCache = new Map();
 export function toon(color, opts = {}) {
-  const key = typeof color === 'number' || typeof color === 'string' ? `${color}|${JSON.stringify(opts)}` : null;
+  // never JSON.stringify a texture (three would serialise the whole canvas to a data URL)
+  const key = !opts.map && (typeof color === 'number' || typeof color === 'string') ? `${color}|${JSON.stringify(opts)}` : null;
   if (key && !opts.map && matCache.has(key)) return matCache.get(key);
   const m = new THREE.MeshToonMaterial({ color: new THREE.Color(color ?? 0xffffff), gradientMap: gradientMap(), ...opts });
   if (key && !opts.map) matCache.set(key, m);

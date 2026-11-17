@@ -1,5 +1,5 @@
 // WebSocket client with auto-reconnect (exponential backoff), visibility/online handling and clock sync.
-export function connect({ role, getToken, onWelcome, onState, onMessage, onStatus }) {
+export function connect({ role, getToken, getKey, onWelcome, onState, onMessage, onStatus }) {
   let ws = null;
   let attempt = 0;
   let timer = null;
@@ -22,7 +22,7 @@ export function connect({ role, getToken, onWelcome, onState, onMessage, onStatu
       attempt = 0;
       status('open');
       lastMsgAt = Date.now();
-      send({ t: 'hello', role, token: getToken?.() || undefined });
+      send({ t: 'hello', role, token: getToken?.() || undefined, key: getKey?.() || undefined });
       clearInterval(pingTimer);
       pingTimer = setInterval(() => {
         send({ t: 'ping', at: Date.now() });

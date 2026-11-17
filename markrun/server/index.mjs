@@ -8,7 +8,8 @@ import QRCode from 'qrcode';
 import { serveStatic, notFound } from './net/static.mjs';
 import { pickLanAddress, lanCandidates } from './net/lan.mjs';
 import { Game, newSessionState } from './net/game.mjs';
-import { attachHub } from './net/hub.mjs';
+import { attachHub, isLoopback } from './net/hub.mjs';
+import crypto from 'node:crypto';
 import { loadSession, saveSession, clearSession } from './net/persist.mjs';
 import * as rounds from './net/roundsource.mjs';
 import { sessionDb, closeAll } from './db.mjs';
@@ -35,11 +36,18 @@ game.on('persist', save);
 save();
 
 let joinUrl = '', tvUrl = '', qrSvg = '';
+// TV key: lets a smart-TV browser on the LAN act as the TV. Persisted with the session so a restart keeps it valid.
+game.s.tvKey ||= crypto.randomBytes(5).toString('hex');
+const tvKey = game.s.tvKey;
+save();
 const info = { roundSource: 'unknown' };
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
-  if (url.pathname === '/') { res.writeHead(302, { Location: '/tv' }); return res.end(); }
+  if (url.pathname === '/') { // the host's own browser goes to the TV (with its key); anyone else is probably a phone
+    res.writeHead(302, { Location: isLoopback(req.socket.remoteAddress) ? `/tv?key=${tvKey}` : '/phone' });
+    return res.end();
+  }
   if (url.pathname === '/qr.svg') {
     res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-cache' });
     return res.end(qrSvg);
@@ -60,11 +68,11 @@ server.listen(PORT, LISTEN, async () => {
   tvUrl = `${base}/tv`;
   joinUrl = `${base}/phone`;
   qrSvg = await QRCode.toString(joinUrl, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', color: { dark: '#14183cff', light: '#ffffffff' } });
-  attachHub(server, game, { joinUrl, tvUrl, qrSvg, info });
+  attachHub(server, game, { joinUrl, tvUrl, qrSvg, info, tvKey });
   const others = lanCandidates().filter((c) => c.address !== host).map((c) => `${c.address} (${c.name})`);
   console.log('');
   console.log('  ███ MARKRUN host is up ███');
-  console.log(`  TV  (open on the computer driving the telly):  ${tvUrl}`);
+  console.log(`  TV  (open on the computer driving the telly):  http://localhost:${port}/   or on a smart TV: ${tvUrl}?key=${tvKey}`);
   console.log(`  Phones join at:                                ${joinUrl}   (or scan the QR on the TV)`);
   if (others.length) console.log(`  Wrong network? Other addresses: ${others.join(', ')}  -> restart with --host <ip>`);
   console.log(`  Session: ${saved ? `resumed (${game.s.phase}, round ${game.s.roundNumber}, ${game.s.players.length} players)` : 'new'}  ·  Ctrl+C to stop`);

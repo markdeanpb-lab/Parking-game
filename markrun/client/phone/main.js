@@ -1,6 +1,6 @@
 // MARKRUN phone controller: join, private clues, bet slip, lock-in, race reactions, results, ready-up.
 import { connect } from '../shared/net.js';
-import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, confetti } from '../shared/ui.js';
+import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, oddsText, betOutcome, confetti } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 
 const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '🐼', '🦖', '🐧', '🐝', '🦩', '🐶'];
@@ -45,6 +45,7 @@ const net = connect({
     } else if (m.t === 'kicked') { store.del(TOKEN_KEY); S = null; me = null; toast('You were removed from the game', 'red'); render(); }
     else if (m.t === 'locked') { vibrate(80); }
     else if (m.t === 'inplayOk') { toast('✓ Halfway bet placed!'); }
+    else if (m.t === 'claimPending') { app.innerHTML = `<div class="join"><div class="logo-s outlined">MARK<span>RUN</span></div><div class="card center"><div class="big-emoji">📺</div><h2>Ask the TV</h2><p>Waiting for someone to press <b>Allow</b> on the TV to take over ${esc(m.name)}'s seat…</p></div></div>`; viewKey = 'claim'; }
   },
 });
 const send = (m) => net.send(m);
@@ -84,7 +85,7 @@ function key() {
   if (!me) return `join|${lobby?.canJoin}|${(lobby?.players || []).map((p) => p.id + p.connected).join()}`;
   const ph = S.phase;
   if (ph === 'INTRO' || ph === 'BETTING') return `bet|${S.round?.roundId}|${me.locked ? 'L' : 'O'}|${S.revealed}`;
-  if (ph === 'RESULTS') return `res|${S.round?.roundId}|${S.resultsStage >= 3 ? 'pay' : S.resultsStage >= 1 ? 'who' : 'wait'}`;
+  if (ph === 'RESULTS') return `res|${S.round?.roundId}|${S.resultsStage >= 3 ? 'pay' : S.resultsStage >= 2 ? 'who' : 'wait'}`;
   return `${ph}|${S.round?.roundId || ''}|${S.gameNumber}`;
 }
 
@@ -188,7 +189,7 @@ function markBtn() {
   const rp = S.settings?.runnerPlayerId;
   const mine = rp === me.id;
   const other = rp && !mine ? S.players.find((p) => p.id === rp) : null;
-  return `<button class="btn ${mine ? 'pink' : 'white'} block" id="markbtn">${mine ? "🏃 I'm Mark (the runner) ✓" : other ? `🏃 ${esc(other.name)} is Mark` : "🏃 I'm Mark (the runner)"}</button>`;
+  return `<button class="btn ${mine ? 'pink' : 'white'} block" id="markbtn">${mine ? "🏃 I'm Mark ✓" : other ? `🏃 ${esc(other.name)} is Mark` : "🏃 I'm Mark (the runner)"}</button>`;
 }
 function renderLobby() {
   app.innerHTML = `${topbar()}
@@ -379,7 +380,7 @@ function renderSlip() {
   el.innerHTML = slip.map((b, i) => {
     const r = runnerById(S.round, betRunnerId(b));
     const odds = betOdds(S.round, b);
-    return `<div class="sbet"><div class="r1"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${b.type === 'prop' ? `SIDE BET · ${esc((() => { const pr = S.round.props?.find((x) => x.id === b.propId); return (b.pick === 'yes' ? pr?.odds?.displayYes : pr?.odds?.displayNo) || `×${odds}`; })())}` : b.type === 'win' ? `WIN · ${esc(r?.odds?.display || '')}` : `HEAD-TO-HEAD · ${esc((() => { const m = S.round.matchups?.find((x) => x.id === b.matchupId); return (b.pick === m?.a ? m?.odds?.displayA : m?.odds?.displayB) || `×${odds}`; })())}`}</small></div><button class="x" data-rm="${i}" aria-label="Remove bet">✕</button></div>
+    return `<div class="sbet"><div class="r1"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${betKind(b)} · ${esc(oddsText(S.round, b))}</small></div><button class="x" data-rm="${i}" aria-label="Remove bet">✕</button></div>
       <div class="r2"><span class="stake num">${money(b.stake)}</span><span class="pays">returns<b>${money(b.stake * odds)}</b></span></div>
       <div class="chips"><button class="chip minus" data-i="${i}" data-chip="minus">−10</button><button class="chip" data-i="${i}" data-chip="10" ${room < 1 ? 'disabled' : ''}>+10</button><button class="chip" data-i="${i}" data-chip="50" ${room < 1 ? 'disabled' : ''}>+50</button><button class="chip" data-i="${i}" data-chip="100" ${room < 1 ? 'disabled' : ''}>+100</button><button class="chip allin" data-i="${i}" data-chip="all" ${room < 1 ? 'disabled' : ''}>ALL IN</button></div></div>`;
   }).join('') + `<div class="slip-meta"><span>Staked ${money(staked())}</span><span>Left ${money(room)}</span></div>`;
@@ -397,6 +398,7 @@ function renderBottomBet() {
 setInterval(() => { if (S?.phase === 'BETTING' && S.deadline && !me?.locked && $('#lockbtn')) renderBottomBet(); }, 1000);
 
 function confirmLock() {
+  if (!net.open) { toast('Not connected — retrying…', 'red'); net.reconnect(); return; }
   const n = slip.length;
   modal.innerHTML = `<div class="sheet"><h3>${n ? `Lock in ${n} bet${n > 1 ? 's' : ''}?` : 'Lock in with NO bets?'}</h3>
     <p>${n ? `${money(staked())} on the line. No take-backs once everyone's locked!` : 'Sitting this one out? Coward. (Fair enough.)'}</p>
@@ -414,7 +416,8 @@ function myBetsHtml(bets, results) {
   return `<div class="mybets">${bets.map((b, i) => {
     const r = runnerById(S.round, betRunnerId(b));
     const rr = res?.get(i);
-    return `<div class="mybet ${rr ? (rr.won ? 'won' : 'lost') : ''}"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${betKind(b)} · returns ${money(b.stake * betOdds(S.round, b))}</small></div><span class="s">${rr ? (rr.won ? `+${money(rr.returned)}` : `−${money(b.stake)}`) : money(b.stake)}</span></div>`;
+    const o = rr ? betOutcome(rr) : null;
+    return `<div class="mybet ${o ? o.kind : ''}"><span class="rp">${r ? portrait(r, 40) : '<span class="propicon">🎡</span>'}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${betKind(b)} · ${esc(oddsText(S.round, b))} · ${o ? `staked ${money(b.stake)}` : `returns ${money(b.stake * betOdds(S.round, b))}`}</small></div><span class="s">${o ? o.text : money(b.stake)}</span></div>`;
   }).join('')}</div>`;
 }
 function waitList() {
@@ -513,7 +516,7 @@ function renderResults() {
   const res = S.results;
   if (!res) { app.innerHTML = `${topbar()}<div class="card center"><div class="big-emoji">⏳</div><h2>Results coming…</h2></div>`; return; }
   const order = `<div class="order-mini">${res.finishOrder.map((f) => { const r = runnerById(S.round, f.runnerId); return `<div class="om">${ordinalHtml(f.place)}<span class="dot" style="background:${esc(r?.colour?.primary)}"></span>${esc(r?.nickname || f.runnerId)}<span class="t">${esc(f.timeText || '')}</span></div>`; }).join('')}</div>`;
-  if (S.resultsStage >= 1 && S.resultsStage < 3) {
+  if (S.resultsStage >= 2 && S.resultsStage < 3) {
     const rv = new Map((res.reveal || []).map((x) => [x.runnerId, x]));
     app.innerHTML = `${topbar()}<div class="hero-title outlined">THE DETAILS</div>
       <div class="card center"><p>📺 The TV is revealing who they really were. Here's the small print:</p></div>
@@ -528,9 +531,8 @@ function renderResults() {
   }
   if (S.resultsStage < 3) {
     app.innerHTML = `${topbar()}<div class="hero-title outlined">WHAT A RACE!</div>
-      <div class="card center"><div class="big-emoji">📺</div><h2>Payouts coming up on the TV…</h2></div>
-      <div class="card"><h2 style="font-size:22px">Finishing order</h2>${order}</div>
-      <div class="card"><h2 style="font-size:22px">Your bets</h2>${myBetsHtml(me.bets || [], res)}</div><div class="bottom-bar" id="bb"></div>`;
+      <div class="card center"><div class="big-emoji">📺</div><h2>Eyes on the TV!</h2><p>The result and the big reveal are on the telly. Payouts land here after that.</p></div>
+      <div class="card"><h2 style="font-size:22px">Your bets</h2>${myBetsHtml(me.bets || [])}</div><div class="bottom-bar" id="bb"></div>`;
     renderBottomReady('RESULTS');
     return;
   }

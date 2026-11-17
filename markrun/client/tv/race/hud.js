@@ -19,6 +19,7 @@ const CSS = `
 .mr-tower{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*8.2);width:calc(var(--u)*28)}
 .mr-row{position:absolute;left:0;width:100%;height:calc(var(--u)*4.1);display:flex;align-items:center;transition:transform .55s cubic-bezier(.3,1.4,.5,1),opacity .3s}
 .mr-row .mr-pos{width:calc(var(--u)*5.2);font-size:calc(var(--u)*3.3);text-align:center;line-height:1}
+.mr-row .mr-pos small{font-size:.42em;margin-right:2px;vertical-align:middle;color:#fff}
 .mr-row .mr-pos sup{font-size:.45em;vertical-align:top;margin-left:1px}
 .mr-row .mr-card{flex:1;height:calc(var(--u)*3.4);display:flex;align-items:center;padding:0 calc(var(--u)*.8) 0 0;background:rgba(20,22,48,.82);border:calc(var(--u)*.25) solid var(--ink);border-radius:calc(var(--u)*.6);transform:skewX(-10deg);overflow:hidden}
 .mr-row .mr-card>*{transform:skewX(10deg)}
@@ -35,26 +36,26 @@ const CSS = `
 .mr-row.backed .mr-card{box-shadow:0 0 0 calc(var(--u)*.22) var(--bc,#ffd23f),0 0 calc(var(--u)*1.2) var(--bc,#ffd23f)}
 .mr-tag .mr-tb{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);display:flex;gap:calc(var(--u)*.2);margin-bottom:calc(var(--u)*.3)}
 .mr-tag .mr-tb .mr-badge{margin:0;font-size:calc(var(--u)*1.15)}
-.mr-title{position:absolute;left:50%;top:9%;width:max-content;max-width:92%;transform:translate(-50%,-30%) scale(.8);opacity:0;text-align:center;transition:all .6s cubic-bezier(.3,1.5,.5,1)}
+.mr-title{position:absolute;left:41%;top:9%;width:max-content;max-width:64%;transform:translate(-50%,-30%) scale(.8);opacity:0;text-align:center;transition:all .6s cubic-bezier(.3,1.5,.5,1)}
 .mr-title.on{opacity:1;transform:translate(-50%,0) scale(1)}
 .mr-title .mr-t0{display:inline-block;font-size:calc(var(--u)*1.7);background:var(--pink);padding:.1em .9em;border:calc(var(--u)*.3) solid var(--ink);border-radius:calc(var(--u)*.8);transform:skewX(-10deg)}
-.mr-title .mr-t1{display:block;white-space:nowrap;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*6);line-height:1;color:#fff;-webkit-text-stroke:calc(var(--u)*.45) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
+.mr-title .mr-t1{display:block;white-space:normal;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*5.2);line-height:1.02;color:#fff;-webkit-text-stroke:calc(var(--u)*.45) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
 .mr-title .mr-t2{display:inline-block;margin-top:calc(var(--u)*.8);font-size:calc(var(--u)*2.1);color:var(--ink);background:var(--yellow);padding:.1em .9em;border:calc(var(--u)*.3) solid var(--ink);border-radius:calc(var(--u)*.8);transform:skewX(-10deg)}
 .mr-pcap{position:absolute;left:50%;bottom:19%;transform:translateX(-50%) skewX(-10deg);background:var(--ink);color:#fff;border:calc(var(--u)*.3) solid #fff;padding:calc(var(--u)*.4) calc(var(--u)*2);font-size:calc(var(--u)*2.2);white-space:nowrap}
 .mr-market{position:absolute;inset:0;opacity:0;transition:opacity .5s;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(20,10,40,.55) 100%)}
 .mr-market.on{opacity:1}
-.mr-market .mr-m1{position:absolute;left:50%;top:17%;transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg);background:linear-gradient(180deg,#3ddc84,#1f9d5a);border:calc(var(--u)*.45) solid var(--ink);border-radius:calc(var(--u)*1.2);padding:calc(var(--u)*.5) calc(var(--u)*3);font-size:calc(var(--u)*5.6);white-space:nowrap;color:#fff;-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill;box-shadow:0 calc(var(--u)*.7) 0 rgba(0,0,0,.35);animation:mrpulse 1.6s ease-in-out infinite}
+.mr-market .mr-m1{position:absolute;left:60%;top:15%;transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg);background:linear-gradient(180deg,#3ddc84,#1f9d5a);border:calc(var(--u)*.45) solid var(--ink);border-radius:calc(var(--u)*1.2);padding:calc(var(--u)*.35) calc(var(--u)*1.8);font-size:calc(var(--u)*3.5);white-space:nowrap;color:#fff;-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill;box-shadow:0 calc(var(--u)*.7) 0 rgba(0,0,0,.35);animation:mrpulse 1.6s ease-in-out infinite}
 @keyframes mrpulse{50%{transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg) scale(1.04)}}
-.mr-market .mr-m2{position:absolute;left:50%;top:27%;transform:translateX(-50%);font-size:calc(var(--u)*2.3);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill;white-space:nowrap}
+.mr-market .mr-m2{position:absolute;left:60%;top:22%;transform:translateX(-50%);font-size:calc(var(--u)*2.3);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill;white-space:nowrap}
 .mr-market .mr-mt{position:absolute;right:calc(var(--u)*3);top:calc(var(--u)*25);font-size:calc(var(--u)*1.6);background:var(--ink);padding:.2em .8em;border-radius:calc(var(--u)*.6)}
 .mr-map{position:absolute;right:calc(var(--u)*2.2);top:calc(var(--u)*1.8);width:calc(var(--u)*17);height:calc(var(--u)*21);padding:calc(var(--u)*.5)}
 .mr-map canvas{position:relative;width:100%;height:100%;display:block}
 .mr-mapwrap{position:absolute;inset:0;background:rgba(255,255,255,.88);border:calc(var(--u)*.32) solid var(--ink);border-radius:calc(var(--u)*1.2);box-shadow:0 calc(var(--u)*.45) 0 rgba(0,0,0,.3)}
-.mr-banner{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%) scale(0);text-align:center;white-space:nowrap;transition:transform .35s cubic-bezier(.3,1.7,.5,1)}
+.mr-banner{position:absolute;left:50%;top:74%;transform:translate(-50%,-50%) scale(0);text-align:center;white-space:nowrap;transition:transform .35s cubic-bezier(.3,1.7,.5,1)}
 .mr-banner.on{transform:translate(-50%,-50%) scale(1)}
-.mr-banner .mr-b1{display:inline-block;padding:calc(var(--u)*.4) calc(var(--u)*3);font-size:calc(var(--u)*5.6);line-height:1.05;background:var(--pink);border:calc(var(--u)*.4) solid var(--ink);border-radius:calc(var(--u)*1.2);transform:skewX(-10deg) rotate(-3deg);box-shadow:0 calc(var(--u)*.6) 0 rgba(0,0,0,.35)}
+.mr-banner .mr-b1{display:inline-block;padding:calc(var(--u)*.3) calc(var(--u)*2.4);font-size:calc(var(--u)*4.2);line-height:1.05;background:var(--pink);border:calc(var(--u)*.4) solid var(--ink);border-radius:calc(var(--u)*1.2);transform:skewX(-10deg) rotate(-3deg);box-shadow:0 calc(var(--u)*.6) 0 rgba(0,0,0,.35)}
 .mr-banner .mr-b1 span{display:inline-block;transform:skewX(10deg)}
-.mr-banner .mr-b2{display:block;margin-top:calc(var(--u)*1);font-size:calc(var(--u)*2.1);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill}
+.mr-banner .mr-b2{display:block;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*1.8);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill}
 .mr-tags{position:absolute;inset:0}
 .mr-tag{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;display:flex;align-items:center;gap:calc(var(--u)*.35);font-size:calc(var(--u)*1.25);will-change:transform;transition:opacity .25s}
 .mr-tag .mr-tp{background:var(--ink);color:var(--yellow);border-radius:calc(var(--u)*.5);padding:0 calc(var(--u)*.45);font-size:calc(var(--u)*1.35)}
@@ -138,6 +139,7 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
   let mapBg = null; const MW = 340, MH = 420; mapCanvas.width = MW; mapCanvas.height = MH;
   const pts = course.points;
   let bx0 = 1e9, bz0 = 1e9, bx1 = -1e9, bz1 = -1e9; for (const p of pts) { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); bz0 = Math.min(bz0, p[2]); bz1 = Math.max(bz1, p[2]); }
+  if (course.funfair) { const [fx, fz] = course.funfair.center, fr = course.funfair.radius * 0.6; bx0 = Math.min(bx0, fx - fr); bx1 = Math.max(bx1, fx + fr); bz0 = Math.min(bz0, fz - fr); bz1 = Math.max(bz1, fz + fr); }
   for (const id in C.diversions) for (const d of C.diversions[id]) for (const p of d.path) { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); bz0 = Math.min(bz0, p[1]); bz1 = Math.max(bz1, p[1]); }
   const pad = 26; const sc = Math.min((MW - pad * 2) / (bx1 - bx0), (MH - pad * 2) / (bz1 - bz0));
   const ox = (MW - (bx1 - bx0) * sc) / 2, oz = (MH - (bz1 - bz0) * sc) / 2;
@@ -160,6 +162,7 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     return c;
   }
   mapBg = drawMapBg();
+  function redrawMap() { mapBg = drawMapBg(); }
 
   let bannerT = 0;
   const banner = q('.mr-banner');
@@ -189,10 +192,11 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
         const r = rows[o.id]; if (!r) return;
         r.el.style.transform = `translateY(${i * rowH}px)`;
         const key = `${i}|${o.gapText}|${o.finished}`;
-        if (key !== r.last) {
-          r.last = key; r.pos.innerHTML = ord(i + 1);
+        const key2 = key + (o.posHtml || '');
+        if (key2 !== r.last) {
+          r.last = key2; r.pos.innerHTML = o.posHtml ?? ord(i + 1);
           r.gap.textContent = o.gapText;
-          r.el.classList.toggle('lead', i === 0); r.el.classList.toggle('fin', !!o.finished);
+          r.el.classList.toggle('lead', i === 0 && !o.posHtml); r.el.classList.toggle('fin', !!o.finished);
         }
       });
     }
@@ -244,7 +248,7 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     requestAnimationFrame(() => el.classList.add('on'));
   }
   function dispose() { root.remove(); }
-  return { root, update, showBanner, clearBanner, setDim, setDimTop, introCard, countdown, photo, photoLine, results, market, titleCard, dispose };
+  return { root, update, redrawMap, showBanner, clearBanner, setDim, setDimTop, introCard, countdown, photo, photoLine, results, market, titleCard, dispose };
 }
 
 // shortName from the game module, else an abbreviated nickname that fits the tower

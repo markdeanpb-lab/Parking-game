@@ -58,6 +58,18 @@ export function buildWorld(scene, C, opts) {
 
   // ---------- painted ground texture ----------
   const PX = 1.7; // px per metre
+  // instanced props that can be cleared from an area later (e.g. the fairground strip once a plan with diversions loads)
+  const registry = [];
+  function registerInstanced(im, list) { registry.push({ im, list }); }
+  const zeroM = new THREE.Matrix4().makeScale(0, 0, 0);
+  function clearArea(fn) {
+    for (const { im, list } of registry) {
+      let hit = false;
+      list.forEach((t, i) => { if (!t.cleared && fn(t.x, t.z)) { t.cleared = true; im.setMatrixAt(i, zeroM); hit = true; } });
+      if (hit) im.instanceMatrix.needsUpdate = true;
+    }
+  }
+  function redrawGround() { const g = groundTex.image.getContext('2d'); drawGround(g, groundTex.image.width, groundTex.image.height); groundTex.needsUpdate = true; }
   const groundTex = canvasTexture(Math.round(Wm * PX), Math.round(Hm * PX), (g, w, h) => drawGround(g, w, h), { aniso: 8 });
   disposables.push(groundTex);
   function drawGround(g, w, h) {
@@ -403,6 +415,7 @@ ${THREE.ShaderChunk.fog_fragment}
     im.castShadow = cast; im.receiveShadow = true;
     im.computeBoundingSphere();
     if (ol) outline(im, ol, undefined, olRef);
+    registerInstanced(im, list);
     add(im); return im;
   }
 
@@ -586,13 +599,6 @@ ${THREE.ShaderChunk.fog_fragment}
   // reserve zones for props / crowds before scattering trees
   for (const z of crowdZones) for (let m = z.m0 - 8; m <= z.m1 + 8; m += 4) { const s = C.sample(m); const o = z.off + z.depth / 2; reserve(s.x + s.rx * o * z.side, s.z + s.rz * o * z.side, z.depth / 2 + 3); }
   for (const s of [start, finish]) reserve(s.x, s.z, 14);
-  if (hasFunfair && course.funfair) {
-    // keep the fairground strip clear of trees (funfair.js builds the rides there)
-    const div = Object.values(C.diversions)[0]?.[0];
-    if (div) for (const p of div.path) {
-      const q = nearestOnRibbon(p[0], p[1]); const mx = (p[0] + q[0]) / 2, mz = (p[1] + q[1]) / 2; reserve(mx, mz, Math.max(6, Math.hypot(p[0] - q[0], p[1] - q[1]) / 2 - 3));
-    }
-  }
   function nearestOnRibbon(x, z) { let best = null, bd = 1e9; for (const s of ribbonSamples) { const d = (s[0] - x) ** 2 + (s[1] - z) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
   anchors.nearestOnRibbon = nearestOnRibbon; anchors.ribbonSamples = ribbonSamples;
   const ribHash = new Map();
@@ -632,11 +638,12 @@ ${THREE.ShaderChunk.fog_fragment}
     const greens = [0x3cb44b, 0x4cc552, 0x2fa04a, 0x63c94a, 0x7fd14a, 0x34a853];
     const trunkG = new THREE.CylinderGeometry(0.32, 0.5, 4.2, 7); trunkG.translate(0, 2.1, 0);
     const lolli = new THREE.IcosahedronGeometry(3.2, 1); lolli.scale(1, 1.08, 1); lolli.translate(0, 6.6, 0);
-    const blob = mergeGeometries([new THREE.IcosahedronGeometry(3.0, 1).translate(0, 6.2, 0), new THREE.IcosahedronGeometry(2.3, 0).translate(1.9, 5.3, 0.6), new THREE.IcosahedronGeometry(2.2, 0).translate(-1.7, 5.5, -0.8), new THREE.IcosahedronGeometry(2.0, 0).translate(0.2, 8.2, 0.3)].map((g) => g.toNonIndexed()));
-    const cone = mergeGeometries([new THREE.ConeGeometry(3.0, 4.2, 8).translate(0, 5.0, 0), new THREE.ConeGeometry(2.4, 3.6, 8).translate(0, 7.2, 0), new THREE.ConeGeometry(1.6, 3.0, 8).translate(0, 9.2, 0)].map((g) => (g.index ? g.toNonIndexed() : g)));
+    const blob = mergeGeometries([new THREE.IcosahedronGeometry(3.0, 1).translate(0, 6.2, 0), new THREE.IcosahedronGeometry(2.3, 0).translate(1.9, 5.3, 0.6), new THREE.IcosahedronGeometry(2.2, 0).translate(-1.7, 5.5, -0.8), new THREE.IcosahedronGeometry(2.0, 0).translate(0.2, 8.2, 0.3)].map(flatGeo));
+    const cone = mergeGeometries([new THREE.ConeGeometry(3.0, 4.2, 8).translate(0, 5.0, 0), new THREE.ConeGeometry(2.4, 3.6, 8).translate(0, 7.2, 0), new THREE.ConeGeometry(1.6, 3.0, 8).translate(0, 9.2, 0)].map(flatGeo));
     const tlist = trees.map((t) => ({ x: t.x, y: C.heightAt(t.x, t.z) - 0.2, z: t.z, ry: rnd() * 6.28, s: t.s }));
     instanced(trunkG, toon(0x8a5a36), tlist, { ol: 2, olRef: 40, chunk: 160 });
-    const crownMat = toon(0xffffff, { flatShading: true });
+    const crownMat = toon(0xffffff);
+    lolli.computeVertexNormals();
     const kinds = [lolli, blob, cone];
     kinds.forEach((g, k) => {
       const l = tlist.filter((_, i) => trees[i].kind === k);
@@ -647,7 +654,7 @@ ${THREE.ShaderChunk.fog_fragment}
 
   // ---------- flowers + grass tufts along the course (instanced) ----------
   {
-    const tuft = mergeGeometries([0, 1, 2, 3].map((i) => { const c = new THREE.ConeGeometry(0.09, 0.55, 3); c.translate(0, 0.27, 0); c.rotateZ((i - 1.5) * 0.25); c.rotateY(i * 1.7); c.translate((i - 1.5) * 0.08, 0, (i % 2) * 0.06); return c.toNonIndexed(); }));
+    const tuft = mergeGeometries([0, 1, 2, 3].map((i) => { const c = new THREE.ConeGeometry(0.09, 0.55, 3); c.translate(0, 0.27, 0); c.rotateZ((i - 1.5) * 0.25); c.rotateY(i * 1.7); c.translate((i - 1.5) * 0.08, 0, (i % 2) * 0.06); return c.index ? c.toNonIndexed() : c; }));
     const flower = mergeGeometries([new THREE.CylinderGeometry(0.03, 0.03, 0.35, 4).translate(0, 0.17, 0).toNonIndexed(), new THREE.IcosahedronGeometry(0.13, 0).translate(0, 0.38, 0)]);
     const tl = [], fl = [], fc = [];
     for (let i = 0; i < 9000; i++) {
@@ -690,8 +697,10 @@ ${THREE.ShaderChunk.fog_fragment}
     for (const d of disposables) d.dispose?.();
     scene.remove(group); scene.remove(sky);
   }
-  return { group, anchors, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath };
+  return { group, anchors, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath, registerInstanced, clearArea, redrawGround };
 }
 
+// non-indexed with per-face normals (the toon material has no flatShading option)
+export function flatGeo(g) { const n = g.index ? g.toNonIndexed() : g; n.computeVertexNormals(); return n; }
 export function centroid(pts) { let x = 0, z = 0; for (const p of pts) { x += p[0]; z += p[1]; } return [x / pts.length, z / pts.length]; }
 export function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }

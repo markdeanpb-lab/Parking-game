@@ -201,7 +201,12 @@ export function buildFunfair(scene, C, world, diversion) {
     crowd.push({ x, y: C.heightAt(x, z), z, yaw: R() * 6.28 });
   }
 
+  // is (x, z) inside the fairground strip? (used to clear trees / picnics / pips out of the way)
+  function contains(x, z) {
+    for (const m of mids) { if (m.s < s0 - 20 || m.s > s1 + 20) continue; const r = Math.max(6, m.gap / 2 - 4); if ((x - m.x) ** 2 + (z - m.z) ** 2 < r * r) return true; }
+    return false;
+  }
   function update(t) { for (const f of spinners) f(t); }
   function dispose() { group.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); for (const d of disposables) d.dispose?.(); scene.remove(group); }
-  return { group, update, dispose, anchors, crowd, at, s0, s1 };
+  return { group, update, dispose, anchors, crowd, at, s0, s1, contains };
 }

@@ -30,6 +30,8 @@ const SETTING_LIMITS = {
 const T = { // default timeouts (ms) - safety nets; the TV normally drives these phases
   INTRO: 180_000, REVEAL_BASE: 8_000, REVEAL_PER_BET: 4_000, RACE_EXTRA: 60_000, STAGE: 45_000,
   MARKET: Number(process.env.MARKRUN_MARKET_MS) || 12_000,
+  STALL: Number(process.env.MARKRUN_STALL_MS) || 45_000,     // TV made no progress for this long -> force on
+  NO_TV: Number(process.env.MARKRUN_NO_TV_MS) || 60_000,     // no TV connected at all for this long -> force on
   SCOREBOARD_ALL_READY: 12_000, SCOREBOARD_READY_NOW: 3_500,
 };
 
@@ -81,7 +83,8 @@ export class Game extends EventEmitter {
   }
   changed() { this.s.updatedAt = this.now(); this.emit('change'); }
   player(id) { return this.s.players.find((p) => p.id === id); }
-  byToken(token) { return token ? this.s.players.find((p) => p.token === token) : undefined; }
+  byToken(token) { return token ? this.s.players.find((p) => p.token === token || (p.claimTokens || []).includes(token)) : undefined; }
+  revokeClaims(p) { const had = (p.claimTokens || []).length; p.claimTokens = []; if (had) this.changed(); }
   isConnected(id) { return (this.connected.get(id) || 0) > 0; }
   setConnected(id, delta) {
     const n = Math.max(0, (this.connected.get(id) || 0) + delta);
@@ -100,8 +103,8 @@ export class Game extends EventEmitter {
     clearTimeout(this.timer);
     this.timer = null;
     if (this.s.deadline == null) return;
-    if (restoring && this.s.phase === 'RACE' && this.s.round) { // TV will replay the race on reconnect
-      this.s.deadline = this.now() + ((this.s.round.racePlan?.timeMap?.durationS || 150) * 1000 + T.RACE_EXTRA) * this.timeScale;
+    if (restoring && (this.s.phase === 'RACE' || this.s.phase === 'INTRO')) { // the TV resumes on reconnect
+      this.s.deadline = this.now() + T.NO_TV * this.timeScale;
     }
     let wait = this.s.deadline - this.now();
     if (restoring) wait = Math.max(wait, 5000 * this.timeScale);
@@ -152,9 +155,10 @@ export class Game extends EventEmitter {
       const p = this.player(playerId);
       if (!p) throw new GameError('No such player.');
       if (this.isConnected(p.id)) throw new GameError(`${p.name} is still connected.`);
-      p.token = crypto.randomBytes(16).toString('hex');
+      const t = crypto.randomBytes(16).toString('hex');
+      p.claimTokens = [...(p.claimTokens || []), t].slice(-3);
       this.changed();
-      return p;
+      return { player: p, token: t };
     });
   }
   updateProfile(playerId, { name, avatar }) {
@@ -241,7 +245,8 @@ export class Game extends EventEmitter {
       this.s.carryReady = false;
       this.s.market = null; this.s.marketUsed = false; this.s.live = null; this.s.revealSeq = null;
       this.clearReady();
-      this.setDeadline(T.INTRO);
+      this.progress = { key: null, value: -1 };
+      this.setDeadline(this.tvCount ? T.STALL : T.NO_TV);
       this.changed();
     } finally { this.busy = false; }
   }
@@ -295,7 +300,14 @@ export class Game extends EventEmitter {
     for (const p of this.s.players) {
       if (this.s.locked[p.id]) continue;
       const v = validateBets(this.s.round.public, this.s.drafts[p.id] || [], p.bankroll);
-      this.s.bets[p.id] = v.ok ? v.bets : [];
+      let bets = v.ok ? v.bets : [];
+      if (!v.ok) { // keep every bet that is valid on its own, in order, while it fits the bankroll and the bet limit
+        for (const b of this.s.drafts[p.id] || []) {
+          const t = validateBets(this.s.round.public, [...bets, b], p.bankroll);
+          if (t.ok) bets = t.bets;
+        }
+      }
+      this.s.bets[p.id] = bets;
       this.s.locked[p.id] = true;
     }
     this.reveal();
@@ -326,7 +338,9 @@ export class Game extends EventEmitter {
     this.s.phase = 'RACE';
     this.s.raceStartedAt = this.now();
     this.clearReady();
-    this.setDeadline((r.racePlan?.timeMap?.durationS || 150) * 1000 + T.RACE_EXTRA);
+    this.progress = { key: null, value: -1 };
+    this.s.live = null;
+    this.setDeadline(this.tvCount ? T.STALL : T.NO_TV);
     this.changed();
   }
   raceDone(roundId) {
@@ -478,12 +492,30 @@ export class Game extends EventEmitter {
       this.changed();
     });
   }
+  // ---- progress heartbeats: safety timers only fire if the TV stops making progress ----
+  tvPresence(count) {
+    const before = this.tvCount || 0;
+    this.tvCount = count;
+    if (!['INTRO', 'RACE'].includes(this.s.phase)) return;
+    if (count === 0) this.setDeadline(T.NO_TV);
+    else if (before === 0 || count > before) this.setDeadline(T.STALL); // a TV (re)connected: give it time to resume
+  }
+  heartbeat(phase, roundId, value) {
+    if (phase !== this.s.phase || !['INTRO', 'RACE'].includes(phase)) return;
+    if (roundId && this.s.round && roundId !== this.s.round.public.roundId) return;
+    const v = Number(value);
+    if (!Number.isFinite(v)) return;
+    const key = `${phase}:${this.s.roundNumber}`;
+    if (!this.progress || this.progress.key !== key) this.progress = { key, value: -Infinity };
+    if (v > this.progress.value) { this.progress.value = v; this.setDeadline(T.STALL); }
+  }
   // TV reports its broadcast clock; phones get standings of their own runners (never the plan itself)
   raceTime(roundId, b) {
     if (this.s.phase !== 'RACE' || !this.s.round || (roundId && roundId !== this.s.round.public.roundId)) return;
     const bb = Number(b);
     if (!Number.isFinite(bb)) return;
     this.s.live = { b: bb, at: this.now() };
+    this.heartbeat('RACE', roundId, bb);
     this.emit('live'); // re-broadcast only; not worth a disk write every second
   }
   liveStandings() {
@@ -602,6 +634,7 @@ export class Game extends EventEmitter {
     if ((this.s.phase === 'RACE' || this.s.phase === 'RESULTS') && this.s.round) {
       v.racePlan = this.s.round.racePlan;
       v.raceStartedAt = this.s.raceStartedAt;
+      v.resumeB = this.s.phase === 'RACE' && this.s.live ? this.s.live.b : 0;
     }
     v.backedBy = this.s.revealed || ['RACE', 'RESULTS'].includes(this.s.phase) ? this.backedBy() : {};
     v.marketAvailable = this.s.phase === 'RACE' && this.marketAvailable() && !this.s.marketUsed;

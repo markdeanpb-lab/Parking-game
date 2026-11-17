@@ -98,11 +98,11 @@ export function buildDressing(scene, C, world, park) {
     const im = new THREE.InstancedMesh(geo, toon('#ffffff', { map: checker, polygonOffset: true, polygonOffsetFactor: -1 }), list.length);
     const d = new THREE.Object3D();
     list.forEach((t, i) => { d.position.set(t.x, t.y, t.z); d.rotation.set(0, t.ry, 0); d.updateMatrix(); im.setMatrixAt(i, d.matrix); im.setColorAt(i, new THREE.Color(cols[i])); });
-    im.receiveShadow = true; im.computeBoundingSphere(); group.add(im);
+    im.receiveShadow = true; im.computeBoundingSphere(); group.add(im); world.registerInstanced(im, list);
     const bg = mergeGeometries([col(new RoundedBoxGeometry(0.7, 0.45, 0.5, 2, 0.08).translate(0, 0.22, 0), '#c98a4a'), col(new THREE.TorusGeometry(0.25, 0.04, 6, 12, Math.PI).translate(0, 0.45, 0), '#8a5a36')]);
     const bm = new THREE.InstancedMesh(bg, toon('#ffffff', { vertexColors: true }), baskets.length);
     baskets.forEach((t, i) => { d.position.set(t.x, t.y, t.z); d.rotation.set(0, t.ry, 0); d.updateMatrix(); bm.setMatrixAt(i, d.matrix); });
-    bm.castShadow = true; bm.computeBoundingSphere(); outline(bm, 1.6, undefined, 20); group.add(bm);
+    bm.castShadow = true; bm.computeBoundingSphere(); outline(bm, 1.6, undefined, 20); group.add(bm); world.registerInstanced(bm, baskets);
   }
 
   // ---------- dog walkers + prams ----------
@@ -132,7 +132,7 @@ export function buildDressing(scene, C, world, park) {
       else { dogs.push({ x: sp.x + fx * 1.6 + fz * 0.8, y: sp.y, z: sp.z + fz * 1.6 - fx * 0.8, ry: yaw + (R() - 0.5) * 0.8, s: 0.8 + R() * 0.6 }); dogCols.push(dc[Math.floor(R() * dc.length)]); }
     }
     const d = new THREE.Object3D();
-    const inst = (geo, mat, list, colsArr) => { const m = new THREE.InstancedMesh(geo, mat, list.length); list.forEach((t, i) => { d.position.set(t.x, t.y, t.z); d.rotation.set(0, t.ry, 0); d.scale.setScalar(t.s); d.updateMatrix(); m.setMatrixAt(i, d.matrix); if (colsArr) m.setColorAt(i, new THREE.Color(colsArr[i])); }); m.castShadow = true; m.receiveShadow = true; m.computeBoundingSphere(); outline(m, 2, undefined, 18); group.add(m); return m; };
+    const inst = (geo, mat, list, colsArr) => { const m = new THREE.InstancedMesh(geo, mat, list.length); list.forEach((t, i) => { d.position.set(t.x, t.y, t.z); d.rotation.set(0, t.ry, 0); d.scale.setScalar(t.s); d.updateMatrix(); m.setMatrixAt(i, d.matrix); if (colsArr) m.setColorAt(i, new THREE.Color(colsArr[i])); }); m.castShadow = true; m.receiveShadow = true; m.computeBoundingSphere(); outline(m, 2, undefined, 18); group.add(m); world.registerInstanced(m, list); return m; };
     const dogMesh = dogs.length ? inst(dogGeo, toon('#ffffff'), dogs, dogCols) : null;
     // instance colour multiplies the vertex colours: white body/hood take the pastel, black wheels stay black
     if (prams.length) inst(pramGeo, toon('#ffffff', { vertexColors: true }), prams, pramCols);
@@ -153,12 +153,12 @@ export function buildDressing(scene, C, world, park) {
     const bedGeo = mergeGeometries([col(new THREE.CylinderGeometry(1, 1.05, 0.35, 20).translate(0, 0.17, 0), '#4f9e3a'), col(new THREE.TorusGeometry(1.02, 0.08, 6, 24).rotateX(Math.PI / 2).translate(0, 0.35, 0), '#ffffff')]);
     const bm = new THREE.InstancedMesh(bedGeo, toon('#ffffff', { vertexColors: true }), beds.length);
     beds.forEach((t, i) => { d.position.set(t.x, t.y, t.z); d.scale.set(t.s, 1, t.s); d.updateMatrix(); bm.setMatrixAt(i, d.matrix); });
-    bm.receiveShadow = true; bm.computeBoundingSphere(); outline(bm, 1.6, undefined, 20); group.add(bm);
-    const fg = new THREE.IcosahedronGeometry(0.24, 0);
-    const fm = new THREE.InstancedMesh(fg, toon('#ffffff', { flatShading: true }), flowers.length);
+    bm.receiveShadow = true; bm.computeBoundingSphere(); outline(bm, 1.6, undefined, 20); group.add(bm); world.registerInstanced(bm, beds);
+    const fg = new THREE.IcosahedronGeometry(0.24, 0); fg.computeVertexNormals();
+    const fm = new THREE.InstancedMesh(fg, toon('#ffffff'), flowers.length);
     d.scale.setScalar(1);
     flowers.forEach((t, i) => { d.position.set(t.x, t.y, t.z); d.scale.setScalar(t.s); d.updateMatrix(); fm.setMatrixAt(i, d.matrix); fm.setColorAt(i, new THREE.Color(fcols[i])); });
-    fm.computeBoundingSphere(); group.add(fm);
+    fm.computeBoundingSphere(); group.add(fm); world.registerInstanced(fm, flowers);
   }
 
   // ---------- coffee cart by the start ----------

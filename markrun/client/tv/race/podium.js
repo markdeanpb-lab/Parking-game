@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { toon, mesh } from './toon.js';
 import { textTexture, outlinedText, roundRect, mulberry } from './world.js';
 
-export function buildPodium(scene, C, world, runners, order, { camera }) {
+export function buildPodium(scene, C, world, runners, order, { camera, offsetX = 3.2 }) {
   const group = new THREE.Group(); scene.add(group);
   const disposables = [];
   const fin = C.sample(C.finishM + 28);
@@ -20,10 +20,10 @@ export function buildPodium(scene, C, world, runners, order, { camera }) {
     s.top = s.hgt;
   }
   // backdrop banner
-  const bt = textTexture(1024, 256, (c, w, hh) => { c.fillStyle = '#1a1420'; roundRect(c, 0, 0, w, hh, 50); c.fill(); c.fillStyle = '#ff3d8b'; roundRect(c, 10, 10, w - 20, hh - 20, 42); c.fill(); outlinedText(c, 'MARKRUN CHAMPIONS', w / 2, hh / 2 + 6, 100, '#ffffff', '#1a1420', 0.16); }, disposables);
+  const bt = textTexture(1024, 256, (c, w, hh) => { c.fillStyle = '#1a1420'; roundRect(c, 0, 0, w, hh, 50); c.fill(); c.fillStyle = '#ff3d8b'; roundRect(c, 10, 10, w - 20, hh - 20, 42); c.fill(); outlinedText(c, 'MARKRUN CHAMPIONS', w / 2, hh / 2 + 6, 80, '#ffffff', '#1a1420', 0.16); }, disposables);
   const ban = mesh(new RoundedBoxGeometry(9, 2.2, 0.3, 2, 0.1), [toon('#ff3d8b'), toon('#ff3d8b'), toon('#ff3d8b'), toon('#ff3d8b'), toon('#ffffff', { map: bt }), toon('#ffffff', { map: bt })], { ol: 3, olRef: 14 });
-  ban.position.set(0, 4.6, -2.4); group.add(ban);
-  for (const s of [-1, 1]) { const p = mesh(new THREE.CylinderGeometry(0.14, 0.16, 4.6, 8), toon('#ffffff'), { ol: 2, olRef: 14 }); p.position.set(s * 4.3, 2.3, -2.4); group.add(p); }
+  ban.position.set(0, 5.6, -2.4); group.add(ban);
+  for (const s of [-1, 1]) { const p = mesh(new THREE.CylinderGeometry(0.14, 0.16, 5.6, 8), toon("#ffffff"), { ol: 2, olRef: 14 }); p.position.set(s * 4.3, 2.8, -2.4); group.add(p); }
 
   // place runners
   const n = order.length;
@@ -77,7 +77,7 @@ export function buildPodium(scene, C, world, runners, order, { camera }) {
     const off = new THREE.Vector3(Math.sin(a) * dist, 3.0 + Math.sin(t * 0.3) * 0.3, Math.cos(a) * dist).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     camera.position.copy(center).add(off);
     // frame the podium left of centre (the results card lives on the right)
-    const lk = new THREE.Vector3(3.2, 2.2, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(center);
+    const lk = new THREE.Vector3(offsetX, 2.2, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(center);
     camera.lookAt(lk);
     if (camera.fov !== 42) { camera.fov = 42; camera.updateProjectionMatrix(); }
   }

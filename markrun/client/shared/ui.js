@@ -131,3 +131,21 @@ export function clueHtml(c) {
   }
   return esc(text);
 }
+
+// Odds exactly as shown when betting (fractional where the game provides it).
+export function oddsText(round, b) {
+  if (!b) return '';
+  if (b.type === 'win') return runnerById(round, b.runnerId)?.odds?.display || `×${betOdds(round, b)}`;
+  if (b.type === 'inplay') return b.display || `×${Number(b.lockedOdds ?? b.odds) || ''}`;
+  if (b.type === 'prop') { const pr = round?.props?.find((x) => x.id === b.propId); return (b.pick === 'yes' ? pr?.odds?.displayYes : pr?.odds?.displayNo) || `×${betOdds(round, b)}`; }
+  const m = round?.matchups?.find((x) => x.id === b.matchupId);
+  return (b.pick === m?.a ? m?.odds?.displayA : m?.odds?.displayB) || `×${betOdds(round, b)}`;
+}
+// Settled bet -> { kind: 'won'|'lost'|'push', net, text }: net per bet so the lines add up to the round net.
+export function betOutcome(b) {
+  const returned = Math.round(Number(b?.returned) || 0);
+  const stake = Math.round(Number(b?.stake) || 0);
+  if (b?.void || b?.push || (!b?.won && returned === stake && stake > 0)) return { kind: 'push', net: 0, text: 'refunded ±0' };
+  if (b?.won) return { kind: 'won', net: returned - stake, text: signedMoney(returned - stake) };
+  return { kind: 'lost', net: -stake, text: signedMoney(-stake) };
+}

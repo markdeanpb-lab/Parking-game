@@ -65,14 +65,18 @@ export function buildCourse(course, park, plan) {
 
   // ---- diversions (funfair weekends) ----
   const diversions = {};
-  for (const r of plan?.runners || []) {
-    if (!r.diversions) continue;
-    diversions[r.id] = r.diversions.map((d) => {
-      const pts = d.path; const cum = [0];
-      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-      return { ...d, cum, len: cum.at(-1) };
-    });
+  function setPlan(pl) {
+    for (const k of Object.keys(diversions)) delete diversions[k];
+    for (const r of pl?.runners || []) {
+      if (!r.diversions || !r.diversions.length) continue;
+      diversions[r.id] = r.diversions.map((d) => {
+        const pts = d.path; const cum = [0];
+        for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+        return { ...d, cum, len: cum.at(-1) };
+      });
+    }
   }
+  setPlan(plan);
   const divPos = (d, m) => {
     const s = Math.max(0, Math.min(1, (m - d.fromM) / (d.toM - d.fromM))) * d.len;
     let i = 0; while (i < d.cum.length - 2 && d.cum[i + 1] < s) i++;
@@ -213,7 +217,7 @@ export function buildCourse(course, park, plan) {
   const ribbons = [{ from: 0, to: LAP1_END_DRAW, lift: 0 }, { from: 2540, to: 2690, lift: 0.02 }, { from: MAP_TO - 80, to: course.lengthM + 45, lift: 0.035 }];
   const finishM = course.lengthM;
   const geoOf = (m) => (m >= MAP_FROM && m <= MAP_TO ? mapLap2(m) : m); // lap-1 equivalent metres (for placing props)
-  return { P, raw, rawExt, baseXZ, LAP1_END_DRAW, xzAt, sample, heading, heightAt, terrain: T, ribbons, finishM, lake, flat, geoOf, diversions, LAP1_END, MAP_FROM, MAP_TO };
+  return { P, raw, rawExt, baseXZ, LAP1_END_DRAW, xzAt, sample, heading, heightAt, terrain: T, ribbons, finishM, lake, flat, geoOf, diversions, setPlan, LAP1_END, MAP_FROM, MAP_TO };
 }
 
 export function bbox(pts) {

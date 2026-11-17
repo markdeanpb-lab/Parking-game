@@ -3,7 +3,7 @@
 // "press any key" overlay), ?mute.
 import { connect } from '../shared/net.js';
 import { createAudio } from '../shared/sfx.js';
-import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, confetti, fmtTime } from '../shared/ui.js';
+import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, oddsText, betOutcome, confetti, fmtTime } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
@@ -49,14 +49,23 @@ const worldPromise = Promise.all([
 ]).then(([course, park]) => { worldData = { course, park }; return worldData; });
 
 // ---------- networking ----------
+// TV key (only needed when the TV page is not on the host computer itself)
+const urlKey = params.get('key');
+try { if (urlKey) localStorage.setItem('markrun.tvkey', urlKey); } catch { /* */ }
+const tvKey = () => { try { return urlKey || localStorage.getItem('markrun.tvkey'); } catch { return urlKey; } };
 const net = connect({
   role: 'tv',
+  getKey: tvKey,
+  onWelcome: (m) => { if (m.key) { try { localStorage.setItem('markrun.tvkey', m.key); } catch { /* */ } } $('#tvauth')?.remove(); },
   onStatus: (st) => { $('#conn').classList.toggle('hidden', st === 'open' || st === 'connecting'); },
   onState: (st) => onState(st),
   onMessage: (m) => {
     if (m.t === 'react') spawnReaction(m.playerId, m.emoji);
     else if (m.t === 'refresh') refreshLog(m.step, m.msg);
     else if (m.t === 'refreshDone') refreshFinished(m.ok, m.msg);
+    else if (m.t === 'claimRequest') claimRequest(m);
+    else if (m.t === 'claimClosed') { if ($('#tvmodal')?.dataset.req === m.reqId) closeModal(); }
+    else if (m.t === 'error' && m.code === 'tv_auth') showAuthError(m.msg);
     else if (m.t === 'error') toast(m.msg, 'red');
   },
 });
@@ -96,7 +105,7 @@ window.addEventListener('mousemove', () => { document.body.classList.remove('hid
 window.addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, textarea')) return;
   if (!gestureDone) { unlockAll(); return; }
-  if (modalOpen()) { if (e.key === 'Escape') closeModal(); else if (e.key === 'Enter') $('#tvmodal [data-ok]')?.click(); return; }
+  if (modalOpen()) { if (e.key === 'Escape') { const c = $('#tvmodal [data-cancel]:not([disabled])'); if (c) c.click(); else closeModal(); } else if (e.key === 'Enter') $('#tvmodal [data-ok]')?.click(); return; }
   if (!audio.ready()) audio.unlock();
   const k = e.key;
   if (k === 'm' || k === 'M') { localMute = !localMute; applyAudioSettings(); toast(localMute ? 'Muted' : 'Sound on'); return; }
@@ -150,6 +159,7 @@ function switchScreen(key, st, prev) {
   subsEl.innerHTML = '';
   const phase = st.phase;
   document.body.className = document.body.className.replace(/\bphase-\w+/g, '').trim() + ` phase-${phase}`;
+  document.body.classList.toggle('revealed', !!st.revealed);
   document.body.classList.toggle('racing', phase === 'RACE' || (phase === 'INTRO' && !!raceView));
   log({ type: 'screen', key });
   const make = {
@@ -258,7 +268,7 @@ function spawnReaction(pid, emoji) {
 
 function sleepT(ms, token) { return new Promise((res) => { const id = setTimeout(res, T(ms)); token?.timers.push(id); }); }
 function makeToken() { return { cancelled: false, timers: [] }; }
-function cancelToken(tok) { tok.cancelled = true; tok.timers.forEach(clearTimeout); }
+function cancelToken(tok) { tok.cancelled = true; tok.timers.forEach((id) => { clearTimeout(id); clearInterval(id); }); }
 async function waitVoice(tok, minMs, maxMs = 12000) {
   const t0 = Date.now();
   await sleepT(minMs, tok);
@@ -360,6 +370,21 @@ function openModal(html) {
   m.addEventListener('click', (e) => { if (e.target === m) closeModal(); });
   return m;
 }
+function showAuthError(msg) {
+  if ($('#tvauth')) return;
+  document.body.appendChild(el(`<div id="tvauth"><div class="panel white" style="padding:30px 40px;max-width:900px;font-size:26px"><h2 style="font-family:var(--font-display);font-weight:400;margin:0 0 10px">📺 Not the TV</h2><p>${esc(msg)}</p></div></div>`));
+}
+function claimRequest(m) {
+  unlockAll();
+  audio.play('bell');
+  const md = openModal(`<h2 class="outlined white thin">📱 New phone for ${esc(m.name || 'a player')}?</h2>
+    <p>Someone on a <b>new phone</b> wants to take over <b>${esc(m.name || '')}</b>'s seat (and see their secret clues).</p>
+    <p>Only allow it if ${esc(m.name || 'they')} really did switch phones. Auto-denied in 30 seconds.</p>
+    <div class="row"><button class="btn white" data-cancel>Deny <small>ESC</small></button><button class="btn green" data-ok>Allow <small>ENTER</small></button></div>`);
+  md.dataset.req = m.reqId;
+  $('[data-cancel]', md).onclick = () => { send({ t: 'claimAnswer', reqId: m.reqId, allow: false }); closeModal(); };
+  $('[data-ok]', md).onclick = () => { send({ t: 'claimAnswer', reqId: m.reqId, allow: true }); closeModal(); };
+}
 function confirmRefresh() {
   if (S?.phase !== 'LOBBY') return;
   const m = openModal(`<h2 class="outlined white thin">⟳ Refresh Historical Data</h2>
@@ -460,6 +485,9 @@ function introScreen(st) {
     if (!tok.cancelled) send({ t: 'introDone', roundId: round.roundId });
   }
 
+  const t0 = Date.now();
+  const hb = setInterval(() => send({ t: 'progress', phase: 'INTRO', roundId: round.roundId, value: Date.now() - t0 }), 2000);
+  tok.timers.push(hb);
   (async () => {
     // 3D: helicopter fly-over + a close-up per runner; our card + voice line hold each shot (onIntroRunner)
     if (!FORCE_2D && Race3D?.createRaceView) {
@@ -595,7 +623,7 @@ function revealScreen(st) {
       const p = st.players.find((x) => x.id === playerId);
       const r = runnerById(round, betRunnerId(bet));
       const odds = betOdds(round, bet);
-      const oddsTxt = bet.type === 'win' ? (r?.odds?.display || '') : bet.type === 'h2h' ? (() => { const m = round.matchups?.find((x) => x.id === bet.matchupId); return (bet.pick === m?.a ? m?.odds?.displayA : m?.odds?.displayB) || `×${odds}`; })() : bet.type === 'prop' ? (() => { const pr = round.props?.find((x) => x.id === bet.propId); return (bet.pick === 'yes' ? pr?.odds?.displayYes : pr?.odds?.displayNo) || `×${odds}`; })() : `×${odds}`;
+      const oddsTxt = oddsText(round, bet);
       const big = i === seq.length - 1 && seq.length > 1;
       spot.innerHTML = `<div class="spotcard"><div class="anim-pop"><div class="sc panel ${big ? 'yellow' : 'white'}">
         <div class="scp">${avatarHtml(p?.avatar, 110)}<div class="scn">${esc(p?.name || '')}</div></div>
@@ -681,8 +709,12 @@ function raceScreen(st) {
     say('Market closed! Back to the action!', 'pam', 2);
     try { v.setPaused(false); } catch { /* */ }
   }
+  const loadT0 = Date.now();
+  const loadHb = setInterval(() => send({ t: 'raceTime', roundId: round.roundId, b: -100000 + (Date.now() - loadT0) / 1000 }), 2000);
+  tok.timers.push(loadHb);
   (async () => {
     const v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {} });
+    clearInterval(loadHb);
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }
     document.body.classList.add('racing');
@@ -694,7 +726,7 @@ function raceScreen(st) {
     } else audio.play('crowd', { dur: 4, peak: 0.2 });
     log({ type: 'race-start', kind: raceViewKind });
     // report the broadcast clock so phones can show their runners live (they never get the plan)
-    clockIv = setInterval(() => { const b = v.broadcastTime; if (Number.isFinite(b) && b >= 0) send({ t: 'raceTime', roundId: round.roundId, b }); }, 1000);
+    clockIv = setInterval(() => { const b = v.broadcastTime; if (Number.isFinite(b)) send({ t: 'raceTime', roundId: round.roundId, b }); }, 1000);
     v.playRace((e) => {
       if (tok.cancelled || !e) return;
       log({ type: 'race-event', e: e.type || 'line', text: e.text });
@@ -718,6 +750,16 @@ function raceScreen(st) {
       await sleepT(2500, tok);
       if (!tok.cancelled) send({ t: 'raceDone', roundId: round.roundId });
     });
+    // TV reloaded mid-race: jump back to where the broadcast was
+    const resumeB = Number(st.resumeB) || 0;
+    if (resumeB > 2) {
+      try {
+        if (typeof v.seek === 'function') v.seek(resumeB);
+        else if (v._debug?.seek) { v._debug.seek(resumeB); v.setPaused(false); }
+        log({ type: 'race-resume', b: resumeB });
+        toast('Back on air! Resuming the race…');
+      } catch (e) { console.warn('resume failed', e); }
+    }
   })();
   return {
     update(s) {
@@ -835,7 +877,7 @@ function resultsScreen(st) {
     const drinking = s.settings.drinkingMode;
     root.innerHTML = head('PAY DAY', 'The bookie settles up 💰') + `<div class="payouts">${s.players.map((p) => {
       const pay = res.payouts?.[p.id] || { bets: [], net: 0, bankroll: p.bankroll };
-      const lines = (pay.bets || []).map((b) => `<div class="pl ${b.won ? 'won' : 'lost'}"><span class="mark">${b.won ? '✅' : '❌'}</span><div class="lb">${esc(betLabel(round, b))}<small>staked ${money(b.stake)}</small></div><div class="r">${b.won ? `+${money(b.returned)}` : `−${money(b.stake)}`}</div></div>`).join('') || '<div class="pl show"><div class="lb">No bets placed. Sensible. Boring.</div></div>';
+      const lines = (pay.bets || []).map((b) => { const o = betOutcome(b); return `<div class="pl ${o.kind === 'won' ? 'won' : o.kind === 'push' ? 'push' : 'lost'}"><span class="mark">${o.kind === 'won' ? '✅' : o.kind === 'push' ? '↩️' : '❌'}</span><div class="lb">${esc(betLabel(round, b))}<small>staked ${money(b.stake)} · ${esc(oddsText(round, b))}${o.kind === 'won' ? ` · returned ${money(b.returned)}` : ''}</small></div><div class="r">${o.text}</div></div>`; }).join('') || '<div class="pl show"><div class="lb">No bets placed. Sensible. Boring.</div></div>';
       return `<div class="pay panel slant" data-pid="${p.id}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;flex-direction:column;height:100%">
         <div class="who">${avatarHtml(p.avatar, 90)}${esc(p.name)}</div>
         <div class="lines">${lines}</div>
@@ -915,7 +957,7 @@ function resultsScreen(st) {
     log({ type: 'results-stage', stage: name });
     if (name !== 'order' && raceView) disposeRaceView();
     if (name === 'order' && raceView && raceViewKind === '3d') {
-      try { raceView.showPodium?.(res); } catch (e) { console.warn(e); }
+      try { raceView.showPodium?.(res, { card: false }); } catch (e) { console.warn(e); }
     } else if (raceView && name === 'order') disposeRaceView();
     document.body.classList.toggle('racing', !!raceView);
     ({ order: stageOrder, reveal: stageReveal, clues: stageClues, payouts: stagePayouts, awards: stageAwards }[name] || (async () => done(s.resultsStage)))(s).catch((e) => console.error(e));

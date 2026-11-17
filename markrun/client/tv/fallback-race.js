@@ -140,6 +140,11 @@ export function createFallbackRaceView(container, { course, round, plan, speed =
     },
     showPodium(results) { podium = results; void podium; },
     setPaused(p) { paused = !!p; },
+    seek(bb) { // jump to a broadcast time (TV reload mid-race); skips events already passed
+      b = Math.max(0, Number(bb) || 0);
+      while (queue.length && queue[0].broadcastS <= b) queue.shift();
+      mode = 'race';
+    },
     get broadcastTime() { return mode === 'race' || mode === 'done' ? b : -1; },
     dispose() { disposed = true; cancelAnimationFrame(raf); ro.disconnect(); canvas.remove(); },
   };
