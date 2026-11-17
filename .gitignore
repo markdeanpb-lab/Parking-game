@@ -6,3 +6,5 @@ markrun/node_modules/
 markrun/data/*.db-wal
 markrun/data/*.db-shm
 markrun/data/session.db*
+markrun/data/strava_credentials.json
+markrun/data/raw/**/*.part-*
