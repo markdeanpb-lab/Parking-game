@@ -1,315 +1,294 @@
-// Automated broadcast camera director. Builds a shot list for the whole race from plan.events + the (fully
-// deterministic) runner positions, then evaluates the active shot every frame. Cuts are hard; motion inside a shot
-// is smooth (positions are functions of broadcast time; only the framing offsets are damped).
+// Calm broadcast camera director (UI_SPEC "Camera: calm broadcast direction").
+// - ~12-15 shots per race, 8 s minimum (10-12 s typical) through the middle.
+// - 1.3 s camera glides between shots; hard cuts only at the start gun, the finish-line camera and the photo finish.
+// - Few shot types: 'side' (long-lens side tracking), 'headon' (long-lens head-on tracking), 'drone' (wide), 'finishcam'
+//   (+ 'heli'/'startgo' pre-roll and 'celebrate' after the last finisher).
+// - Tracking shots keep runners at >= ~15-20% of frame height via distance + long lens; positions are analytic,
+//   window-averaged functions of broadcast time, so there is no shake and the FOV is constant within a shot.
+// - Lead changes / overtakes are framed inside the current shot (lead group); one priority interrupt (a lead change,
+//   or an overtake involving a backed runner) may glide to a dedicated framing mid-shot.
 import * as THREE from 'three';
+import { raceToBroadcast, timeAtDistance, HILL_M } from '../../../server/game/raceplan.mjs';
 
-const PRIO = { finish: 10, photo: 11, distracted: 9, hill: 7, lapboard: 6, lead_change: 6, final: 5, backed: 4, overtake: 3, filler: 1 };
+export const GLIDE_S = 1.3;
+const RUNNER_H = 2.4;     // character height incl. hat (m)
+const TARGET_FRAC = 0.2;  // runner height as a fraction of frame height in tracking shots
+const ASPECT = 16 / 9;
+const deg = (r) => (r * 180) / Math.PI;
+const fovFor = (dist, frac = TARGET_FRAC) => deg(2 * Math.atan(RUNNER_H / (2 * frac * dist)));
 
-export function buildShotList({ plan, sim, backedIds = [], hasDiversion }) {
-  const ev = plan.events || [];
-  const endB = sim.lastFinishB + 3.5;
+export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
+  const out = [];
+  const tm = plan.timeMap;
+  const leaderAtB = (m) => raceToBroadcast(tm, Math.min(...plan.runners.map((r) => timeAtDistance(r.progress, m))));
+  const rate = (b) => (b <= 0 ? 4 : sim.rateAt(b));
+  const meanRate = (a, b) => { let s = 0, n = 0; for (let t = a; t <= b; t += Math.max(0.5, (b - a) / 12)) { s += rate(t); n++; } return s / Math.max(1, n); };
+  const firstFin = sim.firstFinishB, lastFin = sim.lastFinishB;
+  // lead group: runners within 20 m of the leader (fits a long-lens frame)
+  const packGroup = (t) => { const st = sim.stateAt(Math.max(0, t)); const live = st.order.filter((id) => !st.byId[id].finished); const l = live[0] ?? st.order[0]; return (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < 120); };
+  const leadGroup = (t) => { const st = sim.stateAt(Math.max(0, t)); const live = st.order.filter((id) => !st.byId[id].finished); const l = live[0] ?? st.order[0]; return (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < 20); };
+  const groupNear = (id, t) => { const st = sim.stateAt(Math.max(0, t)); return st.order.filter((x) => !st.byId[x].finished && Math.abs(st.byId[x].m - st.byId[id].m) < 20); };
+
+  // ---- fixed beats ----
+  let gunEnd = 0.25 + 8;
+  for (let t = 0.25; t < 30; t += 0.25) if (rate(t) > 7) { gunEnd = Math.max(gunEnd, t); break; }
+  let bSlow = firstFin - 6;
+  for (let t = firstFin - 6; t > gunEnd; t -= 0.25) if (rate(t) > 6) { bSlow = t; break; }
+  const b4700 = Math.max(bSlow, Math.min(firstFin - 6, leaderAtB(4700)));
+
+  out.push({ type: 'heli', a: -8.5, b: -3.2, hard: true });
+  out.push({ type: 'startgo', a: -3.2, b: 0.25 });
+  out.push({ type: 'side', a: 0.25, b: gunEnd, hard: true, ids: null });
+
+  // middle windows: funfair moment, the Hill (lap 1 + 2)
   const windows = [];
-  const W = (type, a, b, prio, extra = {}) => { if (b - a >= 1.2) windows.push({ type, a, b, prio, ...extra }); };
-  const firstFinish = sim.firstFinishB;
-  // finish sequence: finish cam for the winner, then intercut chasers
-  // finishes come from the sim (works even for plans without events)
-  const fin = sim.finishOrder.map((id) => ({ who: id, broadcastS: sim.byId[id].finishB }));
-  let cursor = firstFinish - 5.5;
-  fin.forEach((f, i) => {
-    const prev = fin[i - 1];
-    if (prev && f.broadcastS - prev.broadcastS > 7.5) {
-      // gap: show the chaser approaching from the front, then back to the finish cam
-      W('front', prev.broadcastS + 2.2, f.broadcastS - 3.2, 10, { ids: [f.who], tag: 'chaser' });
-      cursor = f.broadcastS - 3.2;
-    }
-    W('finishcam', cursor, f.broadcastS + 2.2, 10, { ids: [f.who] });
-    cursor = f.broadcastS + 2.2;
-  });
-  if (sim.photoFinish) W('photo', firstFinish - 0.02, firstFinish + 0.02, 11);
-  // final stretch
-  const fs = ev.find((e) => e.type === 'final_stretch');
-  if (fs) {
-    const a = fs.broadcastS, b = firstFinish - 5.5;
-    const n = Math.max(1, Math.round((b - a) / 6));
-    const kinds = ['final', 'track', 'battle', 'final', 'drone', 'front'];
-    for (let i = 0; i < n; i++) {
-      const s = a + ((b - a) * i) / n, e = a + ((b - a) * (i + 1)) / n;
-      const mid = (s + e) / 2; const o = sim.orderAt(mid);
-      let type = kinds[i % kinds.length], ids = [o[0]];
-      if (type === 'battle') ids = [o[0], o[1]];
-      const close = sim.gapM(o[0], o[1], mid) < 12;
-      if (i === 0) { type = 'final'; ids = [o[0]]; }
-      else if (close && type !== 'final') { type = 'battle'; ids = [o[0], o[1]]; }
-      W(type, s, e, 5, { ids });
-    }
+  const divR = plan.runners.find((r) => r.diversions?.length);
+  if (divR && funfair) {
+    const d = divR.diversions[0];
+    const a = raceToBroadcast(tm, timeAtDistance(divR.progress, d.fromM)) - 0.5;
+    const e = raceToBroadcast(tm, timeAtDistance(divR.progress, d.toM)) + 0.8;
+    windows.push({ type: 'side', tag: 'fair', a, b: Math.max(a + 8, e), ids: [divR.id], fair: true, prio: 3 });
   }
-  // diversions: only the first one gets a dedicated cut
-  const div = ev.filter((e) => e.type === 'diversion').sort((a, b) => a.broadcastS - b.broadcastS);
-  if (div[0]) W('distracted', div[0].broadcastS - 0.4, Math.max(div[0].broadcastS + 6.5, Math.min((div[0].endBroadcastS ?? div[0].broadcastS + 8) + 1.2, div[0].broadcastS + 9)), 9, { ids: [div[0].who], banner: true });
-  for (const h of ev.filter((e) => e.type === 'hill')) { const rate = sim.rateAt(h.broadcastS); const dur = Math.max(2.6, Math.min(6, 140 / Math.max(1, rate * 3.4))); W('hill', h.broadcastS - 1.4, h.broadcastS + dur, 7, { lap: h.lap }); }
-  const lap = ev.find((e) => e.type === 'lap'); if (lap) W('lapboard', lap.broadcastS - 2.6, lap.broadcastS + 2.0, 6);
-  for (const e of ev.filter((x) => x.type === 'lead_change')) W('battle', e.broadcastS - 1.6, e.broadcastS + 2.8, 6, { ids: [e.to, e.from], tag: 'lead' });
-  // overtakes: only the interesting ones (backed runners, or a fight for the top two), with a cooldown for variety
-  let lastBattle = -1e9;
-  const leadTimes = ev.filter((x) => x.type === 'lead_change').map((x) => x.broadcastS);
-  for (const e of ev.filter((x) => x.type === 'overtake')) {
-    const backed = backedIds.includes(e.by) || backedIds.includes(e.on);
-    const o = sim.orderAt(e.broadcastS + 0.5);
-    const top = o.indexOf(e.by) <= 1;
-    if (!backed && !top) continue;
-    if (e.broadcastS - lastBattle < 11 || leadTimes.some((t) => Math.abs(t - e.broadcastS) < 6)) continue;
-    lastBattle = e.broadcastS;
-    W('battle', e.broadcastS - 1.4, e.broadcastS + 2.6, backed ? 4 : 3, { ids: [e.by, e.on] });
-  }
-  // start: runners leave the line
-  W('startgo', -3.2, 2.4, 12);
-  W('heli', -8.5, -3.2, 12);
-  // place by priority
-  windows.sort((x, y) => y.prio - x.prio || x.a - y.a);
+  for (const m of HILL_M) { const hb = leaderAtB(m); windows.push({ type: 'headon', tag: 'hill', a: hb - 1.5, b: hb + 8, prio: 2 }); }
+  windows.sort((x, y) => y.prio - x.prio);
   const placed = [];
-  const free = (a, b) => !placed.some((p) => a < p.b && b > p.a);
   for (const w of windows) {
-    if (free(w.a, w.b)) { placed.push(w); continue; }
-    // trim against overlaps
-    let a = w.a, b = w.b;
-    for (const p of placed) { if (a < p.b && b > p.a) { if (p.a <= a) a = p.b; else b = Math.min(b, p.a); } }
-    if (b - a >= 2.2 && free(a, b)) placed.push({ ...w, a, b });
+    const b = Math.min(bSlow, w.b), a = Math.max(gunEnd, Math.min(w.a, b - 8));
+    if (b - a < 6) continue;
+    if (placed.some((p) => a < p.b && b > p.a)) continue;
+    placed.push({ ...w, a, b });
   }
   placed.sort((x, y) => x.a - y.a);
-  // fill gaps with filler rotation
-  const out = [];
-  let t = -8.5; let fillerIdx = 0;
-  const fillers = ['track', 'drone', 'front', 'chase', 'track', 'blimp', 'front', 'side'];
-  const addFill = (a, b) => {
-    const len = b - a; if (len <= 0.05) return;
-    if (len < 2.2 && out.length) { out.at(-1).b = b; return; }
-    const n = Math.max(1, Math.round(len / 5.2));
+  // fill the middle with calm alternating shots (~10-12 s)
+  const cycle = ['side', 'drone', 'headon'];
+  let ci = 0, backedTurn = 0;
+  const fill = (a, b) => {
+    const len = b - a; if (len <= 0.01) return;
+    if (len < 8 && out.length >= 3) { out.at(-1).b = b; return; }
+    const n = Math.max(1, Math.round(len / 11));
     for (let i = 0; i < n; i++) {
       const s = a + (len * i) / n, e = a + (len * (i + 1)) / n, mid = (s + e) / 2;
-      const o = sim.orderAt(mid);
-      let type = fillers[fillerIdx++ % fillers.length], ids = [o[0]];
-      // backed runners get airtime when they're not in the lead pack
-      const lonelyBacked = backedIds.filter((id) => !sim.finishedAt(id, mid) && sim.gapM(o[0], id, mid) > 25);
-      if (lonelyBacked.length && fillerIdx % 3 === 0) { type = 'chase'; ids = [lonelyBacked[fillerIdx % lonelyBacked.length]]; }
-      else if (type === 'track' || type === 'side') { ids = o.filter((id) => sim.gapM(o[0], id, mid) < 15).slice(0, 3); }
-      else if (type === 'drone' || type === 'blimp') ids = o;
-      if (sim.allFinishedAt(mid - 2)) { type = 'celebrate'; ids = sim.finishOrder; }
-      out.push({ type, a: s, b: e, prio: 1, ids, filler: true });
+      let type = cycle[ci++ % cycle.length];
+      if (type === out.at(-1)?.type) type = cycle[ci++ % cycle.length];
+      // backed runners well off the lead get their own (side) shot every other filler
+      const st = sim.stateAt(mid); const lead = st.byId[st.order[0]];
+      const lonely = backedIds.filter((id) => st.byId[id] && !st.byId[id].finished && lead.m - st.byId[id].m > 40);
+      let ids = null;
+      if (lonely.length && backedTurn++ % 2 === 0) { ids = groupNear(lonely[backedTurn % lonely.length], mid); type = type === 'drone' ? 'side' : type; }
+      out.push({ type, a: s, b: e, ids });
     }
   };
-  for (const p of placed) { if (p.a > t) addFill(t, p.a); out.push(p); t = Math.max(t, p.b); }
-  if (t < endB + 30) addFill(t, endB + 30);
+  let t = gunEnd;
+  for (const p of placed) { fill(t, p.a); out.push(p); t = p.b; }
+  fill(t, bSlow);
+  // finale (slow clock): tight side / head-on shots of ~11 s, head-on for the last 300 m, then the finish-line camera
+  {
+    const len = b4700 - bSlow;
+    if (len >= 8) { const n = Math.max(1, Math.round(len / 11)); for (let i = 0; i < n; i++) out.push({ type: i % 2 ? 'headon' : 'side', a: bSlow + (len * i) / n, b: bSlow + (len * (i + 1)) / n }); }
+    if (out.at(-1).type === 'headon' && out.at(-1).a >= bSlow) out.at(-1).b = firstFin - 6;
+    else out.push({ type: 'headon', a: Math.max(bSlow, out.at(-1).b), b: firstFin - 6 });
+  }
+  if (out.at(-1).b - out.at(-1).a < 6 && out.length > 4) { const l = out.pop(); out.at(-1).b = l.b; }
+  out.push({ type: 'finishcam', a: firstFin - 6, b: lastFin + 2.5, hard: true });
+  out.push({ type: 'celebrate', a: lastFin + 2.5, b: lastFin + 90 });
+
+  // priority interrupts (one at a time, 12 s apart): lead change, or an overtake involving a backed runner
+  const pri = (plan.events || []).filter((e) => (e.type === 'lead_change' || (e.type === 'overtake' && (backedIds.includes(e.by) || backedIds.includes(e.on)))) && e.broadcastS > gunEnd + 2 && e.broadcastS < bSlow - 3);
+  let lastI = -1e9;
+  for (const e of pri) {
+    const pair = e.type === 'lead_change' ? [e.to, e.from] : [e.by, e.on];
+    if (e.broadcastS - lastI < 12) continue;
+    const i = out.findIndex((s) => e.broadcastS >= s.a && e.broadcastS < s.b);
+    if (i < 0) continue;
+    const s = out[i];
+    if (['heli', 'startgo', 'finishcam', 'celebrate', 'drone'].includes(s.type) || s.interrupt || s.tag || s.hard) continue; // the wide drone already shows the pack
+    const framed = (s.ids || leadGroup((s.a + s.b) / 2));
+    if (pair.every((id) => framed.includes(id))) continue; // already in frame
+    if (e.broadcastS - s.a < 8 || s.b - e.broadcastS < 8) {
+      // short shot: plan the whole calm shot around the pair instead of cutting mid-shot
+      Object.assign(s, { type: 'side', ids: pair, interrupt: e.type });
+    } else {
+      // long shot: one blended move to frame the pair, then the shot continues
+      const ia = e.broadcastS - 1.8;
+      out.splice(i, 1, { ...s, b: ia }, { type: 'side', a: ia, b: s.b, ids: pair, interrupt: e.type });
+    }
+    lastI = e.broadcastS;
+  }
+
+  // per-shot constants (rate, side, distances, FOV) so nothing pumps inside a shot
+  for (const s of out) {
+    s.rate = meanRate(Math.max(0, s.a), Math.max(0.5, s.b));
+    s.ids = s.ids || null;
+    if (s.type === 'side' || s.type === 'headon' || s.type === 'drone') {
+      const ids = s.ids || (s.type === 'drone' ? packGroup((s.a + s.b) / 2) : leadGroup((s.a + s.b) / 2));
+      if (s.type === 'drone' && !s.ids) s.pack = true;
+      // spread of the framed group over the shot
+      let spread = 0;
+      for (let k = 0; k <= 6; k++) { const st = sim.stateAt(Math.max(0, s.a + ((s.b - s.a) * k) / 6)); const ms = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m); if (ms.length) spread = Math.max(spread, Math.max(...ms) - Math.min(...ms)); }
+      s.spread = spread;
+      if (s.type === 'side') {
+        s.dist = THREE.MathUtils.clamp(14 + 1.7 * s.rate, 18, 48);
+        let fov = fovFor(s.dist);
+        const needW = spread + 7; const fitFov = deg(2 * Math.atan(needW / (2 * ASPECT * s.dist)));
+        s.fov = THREE.MathUtils.clamp(Math.max(fov, fitFov), 10, 34);
+        s.side = chooseSide(s, ids);
+      } else if (s.type === 'headon') {
+        s.dist = THREE.MathUtils.clamp(16 + 1.9 * s.rate, 20, 52) + spread * 0.6;
+        s.fov = THREE.MathUtils.clamp(fovFor(s.dist - spread * 0.3, 0.2), 10, 30);
+      } else {
+        s.back = 30 + 2.2 * s.rate + spread * 0.35; s.height = 16 + 1.9 * s.rate + spread * 0.25; s.fov = 40; s.side = chooseSide(s, ids);
+      }
+    }
+  }
   return out;
+
+  // camera on the inside of the bend (shorter camera path -> calmer), and inside the park
+  function chooseSide(s, ids) {
+    const at = (t) => { const st = sim.stateAt(Math.max(0, t)); const l = ids.map((id) => st.byId[id]).filter(Boolean); const x = l.reduce((a, r) => a + r.x, 0) / l.length, z = l.reduce((a, r) => a + r.z, 0) / l.length; return [x, z]; };
+    const p0 = at(s.a), p1 = at((s.a + s.b) / 2), p2 = at(s.b);
+    const cross = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+    let side = s.fair ? null : (cross > 0 ? 1 : -1);
+    if (s.fair && funfair) {
+      // look across the runner at the rides: camera on the side away from the fair
+      const c = funfair.anchors.center; const h = [p2[0] - p0[0], p2[1] - p0[1]]; const r = [-h[1], h[0]];
+      side = ((c.x - p1[0]) * r[0] + (c.z - p1[1]) * r[1]) > 0 ? -1 : 1;
+      return side;
+    }
+    const h = [p2[0] - p0[0], p2[1] - p0[1]]; const L = Math.hypot(...h) || 1; const r = [-h[1] / L, h[0] / L];
+    const d = s.dist || 40;
+    const ok = (sg) => world.inPark(p1[0] + r[0] * d * sg, p1[1] + r[1] * d * sg);
+    if (!ok(side) && ok(-side)) side = -side;
+    return side;
+  }
 }
 
-// ---- runtime camera evaluation ----
+// ---- runtime ----
 export function createDirector({ camera, C, sim, world, funfair }) {
-  const cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 45 };
-  const sm = { off: new THREE.Vector3(), lookOff: new THREE.Vector3(), fov: 45, init: false };
-  let shot = null;
-  const v = new THREE.Vector3(), w = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-  const tmp = {};
+  const cam = { pos: new THREE.Vector3(), look: new THREE.Vector3() };
+  const up = new THREE.Vector3(0, 1, 0);
+  let shot = null, glide = null, hardNext = true, smoothLook = null;
+  const q = new THREE.Quaternion(), m4 = new THREE.Matrix4();
 
-  // focus point for a set of runner ids at broadcast time b: mean metres, on that runner's (possibly diverted) line
-  function focus(ids, b) {
-    const st = sim.stateAt(b);
-    const list = ids.map((id) => st.byId[id]).filter(Boolean);
-    if (!list.length) return { p: new THREE.Vector3(st.leader.x, st.leader.y, st.leader.z), h: new THREE.Vector3(st.leader.tx, 0, st.leader.tz), m: st.leader.m, spread: 0 };
-    const p = new THREE.Vector3(); let m = 0;
-    for (const r of list) { p.x += r.x; p.y += r.y; p.z += r.z; m += r.m; }
-    p.divideScalar(list.length); m /= list.length;
-    let lo = 1e9, hi = -1e9; for (const r of list) { lo = Math.min(lo, r.m); hi = Math.max(hi, r.m); }
-    // heading: smoothed along the lead runner's own line
-    const r0 = list[0];
-    const ma = Math.max(0, r0.mVis - 18); const a = C.xzAt(ma, r0.id), c = C.xzAt(ma + 36, r0.id);
-    const h = new THREE.Vector3(c.x - a.x, 0, c.z - a.z).normalize();
-    if (!isFinite(h.x)) h.set(0, 0, 1);
-    return { p, h, m, spread: hi - lo, list };
+  function center(ids, t) {
+    const st = sim.stateAt(Math.max(0, t));
+    let l = (ids || st.order.slice(0, 1)).map((id) => st.byId[id]).filter(Boolean);
+    const live = l.filter((r) => !r.finished); if (live.length) l = live;
+    const v = new THREE.Vector3(); for (const r of l) v.add(new THREE.Vector3(r.x, r.y, r.z)); return v.divideScalar(Math.max(1, l.length));
   }
-  const right = (h) => new THREE.Vector3(-h.z, 0, h.x);
+  // window-averaged centre + heading: smooth through bends, no jitter
+  function smooth(ids, t, w) {
+    const c = new THREE.Vector3(); let n = 0;
+    for (let k = -2; k <= 2; k++) { c.add(center(ids, t + k * w * 0.5)); n++; }
+    c.divideScalar(n);
+    const a = center(ids, t - w * 1.5), b = center(ids, t + w * 1.5);
+    const h = new THREE.Vector3(b.x - a.x, 0, b.z - a.z);
+    if (h.lengthSq() < 1e-4) { const id = ids?.[0] ?? sim.stateAt(Math.max(0, t)).order[0]; const s = sim.stateAt(Math.max(0, t)).byId[id]; h.set(s.tx, 0, s.tz); }
+    h.normalize();
+    return { c, h, r: new THREE.Vector3(-h.z, 0, h.x) };
+  }
+  const groupOf = (s, t) => {
+    if (s.ids) return s.ids;
+    // fixed membership per shot (evaluated at the shot midpoint) so the framing never jumps when the group changes
+    if (!s._group) {
+      const tm = (s.a + s.b) / 2, st = sim.stateAt(Math.max(0, tm)); const live = st.order.filter((id) => !st.byId[id].finished); const l = live[0] ?? st.order[0];
+      s._group = (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < (s.pack ? 120 : 20));
+      if (!s._group.length) s._group = [l];
+    }
+    return s._group;
+  };
 
-  function evaluate(s, b, dt) {
-    const u = (b - s.a) / Math.max(0.01, s.b - s.a);
+  function evaluate(s, b) {
     const fin = world.anchors.finish, start = world.anchors.start;
-    let pos, look, fov = 45, damp = true;
+    let pos, look, fov = 40;
+    // window (s) for smoothing scales with how fast the clock runs
+    const w = s.rate > 8 ? 2.2 : 1.2;
     switch (s.type) {
       case 'heli': {
-        const ctr = new THREE.Vector3(150, 0, 0);
-        const st = new THREE.Vector3(start.x, start.y, start.z);
-        const k = easeInOut(Math.min(1, u * 1.05));
-        const ang = -1.2 + k * 1.6;
-        const R = 420 - k * 360;
-        const p0 = new THREE.Vector3(ctr.x + Math.cos(ang) * R, 170 - k * 140, ctr.z + Math.sin(ang) * R);
-        pos = p0.lerp(new THREE.Vector3(st.x - start.tx * 40 + start.rx * 25, st.y + 22, st.z - start.tz * 40 + start.rz * 25), k * k);
-        look = ctr.clone().setY(10).lerp(st, Math.min(1, k * 1.3));
-        fov = 50; damp = false; break;
+        const u = (b - s.a) / Math.max(0.01, s.b - s.a);
+        const ctr = new THREE.Vector3(150, 0, 0); const st = new THREE.Vector3(start.x, start.y, start.z);
+        const k = easeInOut(Math.min(1, u)); const ang = -1.2 + k * 1.6, R = 420 - k * 360;
+        pos = new THREE.Vector3(ctr.x + Math.cos(ang) * R, 170 - k * 140, ctr.z + Math.sin(ang) * R)
+          .lerp(new THREE.Vector3(st.x - start.tx * 40 + start.rx * 25, st.y + 22, st.z - start.tz * 40 + start.rz * 25), k * k);
+        look = ctr.clone().setY(10).lerp(st, Math.min(1, k * 1.3)); fov = 50; break;
       }
       case 'startgo': {
-        const st = new THREE.Vector3(start.x, start.y, start.z); const h = new THREE.Vector3(start.tx, 0, start.tz); const r = right(h);
-        if (b < 0.6) { pos = st.clone().addScaledVector(h, 9.5 + (b + 3.2) * 0.25).addScaledVector(r, 2.6).add(up.clone().multiplyScalar(1.9)); look = st.clone().add(up.clone().multiplyScalar(1.3)).addScaledVector(h, -1); fov = 42; }
-        else { const f = focus(sim.orderAt(b).slice(0, 3), b); pos = f.p.clone().addScaledVector(f.h, 11).addScaledVector(right(f.h), 3.5).add(up.clone().multiplyScalar(2.2)); look = f.p.clone().add(up.clone().multiplyScalar(1.2)); fov = 44; }
-        damp = false; break;
+        const st = new THREE.Vector3(start.x, start.y, start.z); const h = new THREE.Vector3(start.tx, 0, start.tz); const r = new THREE.Vector3(-h.z, 0, h.x);
+        pos = st.clone().addScaledVector(h, 10.5).addScaledVector(r, 2.6).add(up.clone().multiplyScalar(1.9));
+        look = st.clone().add(up.clone().multiplyScalar(1.3)).addScaledVector(h, -1); fov = 42; break;
       }
-      case 'track': case 'side': {
-        const f = focus(s.ids, b); const r = right(f.h);
-        const side = s.type === 'side' ? -1 : 1;
-        const d = 8 + Math.min(14, f.spread * 0.6);
-        pos = f.p.clone().addScaledVector(r, side * (d + 2)).addScaledVector(f.h, 3 + Math.sin(u * 3) * 0.6).add(up.clone().multiplyScalar(2.6));
-        look = f.p.clone().addScaledVector(f.h, 1.5).add(up.clone().multiplyScalar(1.1));
-        fov = 42; break;
+      case 'side': {
+        const { c, h, r } = smooth(groupOf(s, b), b, w);
+        pos = c.clone().addScaledVector(r, s.side * s.dist).addScaledVector(h, s.dist * 0.18).add(up.clone().multiplyScalar(2.2 + s.dist * 0.08));
+        look = c.clone().add(up.clone().multiplyScalar(1.1)); fov = s.fov; break;
       }
-      case 'front': case 'final': {
-        const f = focus(s.ids, b); const r = right(f.h);
-        const dist = s.type === 'final' ? 7.5 - u * 1.5 : 7;
-        pos = f.p.clone().addScaledVector(f.h, dist).addScaledVector(r, s.type === 'final' ? 1.4 : -2).add(up.clone().multiplyScalar(s.type === 'final' ? 0.9 : 1.8));
-        look = f.p.clone().add(up.clone().multiplyScalar(1.35)).addScaledVector(f.h, -2);
-        fov = s.type === 'final' ? 38 : 42; break;
+      case 'headon': {
+        const { c, h, r } = smooth(groupOf(s, b), b, w);
+        pos = c.clone().addScaledVector(h, s.dist).addScaledVector(r, 1.5).add(up.clone().multiplyScalar(1.6 + s.dist * 0.06));
+        look = c.clone().add(up.clone().multiplyScalar(1.15)); fov = s.fov; break;
       }
-      case 'chase': {
-        const f = focus(s.ids, b); const r = right(f.h);
-        pos = f.p.clone().addScaledVector(f.h, -7.5).addScaledVector(r, 2.2).add(up.clone().multiplyScalar(3.0));
-        look = f.p.clone().addScaledVector(f.h, 5).add(up.clone().multiplyScalar(1.2));
-        fov = 46; break;
-      }
-      case 'battle': {
-        const f = focus(s.ids, b); const r = right(f.h);
-        // 3/4 front-side angle, off the path, wide enough to frame both runners
-        const side = (Math.floor(s.a * 7) % 2) ? 1 : -1;
-        const d = 11 + Math.min(10, f.spread * 0.7);
-        pos = f.p.clone().addScaledVector(f.h, d * 0.7).addScaledVector(r, side * d * 0.75).add(up.clone().multiplyScalar(2.3));
-        look = f.p.clone().add(up.clone().multiplyScalar(1.1));
-        fov = 42; break;
-      }
-      case 'drone': case 'blimp': {
-        const st = sim.stateAt(b);
-        const lead = st.byId[st.order[0]];
-        const act = st.order.map((id) => st.byId[id]).filter((r) => !r.finished);
-        const c = new THREE.Vector3(); for (const r of act.length ? act : [lead]) c.add(new THREE.Vector3(r.x, r.y, r.z)); c.divideScalar(Math.max(1, act.length));
-        const spread = act.length ? act[0].m - act.at(-1).m : 0;
-        const f = focus([st.order[0]], b);
-        const hgt = s.type === 'blimp' ? 38 + Math.min(50, spread * 0.25) : 20 + Math.min(40, spread * 0.25);
-        const back = s.type === 'blimp' ? 48 : 30 + Math.min(40, spread * 0.25);
-        const tgt = c.clone().lerp(new THREE.Vector3(lead.x, lead.y, lead.z), 0.5);
-        pos = tgt.clone().addScaledVector(f.h, -back).addScaledVector(right(f.h), back * 0.6).add(up.clone().multiplyScalar(hgt));
-        look = tgt; fov = 46; break;
-      }
-      case 'hill': {
-        // fixed camera beside the climb; it pans and zooms to keep the lead climber framed
-        const m = world.anchors.hillM;
-        // up the slope, beside the path, looking back down at the climbers (faces + effort, THE HILL sign behind them)
-        const mid = C.sample(m + 105); const h = new THREE.Vector3(mid.tx, 0, mid.tz); const r = right(h);
-        pos = new THREE.Vector3(mid.x, mid.y, mid.z).addScaledVector(r, 6.5).add(up.clone().multiplyScalar(2.2));
-        const st = sim.stateAt(b);
-        const onHill = st.order.map((id) => st.byId[id]).filter((x) => C.geoOf(x.m) > m - 120 && C.geoOf(x.m) < m + 200 && !x.finished);
-        const tg = onHill.length ? onHill[0] : null;
-        const tgt = tg ? new THREE.Vector3(tg.x, tg.y + 1.1, tg.z) : new THREE.Vector3(mid.x, mid.y + 1, mid.z);
-        look = tgt;
-        const dist = pos.distanceTo(tgt);
-        fov = THREE.MathUtils.clamp(2 * Math.atan(5.5 / dist) * 180 / Math.PI, 12, 50); damp = true; break;
-      }
-      case 'lapboard': {
-        // beyond the board on the far side of the path, looking back at runners passing it
-        const g = world.anchors.lapBoard; const bp = new THREE.Vector3(); g.getWorldPosition(bp);
-        const sb = C.sample(2500 - 25 + 16); const h = new THREE.Vector3(sb.tx, 0, sb.tz); const r = right(h);
-        pos = new THREE.Vector3(sb.x, sb.y, sb.z).addScaledVector(r, -(4.6 + 3)).add(up.clone().multiplyScalar(2.4));
-        const st = sim.stateAt(b);
-        const near = st.order.map((id) => st.byId[id]).filter((x) => x.m > 2350 && x.m < 2600);
-        const tgt = near.length ? new THREE.Vector3(near[0].x, near[0].y + 1.2, near[0].z) : bp.clone().add(up.clone().multiplyScalar(2));
-        look = bp.clone().add(up.clone().multiplyScalar(1.8)).lerp(tgt, 0.45);
-        fov = 46; break;
+      case 'drone': {
+        const { c, h, r } = smooth(groupOf(s, b), b, w * 1.3);
+        pos = c.clone().addScaledVector(h, -s.back).addScaledVector(r, s.side * s.back * 0.5).add(up.clone().multiplyScalar(s.height));
+        look = c.clone().addScaledVector(h, s.back * 0.15); fov = s.fov; break;
       }
       case 'finishcam': {
-        const h = new THREE.Vector3(fin.tx, 0, fin.tz); const r = right(h);
-        const st = sim.stateAt(b);
-        const wid = s.ids?.[0] ?? st.order[0];
-        const rr = st.byId[wid];
+        const h = new THREE.Vector3(fin.tx, 0, fin.tz), r = new THREE.Vector3(-h.z, 0, h.x);
         pos = new THREE.Vector3(fin.x, fin.y, fin.z).addScaledVector(h, 16).addScaledVector(r, -4).add(up.clone().multiplyScalar(2.6));
-        const arch = new THREE.Vector3(fin.x, fin.y + 2.5, fin.z);
-        const tgt = rr && !rr.finished ? new THREE.Vector3(rr.x, rr.y + 1.3, rr.z) : arch;
-        look = arch.clone().lerp(tgt, rr && !rr.finished ? Math.min(0.85, 15 / Math.max(15, rr.distToFinish)) : 0.3);
-        fov = rr && !rr.finished && rr.distToFinish > 30 ? 30 : 40; break;
+        const st = sim.stateAt(Math.max(0, b));
+        const next = st.order.map((id) => st.byId[id]).find((x) => !x.finished);
+        const arch = new THREE.Vector3(fin.x, fin.y + 2.2, fin.z);
+        look = next ? arch.clone().lerp(new THREE.Vector3(next.x, next.y + 1.3, next.z), Math.min(0.8, 18 / Math.max(18, next.distToFinish))) : arch;
+        fov = 34; s.smoothLook = true; break;
       }
       case 'celebrate': {
-        const st = sim.stateAt(b);
+        const st = sim.stateAt(Math.max(0, b));
         const c = new THREE.Vector3(); for (const id of st.order) c.add(new THREE.Vector3(st.byId[id].x, st.byId[id].y, st.byId[id].z)); c.divideScalar(st.order.length);
-        const fh = new THREE.Vector3(fin.tx, 0, fin.tz), fr = right(fh);
-        const a = Math.sin(b * 0.15) * 0.5;
-        pos = c.clone().addScaledVector(fh, -10 * Math.cos(a)).addScaledVector(fr, 10 * Math.sin(a)).add(up.clone().multiplyScalar(2.6));
-        look = c.clone().add(up.clone().multiplyScalar(1.2)); fov = 46; damp = false; break;
-      }
-      case 'photo': {
-        const h = new THREE.Vector3(fin.tx, 0, fin.tz); const r = right(h);
-        pos = new THREE.Vector3(fin.x, fin.y, fin.z).addScaledVector(r, 8.5).add(up.clone().multiplyScalar(1.3));
-        look = new THREE.Vector3(fin.x, fin.y + 1.1, fin.z);
-        fov = 40; damp = false; break;
-      }
-      case 'distracted': {
-        const f = focus(s.ids, b); const r = right(f.h);
-        // the fairground sits between the GPS diversion and the usual course
-        const q = world.anchors.nearestOnRibbon(f.p.x, f.p.z);
-        const side = Math.sign((q[0] - f.p.x) * r.x + (q[1] - f.p.z) * r.z) || 1; const toFair = r.clone().multiplyScalar(side);
-        const el = b - s.a;
-        if (el < 2.6 && funfair) {
-          // FUNFAIR CAM: crane over the fairground, big wheel turning, our hero veering in from the course
-          const wheel = funfair.anchors.rides[0].pos;
-          const k = el / 2.6;
-          const fromCourse = new THREE.Vector3(wheel.x - f.p.x, 0, wheel.z - f.p.z).normalize();
-          // high behind the runner (never outside the park fence), drifting down as they swerve towards the rides
-          pos = f.p.clone().addScaledVector(f.h, -18 + k * 2).addScaledVector(fromCourse, -4).add(up.clone().multiplyScalar(13 - k * 2));
-          look = new THREE.Vector3(wheel.x, f.p.y + 8, wheel.z).lerp(f.p.clone().add(up), 0.45 + k * 0.2);
-          fov = 54; damp = false;
-        } else if (u < 0.62) {
-          // where the runner is gawping: camera on that line so we get the heart eyes + pop
-          const dir = f.h.clone().multiplyScalar(0.55).addScaledVector(toFair, 0.85).normalize();
-          pos = f.p.clone().addScaledVector(dir, 5.2).add(up.clone().multiplyScalar(2.0));
-          look = f.p.clone().add(up.clone().multiplyScalar(1.85));
-          fov = 46;
-        } else {
-          // high and wide from the course side: runner veering off with the rides beyond
-          pos = f.p.clone().addScaledVector(f.h, -12).addScaledVector(toFair, -9).add(up.clone().multiplyScalar(7.5));
-          look = f.p.clone().addScaledVector(toFair, 10).add(up.clone().multiplyScalar(2.5));
-          fov = 52;
-        }
-        break;
+        const fh = new THREE.Vector3(fin.tx, 0, fin.tz), fr = new THREE.Vector3(-fh.z, 0, fh.x);
+        const a = Math.sin((b - s.a) * 0.08) * 0.5;
+        pos = c.clone().addScaledVector(fh, -11 * Math.cos(a)).addScaledVector(fr, 11 * Math.sin(a)).add(up.clone().multiplyScalar(2.8));
+        look = c.clone().add(up.clone().multiplyScalar(1.2)); fov = 44; break;
       }
       default: {
-        const f = focus(s.ids || [], b);
-        pos = f.p.clone().addScaledVector(f.h, -10).add(up.clone().multiplyScalar(4)); look = f.p.clone();
+        const { c, h } = smooth(groupOf(s, b), b, w);
+        pos = c.clone().addScaledVector(h, -12).add(up.clone().multiplyScalar(5)); look = c.clone();
       }
     }
-    return { pos, look, fov, damp };
+    return { pos, look, fov };
   }
 
-  let phase = 0;
   function update(b, dt, shots) {
     const s = shots.find((x) => b >= x.a && b < x.b) || shots.at(-1);
-    const ph = s.type === 'distracted' ? ((b - s.a) < 2.6 ? 0 : (b - s.a) / (s.b - s.a) < 0.62 ? 1 : 2) : 0;
-    const cut = s !== shot || ph !== phase; phase = ph;
-    shot = s;
-    const r = evaluate(s, b, dt);
-    if (!r) return { shot: s, cut };
-    // keep camera above terrain
-    const gy = C.heightAt(r.pos.x, r.pos.z) + 0.8;
-    if (r.pos.y < gy) r.pos.y = gy;
-    if (cut || !sm.init || !r.damp) {
-      cam.pos.copy(r.pos); cam.look.copy(r.look); sm.fov = r.fov; sm.init = true;
-    } else {
-      // damp relative to the moving look target so fast motion doesn't lag
-      const k = 1 - Math.exp(-4.5 * dt);
-      const prevOff = cam.pos.clone().sub(cam.look);
-      const newOff = r.pos.clone().sub(r.look);
-      prevOff.lerp(newOff, k);
-      // the look target is already a smooth function of time: follow it exactly, damp only the framing offset
-      cam.look.copy(r.look);
-      cam.pos.copy(cam.look).add(prevOff);
-      sm.fov += (r.fov - sm.fov) * k;
+    let cut = false;
+    if (s !== shot) {
+      const hard = hardNext || !!s.hard;
+      glide = hard ? null : { from: { pos: camera.position.clone(), quat: camera.quaternion.clone(), fov: camera.fov }, t0: b };
+      cut = hard; hardNext = false; shot = s; smoothLook = null;
     }
-    camera.position.copy(cam.pos); camera.lookAt(cam.look);
-    if (Math.abs(camera.fov - sm.fov) > 0.01) { camera.fov = sm.fov; camera.updateProjectionMatrix(); }
+    const T = evaluate(s, b);
+    const gy = C.heightAt(T.pos.x, T.pos.z) + 1.2; if (T.pos.y < gy) T.pos.y = gy;
+    if (s.smoothLook) { if (!smoothLook || dt <= 0) smoothLook = smoothLook || T.look.clone(); smoothLook.lerp(T.look, 1 - Math.exp(-3 * dt)); T.look.copy(smoothLook); }
+    cam.pos.copy(T.pos); cam.look.copy(T.look);
+    m4.lookAt(T.pos, T.look, up); q.setFromRotationMatrix(m4);
+    let pos = T.pos, quat = q, fov = T.fov;
+    if (glide) {
+      const u = (b - glide.t0) / GLIDE_S;
+      if (u >= 1 || u < 0) glide = null;
+      else {
+        const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep
+        const arc = Math.sin(Math.PI * e) * Math.min(12, glide.from.pos.distanceTo(T.pos) * 0.12);
+        pos = glide.from.pos.clone().lerp(T.pos, e).add(up.clone().multiplyScalar(arc));
+        quat = glide.from.quat.clone().slerp(q, e);
+        fov = glide.from.fov + (T.fov - glide.from.fov) * e;
+      }
+    }
+    camera.position.copy(pos); camera.quaternion.copy(quat);
+    if (Math.abs(camera.fov - fov) > 0.001) { camera.fov = fov; camera.updateProjectionMatrix(); }
     return { shot: s, cut };
   }
-  function reset() { sm.init = false; shot = null; }
-  return { update, reset, evaluate, get shot() { return shot; }, cam };
+  // hard=true: next frame snaps (seek); hard=false: glide from wherever the camera is now (e.g. after the market pause)
+  function reset(hard = true) { shot = null; glide = null; hardNext = !!hard; smoothLook = null; }
+  return { update, reset, evaluate, get shot() { return shot; }, get gliding() { return !!glide; }, cam };
 }
 
 export function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+export const WIDE_SHOTS = new Set(['drone', 'heli']);

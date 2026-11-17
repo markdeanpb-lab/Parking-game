@@ -185,7 +185,8 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
 
   // 7. head-to-heads where the price and the clues disagree; prop bet; multiplier
   const matchups = pickMatchups(R, ids, mus, clues, { ...S, sigma });
-  const { props, outcomes: propOutcomes } = makeProps({ theme, perfs, ids, plan, data, settings: S });
+  const divOpen = !theme.funfair && (mem.diverted ?? 0) < 1; // could a diversion run have been drawn this round?
+  const { props, outcomes: propOutcomes } = makeProps({ theme, perfs, plan, settings: S, rng: R, divOpen });
   const payoutMultiplier = roundNumber === S.rounds ? 2 : 1;
 
   // 8. commentary
@@ -195,7 +196,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const pub = {
     roundId, number: roundNumber, title,
     theme: thInfo,
-    runners, matchups, props, payoutMultiplier,
+    runners, matchups, ...(props.length ? { props } : {}), payoutMultiplier,
     rules: { minStake: S.minStake, maxBetsPerPlayer: S.maxBetsPerPlayer },
     wildcard: !!sel.wildcard,
     ...(sel.wildcard ? { notice: 'WILDCARD ROUND: one of these five was not exactly trying that morning. Read the clues.' } : {}),
@@ -218,13 +219,13 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
       runners: ids.map((id, i) => ({ id, date: perfs[i].date, officialS: perfs[i].officialS, pool: perfs[i].pool, diverted: !!perfs[i].diversions?.length })),
       perfs: Object.fromEntries(ids.map((id, i) => [id, trimPerf(perfs[i])])),
       model: { mus: Object.fromEntries(ids.map((id, i) => [id, Math.round(mus[i] * 10) / 10])), probs: Object.fromEntries(ids.map((id, i) => [id, Math.round(probs[i] * 1000) / 1000])) },
-      clues, hotTips: tips, styleCounts, propOutcomes,
+      clues, hotTips: tips, styleCounts, propOutcomes, divOpen,
       leaks,
     },
   };
 
   // 9. final leak sweep over everything pre-race (belt and braces)
-  ctx.nicknames = runners.map((r) => r.nickname);
+  ctx.nicknames = runners.flatMap((r) => [r.nickname, r.shortName]);
   const problems = checkRound(round, ctx);
   if (problems.length) round.hidden.leaks.push(...problems.map((p) => ({ payload: p })));
 

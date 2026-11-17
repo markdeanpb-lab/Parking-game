@@ -3,7 +3,7 @@
 // "press any key" overlay), ?mute.
 import { connect } from '../shared/net.js';
 import { createAudio } from '../shared/sfx.js';
-import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, oddsText, betOutcome, confetti, fmtTime } from '../shared/ui.js';
+import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, oddsText, betOutcome, clueParts, confetti, fmtTime } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
@@ -190,12 +190,15 @@ function rankOf(players) {
   return rank;
 }
 function renderHud(st) {
-  const show = ['INTRO', 'BETTING', 'RACE'].includes(st.phase) && !(st.phase === 'BETTING' && st.revealed);
+  const show = st.phase === 'BETTING' && !st.revealed;
   hudBottom.classList.toggle('hidden', !show);
   document.body.classList.toggle('no-hud', !show);
   if (!show) { hudBottom.innerHTML = ''; return; }
   const rank = rankOf(st.players);
   const backs = st.phase === 'RACE' ? (st.bets || {}) : {};
+  hudBottom.innerHTML = st.players.map((p) => `<span class="pill ${!p.connected ? 'off' : p.locked ? 'locked' : ''}" data-pid="${p.id}">${avatarHtml(p.avatar, 40)}<b>${esc(p.name)}</b><i>${!p.connected ? '📵' : p.locked ? '🔒 locked' : '🤔'}</i></span>`).join('');
+  return;
+  // eslint-disable-next-line no-unreachable
   hudBottom.innerHTML = st.players.map((p) => {
     let status = '';
     if (!p.connected) status = '<span class="pp-status off">📵 Offline</span>';
@@ -236,7 +239,7 @@ function showSub(item) {
   audio.duck(true);
   const s = el(`<div class="sub"><span class="who ${item.speaker === 'pam' ? 'pam' : 'jeff'}">${item.speaker === 'pam' ? 'PAM' : 'JEFF'}</span><span>${esc(item.text)}</span></div>`);
   subsEl.appendChild(s);
-  const maxSubs = ['RESULTS', 'SCOREBOARD', 'FINALE', 'LOBBY'].includes(S?.phase) ? 1 : 2;
+  const maxSubs = 1; // one commentator line at a time, everywhere
   while (subsEl.children.length > maxSubs) subsEl.firstElementChild.remove();
   const ttl = Math.max(3000, item.text.split(/\s+/).length * 420 + 1500);
   setTimeout(() => { s.classList.add('out'); setTimeout(() => s.remove(), 450); }, ttl);
@@ -260,7 +263,7 @@ function spawnReaction(pid, emoji) {
     x = (r.left + r.width / 2 - sr.left) / sc + (Math.random() - 0.5) * 160;
   } else {
     const idx = S?.players.findIndex((x2) => x2.id === pid) ?? 0;
-    x = 1920 * ((idx + 1) / ((S?.players.length || 1) + 1)) + (Math.random() - 0.5) * 220;
+    x = (idx % 2 === 0 ? 70 : 1790) + (Math.random() - 0.5) * 80; // corners: never over the runners
   }
   const n = el(`<div class="react" style="left:${Math.round(x - 60)}px;--rot:${Math.round((Math.random() - 0.5) * 40)}deg"><span class="e">${esc(emoji)}</span>${p ? avatarHtml(p.avatar, 46) : ''}</div>`);
   reactEl.appendChild(n);
@@ -472,19 +475,16 @@ function introScreen(st) {
   const bail = (st.bailouts || []).map((b) => `${esc(st.players.find((p) => p.id === b.playerId)?.name || '')} got a ${money(b.amount)} bailout from the Bank of Mum &amp; Dad`).join('<br>');
 
   const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${round.theme?.label ? `<div class="theme-badge panel slant grape"><div class="unslant"><span class="tk">THEME</span>${esc(round.theme.label)}</div></div>${round.theme.blurb ? `<div class="tblurb">${esc(round.theme.blurb)}</div>` : ''}` : ''}${Number(round.payoutMultiplier) >= 2 ? '<div class="double-badge outlined">DOUBLE PAYOUT FINALE ×2</div>' : ''}${round.notice ? `<div class="bail panel grape" style="color:#fff">🃏 ${esc(round.notice)}</div><br>` : ''}${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
-  const cardHtml = (r) => `<div class="rcard-wrap anim-left"><div class="rcard panel slant" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 300)}</div><div class="unslant">
-        <div class="nick outlined">${esc(r.nickname)}</div>
-        <div class="tagl">${esc(r.tagline || '')}</div>
-        ${r.intro ? `<div class="introline">“${esc(r.intro)}”</div>` : ''}
-        ${r.publicClue ? `<div class="clue"><span class="k">CLUE</span><span>${clueHtml(r.publicClue)}</span></div>` : ''}
-      </div><div class="lane">LANE ${r.lane}</div><div class="odds-badge"><div class="ol">ODDS</div><div class="ov outlined">${esc(r.odds?.display || '')}</div></div></div></div>`;
+  const cardHtml = (r) => `<div class="l3 anim-left" style="--c1:${esc(r.colour.primary)}"><div class="l3p">${portrait(r, 150)}</div><div class="l3t"><b>${esc(tvName(r))}</b><span>${esc(r.tagline || '')}</span></div><div class="l3o"><small>ODDS</small><span class="num">${esc(r.odds?.display || '')}</span></div></div>`;
   async function showRunner(i) {
     const r = runners[i];
     $$('.intro-dots i', root).forEach((d, j) => d.classList.toggle('on', j === i));
     box.innerHTML = cardHtml(r);
     audio.play('whoosh');
     say(r.intro || `${r.nickname}. ${r.tagline || ''}`, i % 2 ? 'pam' : 'jeff', 3);
-    await waitVoice(tok, 4800, 12000);
+    const cp = clueParts(r.publicClue, 8);
+    if (cp.kicker && !/^…/.test(cp.kicker)) say(`${cp.headline} ${cp.kicker}`, i % 2 ? 'jeff' : 'pam', 2); // the joke lives in the kicker
+    await waitVoice(tok, 4800, 14000);
   }
   async function finish() {
     if (tok.cancelled) return;
@@ -535,14 +535,14 @@ function introScreen(st) {
 // =====================================================================================================
 // BETTING
 // =====================================================================================================
-function runnerCardHtml(r, backers = []) {
+const tvName = (r) => (r.nickname.length <= 18 ? r.nickname : runnerShort(r));
+function runnerCardHtml(r) {
+  const { headline, kicker } = clueParts(r.publicClue, 8);
   return `<div class="rc panel" data-rid="${r.id}">
-    <div class="top stripe" style="--c1:${esc(r.colour.primary)};--c2:${esc(shadeHex(r.colour.primary))}"><div class="lane">${r.lane}</div><div class="rp">${portrait(r, 170)}</div></div>
-    <div class="odds"><span class="num">${esc(r.odds?.display || '')}</span>${r.odds?.decimalText ? `<small>pays ×${esc(r.odds.decimalText)}</small>` : ''}</div>
-    <div class="nick">${esc(r.nickname)}</div>
-    <div class="tagl">${esc(r.tagline || '')}</div>
-    <div class="clue"><span class="k">${esc((r.publicClue?.label || 'Public clue').toUpperCase())} · PUBLIC CLUE</span>${clueHtml(r.publicClue)}</div>
-    ${backers.length ? `<div class="backers">${backers.join('')}</div>` : ''}
+    <div class="top stripe" style="--c1:${esc(r.colour.primary)};--c2:${esc(shadeHex(r.colour.primary))}"><div class="rp">${portrait(r, 170)}</div></div>
+    <div class="odds"><span class="num">${esc(r.odds?.display || '')}</span></div>
+    <div class="nick">${esc(tvName(r))}</div>
+    <div class="clue"><b>${esc(headline)}</b>${kicker ? `<small>${esc(kicker)}</small>` : ''}</div>
   </div>`;
 }
 function shadeHex(hex) {
@@ -550,35 +550,27 @@ function shadeHex(hex) {
   const f = (c) => Math.round(c + (255 - c) * 0.25);
   return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => f(c).toString(16).padStart(2, '0')).join('')}`;
 }
-function matchupsHtml(round) {
-  return (round.matchups || []).map((m) => {
-    const a = runnerById(round, m.a), b = runnerById(round, m.b);
-    if (!a || !b) return '';
-    return `<div class="mu panel slant dark"><div class="unslant" style="display:flex;align-items:center;gap:18px"><span class="lbl">HEAD-TO-HEAD</span>
-      <span class="side"><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(runnerShort(a))} <span class="od">${esc(m.odds.displayA || `×${m.odds.a}`)}</span></span>
-      <span class="vs">VS</span>
-      <span class="side"><i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(runnerShort(b))} <span class="od">${esc(m.odds.displayB || `×${m.odds.b}`)}</span></span></div></div>`;
-  }).join('');
-}
-
 function themeBadge(round) {
   const t = round?.theme;
   const dbl = Number(round?.payoutMultiplier) >= 2;
-  return `${t?.label ? `<div class="theme-badge panel slant grape"><div class="unslant"><span class="tk">THEME</span>${esc(t.label)}</div></div>` : ''}${dbl ? '<div class="double-badge outlined">DOUBLE PAYOUT FINALE ×2</div>' : ''}`;
+  return `${t?.label ? `<div class="theme-badge panel slant grape"><div class="unslant"><span class="tk">THEME</span>${esc(t.label)}</div></div>` : ''}${dbl ? '<div class="double-badge outlined">DOUBLE PAYOUT ×2</div>' : ''}`;
 }
-function propsHtml(round) {
-  return (round.props || []).map((p) => `<div class="mu prop panel slant"><div class="unslant" style="display:flex;align-items:center;gap:16px"><span class="lbl">🎡 SIDE BET</span><span class="ptxt">${esc(p.text)}</span>
-    <span class="od yes">YES ${esc(p.odds?.displayYes || `×${p.odds?.yes}`)}</span><span class="od no">NO ${esc(p.odds?.displayNo || `×${p.odds?.no}`)}</span></div></div>`).join('');
+function stripHtml(round) {
+  const mus = (round.matchups || []).map((m) => {
+    const a = runnerById(round, m.a), b = runnerById(round, m.b);
+    if (!a || !b) return '';
+    return `<span class="si"><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(runnerShort(a))} <em>${esc(m.odds.displayA || `×${m.odds.a}`)}</em> <span class="vs">v</span> <i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(runnerShort(b))} <em>${esc(m.odds.displayB || `×${m.odds.b}`)}</em></span>`;
+  });
+  const props = (round.props || []).map((p) => `<span class="si prop">🎡 ${esc(p.text)} <em>${esc(p.odds?.displayYes || '')}</em></span>`);
+  return [...mus, ...props].filter(Boolean).join('<span class="sep">·</span>');
 }
-
 function bettingScreen(st) {
   const round = st.round;
   const runners = [...round.runners].sort((a, b) => a.lane - b.lane);
   const root = el(`<div class="betting">
     <div class="bet-head"><div class="h outlined">PLACE YOUR BETS!</div><div class="rt">Round ${round.number}/${st.roundsPerGame} · ${esc(round.title)}</div>${themeBadge(round)}<div class="timer num hidden"></div></div>
     <div class="runner-grid n${runners.length}">${runners.map((r) => runnerCardHtml(r)).join('')}</div>
-    <div class="matchups">${matchupsHtml(round)}</div>
-    <div class="props-row">${propsHtml(round)}</div>
+    <div class="bstrip">${stripHtml(round)}</div>
     ${round.notice ? `<div class="notice panel grape">🃏 ${esc(round.notice)}</div>` : ''}
   </div>`);
   screenEl.appendChild(root);
@@ -601,7 +593,9 @@ function bettingScreen(st) {
   ];
   if (Number(round.payoutMultiplier) >= 2) say('Final round, and every payout is doubled! Fortunes will be made. Mostly lost.', 'jeff', 3);
   else if (round.theme?.label) say(`Today's theme: ${round.theme.label}. ${round.theme.blurb || ''}`, 'pam', 2);
-  const tipTimer = setTimeout(() => { const t = tips[Math.floor(Math.random() * tips.length)]; say(t[1], t[0], 1); }, T(12000));
+  const quips = runners.map((r) => ({ r, k: clueParts(r.publicClue, 8).kicker })).filter((x) => x.k && !/^…/.test(x.k));
+  const pick = quips[Math.floor(Math.random() * quips.length)];
+  const tipTimer = setTimeout(() => { if (pick) say(`${runnerShort(pick.r)}: ${pick.k}`, 'pam', 1); else { const t = tips[Math.floor(Math.random() * tips.length)]; say(t[1], t[0], 1); } }, T(12000));
   return { destroy: () => { clearInterval(iv); clearTimeout(tipTimer); } };
 }
 
@@ -859,7 +853,7 @@ function resultsScreen(st) {
             const facts = (x.funFacts || []).filter(Boolean);
             const generic = !x.stravaTitle || /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$/i.test(String(x.stravaTitle).trim()) || /^(run|parkrun)$/i.test(String(x.stravaTitle).trim());
             const box = generic ? (facts[0] ? `<div class="strava fact"><span class="k">DID YOU KNOW?</span>${esc(facts[0])}</div>` : '') : `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>`;
-            const extra = facts[generic ? 1 : 0];
+            const extra = x.punchline || facts[generic ? 1 : 0];
             return box + (extra ? `<div class="ff">${esc(extra)}</div>` : '');
           })()}
           ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'COURSE PB!' : 'PB! 🏅'}</div>` : ''}

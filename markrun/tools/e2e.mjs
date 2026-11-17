@@ -108,14 +108,14 @@ try {
   await pa.click('[data-colour="#2f8cff"]');
   await shot(pa, '02-phoneA-join');
   await pa.click('#joinbtn');
-  await pa.waitForSelector('.hero-title');
+  await pa.waitForSelector('#markbtn');
   await pb.goto(`${BASE}/phone`);
   await pb.waitForSelector('#nm');
   await pb.fill('#nm', 'Jo');
   await pb.click('[data-emoji="🦄"]');
   await pb.click('[data-colour="#ff6fb5"]');
   await pb.click('#joinbtn');
-  await pb.waitForSelector('.hero-title');
+  await pb.waitForSelector('#markbtn');
   // "I'm Mark (the runner)" on phone A: phone B gets an extra hot tip
   await pa.waitForSelector('#markbtn');
   await pa.click('#markbtn');
@@ -126,7 +126,7 @@ try {
 
   // reconnect check in lobby: reload phone A -> still joined (token in localStorage)
   await pa.reload();
-  await pa.waitForSelector('.hero-title');
+  await pa.waitForSelector('#markbtn');
 
   // both ready -> INTRO
   await pa.click('#readybtn');
@@ -138,63 +138,74 @@ try {
   await tv.waitForSelector('.intro .rcard, .betting', { timeout: 30000 });
   await sleep(500);
   await shot(tv, '06-tv-intro-runner');
-  await pa.waitForSelector('.rcard');
-  await shot(pa, '07-phoneA-intro-cards');
+  await pa.waitForSelector('.flow');
+  await shot(pa, '07-phoneA-intro-runner');
 
   for (let round = 1; round <= ROUNDS; round++) {
     const hb = await waitPhase('BETTING', 120000);
     if (SOURCE !== 'fixture' && hb.source !== 'game') throw new Error(`round ${round} did not come from the real game module (source=${hb.source})`);
     console.log(`round ${round}: source=${hb.source} bankrolls=${JSON.stringify(hb.bankrolls)}`);
-    await pa.waitForSelector('#lockbtn:not([disabled])');
     await sleep(400);
     if (round === 1) await shot(tv, '08-tv-betting');
-    // phone A: back runner 1 to win, +50, and a head-to-head pick
-    await pa.click('.rcard[data-rid] [data-win]');
-    await pa.click('.sbet [data-chip="50"]');
-    const pick = await pa.$('.pick[data-mid]');
-    if (pick) await pick.click();
-    // a side bet (prop), if the round has any
-    const prop = await pa.$('.pick[data-yn="yes"]');
-    if (prop) { await prop.click(); if (round === 1) console.log('  prop bet placed'); }
-    await sleep(300);
-    if (round === 1) {
-      await shot(pa, '09-phoneA-slip-top');
-      await pa.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await sleep(200);
-      await shot(pa, '10-phoneA-slip-bottom');
+    // phone A (click-through flow): back runner 1 to win (+50), pick a head-to-head side, a side bet, then review
+    await pa.click('.strip .face:first-child');
+    await pa.click('[data-open="win"]');
+    await pa.click('[data-add="clear"]');
+    await pa.click('[data-add="50"]');
+    if (round === 1) await shot(pa, '09-phoneA-tray');
+    await pa.click('[data-tray="ok"]');
+    if (round === 1) await shot(pa, '10-phoneA-runner-backed');
+    const h2hDot = await pa.$('.strip .sdots i');
+    if (h2hDot) {
+      await h2hDot.click();
+      if (await pa.$('.side[data-open="h2h"]')) {
+        await pa.click('.side[data-open="h2h"]'); await pa.click('[data-tray="ok"]');
+        if (round === 1) await shot(pa, '10b-phoneA-h2h');
+      }
     }
+    // the side bet is the last small dot (before Review), if offered
+    const dots = await pa.$$('.strip .sdots i');
+    if (dots.length) {
+      await dots[dots.length - 1].click();
+      if (await pa.$('.side.yn.yes')) { await pa.click('.side.yn.yes'); await pa.click('[data-tray="ok"]'); if (round === 1) { console.log('  prop bet placed'); await shot(pa, '10c-phoneA-sidebet'); } }
+    }
+    await pa.click('.rvbtn');
+    await pa.waitForSelector('#holdlock');
+    if (round === 1) await shot(pa, '11-phoneA-review');
     // mid-betting reconnect: reload phone A, slip must survive
     if (round === 1) {
       await pa.reload();
-      await pa.waitForSelector('.sbet');
-      const n = await pa.$$eval('.sbet', (x) => x.length);
-      if (n < 1) throw new Error('slip lost after reload');
+      await pa.waitForSelector('.flow');
+      await pa.click('.rvbtn');
+      const n = await pa.$$eval('.rv-line', (x) => x.length);
+      if (n < 2) throw new Error('slip lost after reload');
     }
-    await pa.click('#lockbtn');
-    await pa.waitForSelector('.sheet #yep');
-    if (round === 1) await shot(pa, '11-phoneA-confirm');
-    await pa.click('#yep');
-    await pa.waitForSelector('#waitlist');
+    const hold = async (pg) => {
+      const bx = await (await pg.waitForSelector('#holdlock')).boundingBox();
+      await pg.mouse.move(bx.x + bx.width / 2, bx.y + bx.height / 2);
+      await pg.mouse.down(); await sleep(900); await pg.mouse.up();
+    };
+    await hold(pa);
+    await pa.waitForFunction(() => document.body.innerText.includes('Locked in!'), null, { timeout: 10000 });
     await sleep(300);
     if (round === 1) { await shot(pa, '12-phoneA-locked'); await shot(tv, '13-tv-betting-onelocked'); }
     // TV must not know bets yet
     const leak = await tv.evaluate(() => document.body.innerText.includes('to WIN'));
     if (leak) throw new Error('TV shows bets before everyone locked');
-    // phone B: swipe to the 3rd runner and back it, all in
-    await pb.$eval('#car', (c) => { c.scrollLeft = c.firstElementChild.getBoundingClientRect().width * 2 + 24; });
-    await sleep(300);
-    const cards = await pb.$$('.rcard [data-win]');
-    await cards[Math.min(2, cards.length - 1)].click();
-    await pb.click('.sbet [data-chip="all"]');
-    if (round === 1) await shot(pb, '14-phoneB-slip');
-    await pb.click('#lockbtn');
-    await pb.click('#yep');
+    // phone B: jump to the 3rd runner and back it with the round's MAX
+    await pb.click('.strip .face:nth-child(3)');
+    await pb.click('[data-open="win"]');
+    await pb.click('[data-add="max"]');
+    if (round === 1) await shot(pb, '14-phoneB-max');
+    await pb.click('[data-tray="ok"]');
+    await pb.click('.rvbtn');
+    await hold(pb);
     // reveal
     await tv.waitForSelector('.reveal .spot .sc', { timeout: 20000 });
     await sleep(Math.max(400, 3000 / SPEED));
     if (round === 1) { await shot(tv, '15-tv-reveal'); await shot(pb, '16-phoneB-revealed'); }
     await waitPhase('RACE', 60000);
-    await pa.waitForSelector('.react-grid');
+    await pa.waitForSelector('.reacts');
     // HALFWAY MARKET: both phones get the sheet; A bets on the leader, B on the 2nd
     {
       const t0 = Date.now();

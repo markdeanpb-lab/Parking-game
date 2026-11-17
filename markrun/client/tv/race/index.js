@@ -37,8 +37,9 @@ import { buildWorld, mulberry } from './world.js';
 import { buildCrowd, crowdMembersFromZones } from './crowd.js';
 import { createRunner, disposeRunnerGeometry } from './runner.js';
 import { createSim, fmtTime } from './sim.js';
-import { buildShotList, createDirector, easeInOut } from './director.js';
-import { createHud, ordText, shortOf } from './hud.js';
+import { buildShotList, createDirector, easeInOut, WIDE_SHOTS } from './director.js';
+import { timeAtDistance } from '../../../server/game/raceplan.mjs';
+import { createHud, ordText, shortOf, backerColour } from './hud.js';
 import { buildFunfair } from './funfair.js';
 import { outlineUniforms, disposeMaterialCache, toon, mesh, canvasTexture } from './toon.js';
 import { buildPodium } from './podium.js';
@@ -119,7 +120,7 @@ export function createRaceView(container, opts = {}) {
     timeline = [];
     if (plan) {
       sim = createSim(plan, C, runnersPub);
-      shots = buildShotList({ plan, sim, backedIds, hasDiversion });
+      shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair });
       director = createDirector({ camera, C, sim, world, funfair });
       for (const e of plan.events || []) timeline.push({ at: e.broadcastS, evt: { ...e, kind: 'event' } });
       for (const c of plan.commentary || []) timeline.push({ at: c.broadcastS, evt: { ...c, kind: 'commentary' } });
@@ -228,32 +229,64 @@ export function createRaceView(container, opts = {}) {
       if (pxTall > h * 0.3) vis = false;
       tags.push({ id, x: (proj.x * 0.5 + 0.5) * w, y: (-proj.y * 0.5 + 0.5) * h, visible: vis, pos: st ? st.order.indexOf(id) + 1 : 0, scale: Math.max(0.7, Math.min(1.15, 30 / dist)), dist });
     }
-    // de-overlap (push farther tags upward)
-    tags.sort((a, b) => a.dist - b.dist);
+    // name tags only in wide shots, for the top 3 and backed runners; never stacked (lower position just hides)
+    const wide = mode === 'race' && WIDE_SHOTS.has(director?.shot?.type) && !director?.gliding;
+    const orderNow = st ? st.order : ids;
+    const want = new Set([...orderNow.slice(0, 3), ...backedIds]);
+    tags.sort((a, b) => orderNow.indexOf(a.id) - orderNow.indexOf(b.id));
     const placed = [];
     for (const t of tags) {
+      if (!wide || !want.has(t.id)) t.visible = false;
       if (!t.visible) continue;
-      const tw = (shortOf(pubById[t.id]).length * 12 + 60) * t.scale;
-      for (let k = 0; k < 8; k++) { const hit = placed.find((p) => Math.abs(p.x - t.x) < (p.tw + tw) / 2 && Math.abs(p.y - t.y) < 30 * Math.max(p.scale, t.scale)); if (!hit) break; t.y = hit.y - 31 * Math.max(hit.scale, t.scale); }
-      t.tw = tw;
-      // hide tags whose box (incl. the backer chips above it) would touch the tower, its badges, the top bar or minimap
-      const th = (backedBy[t.id]?.length ? 62 : 34) * t.scale, pad = 12;
-      const box = { l: t.x - tw / 2 - 40 * t.scale, r: t.x + tw / 2, t: t.y - th, b: t.y + 8 };
+      const tw = (shortOf(pubById[t.id]).length * 10 + 50 + (backedBy[t.id]?.length || 0) * 18) * t.scale, th = 26 * t.scale, pad = 10;
+      const box = { l: t.x - tw / 2, r: t.x + tw / 2, t: t.y - th, b: t.y + 6 };
+      if (placed.some((p) => box.l < p.r + 4 && box.r > p.l - 4 && box.t < p.b + 2 && box.b > p.t - 2)) { t.visible = false; continue; }
       if (hudRects().some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) { t.visible = false; continue; }
-      placed.push(t);
+      placed.push(box);
     }
     if (!st) {
       if (mode !== 'race') return { tags };
-      // pre-race: tower in lane order, dots on the start line
-      return { tags, raceS: 0, leaderM: 0, order: ids.map((id) => ({ id, gapText: '', finished: false, posHtml: `<small>L</small>${pubById[id].lane ?? '—'}` })),
-        dots: ids.map((id) => ({ x: startSlots[id].x, z: startSlots[id].z, colour: pubById[id].colour.primary })) };
+      // before the gun: no positions yet, so no tower rows
+      return { tags, raceS: 0, leaderM: 0, map: false, order: ids.map((id) => ({ id, hidden: true, gapText: '' })) };
     }
+    // compact tower: top 3 + backed runners outside the top 3; gaps only in the final km / after finishing, or when a
+    // backed runner is within ~5 s of the place ahead (then shown as the gap to that runner)
+    const finalKm = st.leader.m >= 4000;
+    const order = st.order.map((id, i) => {
+      const r = st.byId[id];
+      const show = i < 3 || backedIds.includes(id);
+      let gapText = finalKm || r.finished ? r.gapText : '';
+      if (!gapText && backedIds.includes(id) && i > 0 && !r.finished) {
+        const ahead = st.byId[st.order[i - 1]];
+        const g = st.raceS - timeAtDistance(sim.byId[st.order[i - 1]].progress, r.m);
+        if (!ahead.finished && g >= 0 && g <= 5) gapText = `↑${g.toFixed(1)}s`;
+      }
+      return { id, gapText, finished: r.finished, hidden: !show };
+    });
     return {
-      raceS: st.raceS, leaderM: st.leader.m, tags,
-      order: st.order.map((id) => ({ id, gapText: st.byId[id].gapText, finished: st.byId[id].finished })),
+      raceS: st.raceS, leaderM: st.leader.m, tags, order, map: WIDE_SHOTS.has(director?.shot?.type),
       dots: st.order.map((id, i) => ({ x: st.byId[id].x, z: st.byId[id].z, colour: pubById[id].colour.primary, lead: i === 0, focus: director?.shot?.ids?.includes(id) })),
     };
   }
+
+  // ---------- spatial backer rings (ground halo in each backing player's colour) ----------
+  const ringGeo = new THREE.RingGeometry(0.78, 1.0, 48); ringGeo.rotateX(-Math.PI / 2);
+  const rings = {};
+  function updateRings() {
+    for (const id of ids) {
+      const g = rings[id] || (rings[id] = new THREE.Group());
+      if (!g.parent) runners[id].root.add(g);
+      for (const c of [...g.children]) { g.remove(c); c.material.dispose(); }
+      (backedBy[id] || []).forEach((name, k) => {
+        const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: backerColour(name), transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+        m.scale.setScalar(1 + k * 0.32); m.position.y = 0.06 + k * 0.01; m.renderOrder = 2; g.add(m);
+      });
+    }
+  }
+  function scaleRings() {
+    for (const id of ids) { const g = rings[id]; if (!g || !g.children.length) continue; const d = camera.position.distanceTo(runners[id].root.position); g.scale.setScalar(THREE.MathUtils.clamp(d * 0.016, 0.9, 3.2)); }
+  }
+  updateRings();
 
   // ---------- shadows follow the action ----------
   function updateSun(target, size) {
@@ -339,24 +372,23 @@ export function createRaceView(container, opts = {}) {
     director.reset();
   }
   const countdowns = [[-3, '3'], [-2, '2'], [-1, '1'], [0, 'GO!']];
+  // short stingers (UI_SPEC: <= 1.5 s, upper third, one at a time)
   function bannerFor(e) {
-    const nick = (id) => pubById[id]?.nickname || id;
     switch (e.type) {
-      case 'lead_change': return ['LEAD CHANGE!', `${nick(e.to)} hits the front`, '#ff3d8b'];
-      case 'overtake': { if (!backedIds.includes(e.by) && !backedIds.includes(e.on) && sim.stateAt(e.broadcastS).order.indexOf(e.by) > 1) return null; return ['OVERTAKE!', `${nick(e.by)} passes ${nick(e.on)}`, '#2e6fe0']; }
-      case 'hill': return [e.lap === 1 ? 'THE HILL!' : 'THE HILL AGAIN!', 'Legs of jelly incoming', '#3aa845'];
-      case 'lap': return ['LAP 2 OF 2', 'One more time round!', '#2e6fe0'];
-      case 'final_stretch': return ['FINAL STRETCH!', 'Here comes the finish', '#ff8a1f'];
-      case 'diversion': return firedBanners.has('div') ? null : (firedBanners.add('div'), ['DISTRACTED!', `${nick(e.who)} has spotted the funfair`, '#b04bff']);
-      case 'finish': return e.place === 1 && !sim.photoFinish ? ['WINNER!', nick(e.who), '#ffb000'] : null;
-      case 'breakaway': return ['BREAKAWAY!', `${nick(e.who)} makes a break`, '#ff3d8b'];
+      case 'lead_change': return ['LEAD CHANGE', '', '#ff3d8b'];
+      case 'overtake': return backedIds.includes(e.by) || backedIds.includes(e.on) ? ['OVERTAKE', '', '#2e6fe0'] : null;
+      case 'hill': return ['THE HILL', '', '#3aa845'];
+      case 'lap': return ['LAP 2', '', '#2e6fe0'];
+      case 'final_stretch': return ['FINAL STRETCH', '', '#ff8a1f'];
+      case 'diversion': return firedBanners.has('div') ? null : (firedBanners.add('div'), ['DISTRACTED!', '', '#b04bff']);
+      case 'finish': return e.place === 1 && !sim.photoFinish ? ['WINNER', '', '#ffb000'] : null;
       default: return null;
     }
   }
   function stepRace(dt) {
     if (freeze > 0) {
       freeze -= dt;
-      if (freeze <= 0) { hud.photo(false); canvas.style.filter = ''; world.anchors.finishArch.visible = true; director.reset(); const w = sim.finishOrder[0]; hud.showBanner('WINNER!', pubById[w]?.nickname || w, '#ffb000', 2.6); }
+      if (freeze <= 0) { hud.photo(false); canvas.style.filter = ''; world.anchors.finishArch.visible = true; director.reset(); hud.showBanner('WINNER', '', '#ffb000'); }
       return;
     }
     const prev = b;
@@ -388,6 +420,7 @@ export function createRaceView(container, opts = {}) {
     backedBy = bb || {};
     backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
     hud.setBackedBy(backedBy);
+    updateRings();
   }
 
   // ---------- seeking (TV reload / resume mid-broadcast) ----------
@@ -478,7 +511,7 @@ export function createRaceView(container, opts = {}) {
       if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
       else applyRace(b, freeze > 0 ? 0 : ddt);
       const shotType = director.shot?.type;
-      updateSun(director.cam.look, shotType === 'drone' || shotType === 'blimp' || shotType === 'heli' ? 160 : 45);
+      updateSun(director.cam.look, WIDE_SHOTS.has(shotType) ? 160 : 70);
     } else if (mode === 'podium' && podium) {
       podium.update(ddt, wall);
       for (const id of ids) runners[id].update(ddt, {});
@@ -492,7 +525,8 @@ export function createRaceView(container, opts = {}) {
       updateSun(new THREE.Vector3(startSlots[ids[0]]?.x ?? 0, 0, startSlots[ids[0]]?.z ?? 0), mode === 'intro' && introState?.idx === -1 ? 160 : 40);
     }
     hudDt += dt;
-    if (noRender) return; // intermediate sub-step: simulation only
+    if (noRender) return;
+    scaleRings(); // intermediate sub-step: simulation only
     world.update(wall);
     funfair?.update(wall);
     const rpos = ids.map((id) => runners[id].root.position);
@@ -521,6 +555,7 @@ export function createRaceView(container, opts = {}) {
   function dispose() {
     disposed = true; cancelAnimationFrame(raf);
     ro?.disconnect(); window.removeEventListener('resize', resize);
+    for (const id in rings) for (const c of rings[id].children) c.material.dispose(); ringGeo.dispose();
     clearPodium();
     for (const id of ids) { scene.remove(runners[id].root); runners[id].dispose(); }
     crowd.dispose(); funfair?.dispose(); dressing.dispose(); world.dispose(); hud.dispose();
@@ -557,7 +592,7 @@ export function createRaceView(container, opts = {}) {
       p = !!p; if (p === paused) return; paused = p;
       if (mode === 'race' && freeze <= 0 && opts.marketOnPause !== false && market) {
         if (p) { marketT = 0; marketBase = 0; hud.market(true, marketText ?? opts.marketText ?? 'Place your halfway bets!'); canvas.style.filter = 'saturate(1.2) contrast(1.06)'; }
-        else { marketT = null; hud.market(false); canvas.style.filter = ''; director.reset(); }
+        else { marketT = null; hud.market(false); canvas.style.filter = ''; director.reset(false); }
       }
     },
     setSpeed(x) { speed = Math.max(0.05, Number(x) || 1); },
@@ -570,7 +605,7 @@ export function createRaceView(container, opts = {}) {
     setBackedBy(bb) {
       applyBackedBy(bb);
       // re-plan the camera (backed-runner preference) unless a race is mid-broadcast
-      if (sim && mode !== 'race') { shots = buildShotList({ plan, sim, backedIds, hasDiversion }); }
+      if (sim && mode !== 'race') { shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair }); }
     },
     dispose,
     /** extras */

@@ -11,7 +11,7 @@ export const TIP_TYPES = {
   hill2_fastest: { polarity: 1, head: 'Insider: quickest up the Hill on lap two', kicks: ['Legs of a mountain goat.', 'The Hill marshal took notes.'] },
   open_fastest: { polarity: 1, head: 'Insider: quickest first kilometre of the field', kicks: ['Off like a scalded cat.', 'First to the 1 km marker.'] },
   last_km_fastest: { polarity: 1, head: 'Insider: strongest last kilometre of the field', kicks: ['Kept the best for last.', 'The funnel volunteers noticed.'] },
-  top3_2k: { polarity: 1, head: 'Insider: top three of the field at 2 km', kicks: ['Right in the mix.', 'Up there early.'] },
+  top3_2k: { polarity: 1, head: 'Insider: top three here at 2 km', kicks: ['Right in the mix.', 'Up there early.'] },
   even_pacer: { polarity: 1, head: 'Insider: the most even two laps here', kicks: ['Paced it like a metronome.'] },
   overtaker: { polarity: 1, head: 'Insider: more overtakes than anyone else', kicks: ['Spent the morning passing people.'] },
   ahead_hill1: { polarity: 1, pair: true, head: 'Insider: over the Hill before {o}', kicks: ['Lap one, and the marshals saw it.', 'Handy if they meet head-to-head.'] },

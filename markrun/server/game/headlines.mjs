@@ -114,8 +114,10 @@ const GROUPS = { week_km: 'training', week_rel: 'training', month_km: 'training'
 // The joke part of a template = everything after its first sentence, trimmed to <= MAX_KICK words (whole sentences only).
 export function kickerFrom(text, cat, rng) {
   let parts = text.split(/(?<=[.!?"])\s+(?=[A-Z"'])/).slice(1);
+  if (process.env.KICK_DEBUG && wc(parts.join(' ')) > MAX_KICK) console.log('TRIM', cat, '|', text);
   while (parts.length > 1 && wc(parts.join(' ')) > MAX_KICK) parts = parts.slice(0, -1);
   let k = parts.join(' ');
+  if ((!k || wc(k) > MAX_KICK) && process.env.KICK_DEBUG) console.log('FALLBACK', cat, '|', text);
   if (!k || wc(k) > MAX_KICK) { const b = FALLBACK_KICK[GROUPS[cat] || 'other']; k = rng ? rng.pick(b) : b[0]; }
   return k;
 }

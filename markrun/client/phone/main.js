@@ -26,6 +26,7 @@ let viewKey = '';
 let step = 0;           // betting flow position
 let tray = null;        // open chip tray: { kind:'win'|'h2h'|'prop', id, pick?, stake }
 let resCard = 0;        // results pager
+let holding = false;    // finger on HOLD TO LOCK: don't re-render under it
 let profile = store.get('markrun.profile', { name: '', avatar: { emoji: AVATAR_EMOJI[Math.floor(Math.random() * 12)], colour: AVATAR_COLOURS[Math.floor(Math.random() * 8)] } });
 
 const vibrate = (p) => { try { navigator.vibrate?.(p); } catch { /* */ } };
@@ -114,7 +115,7 @@ function render() {
   if (!me) { if (fresh) renderJoin(); return; }
   const ph = S.phase;
   if (ph === 'LOBBY') return renderLobby();
-  if (ph === 'INTRO' || ph === 'BETTING') return me.locked || S.revealed ? renderLocked() : renderFlow();
+  if (ph === 'INTRO' || ph === 'BETTING') { if (holding && !me.locked && !S.revealed) return undefined; return me.locked || S.revealed ? renderLocked() : renderFlow(); }
   if (ph === 'RACE') { renderRace(fresh); return renderMarket(); }
   if (ph === 'RESULTS') return renderResults(fresh);
   if (ph === 'SCOREBOARD') return renderScore();
@@ -218,8 +219,17 @@ function steps() {
     { kind: 'review' },
   ];
 }
+// the field at a glance on every betting screen: tap a face to jump to that runner; shortcut to Review & lock
 function dotsHtml(list) {
-  return `<div class="pdots">${list.map((s, i) => `<i class="${i === step ? 'on' : ''} ${s.kind} ${(s.kind === 'runner' && findBet('win', s.id)) || (s.kind === 'h2h' && findBet('h2h', s.id)) || (s.kind === 'prop' && findBet('prop', s.id)) ? 'bet' : ''}" data-go="${i}"></i>`).join('')}</div>`;
+  const faces = list.map((st, i) => {
+    if (st.kind !== 'runner') return '';
+    const r = runnerById(S.round, st.id);
+    const bet = findBet('win', st.id);
+    return `<button class="face ${i === step ? 'on' : ''} ${bet ? 'bet' : ''}" data-go="${i}" aria-label="${esc(runnerShort(r))}"><span class="fp">${portrait(r, 34)}</span><span class="fo">${esc(r.odds?.display || '')}</span></button>`;
+  }).join('');
+  const others = list.map((st, i) => (st.kind === 'runner' || st.kind === 'review' ? '' : `<i class="${i === step ? 'on' : ''} ${findBet(st.kind, st.id) ? 'bet' : ''}" data-go="${i}"></i>`)).join('');
+  const onReview = list[step]?.kind === 'review';
+  return `<div class="strip">${faces}${others ? `<span class="sdots">${others}</span>` : ''}${onReview ? '' : `<button class="rvbtn" data-go="${list.length - 1}">Review ›</button>`}</div>`;
 }
 function clueBlock(c, icon, cls = '') {
   if (!c) return '';
@@ -300,7 +310,7 @@ function wireFlow(list) {
   const go = (d) => { tray = null; step = Math.max(0, Math.min(list.length - 1, step + d)); renderFlow(); };
   app.onclick = (e) => {
     const b = e.target.closest('button, [data-go]'); if (!b) return;
-    if (b.dataset.go) { tray = null; step = Number(b.dataset.go); return renderFlow(); }
+    if (b.dataset.go != null && b.dataset.go !== '') { tray = null; step = Number(b.dataset.go); return renderFlow(); }
     if (b.dataset.nav) return go(Number(b.dataset.nav));
     if (b.dataset.edit) { tray = null; step = 0; return renderFlow(); }
     if (b.dataset.open) { const kind = b.dataset.open; if (kind !== 'win' && findBet(kind, b.dataset.id) && !tray) { const ex = findBet(kind, b.dataset.id); ex.pick = b.dataset.pick; slipChanged(); } openTray(kind, b.dataset.id, b.dataset.pick); return renderFlow(); }
@@ -321,19 +331,19 @@ function wireFlow(list) {
   let x0 = null;
   main.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
   main.addEventListener('touchend', (e) => { if (x0 == null || tray) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1); }, { passive: true });
-  // press-and-hold to lock (0.8 s, fill + haptic)
+  // press-and-hold to lock (0.6 s, fill + haptic)
   const h = $('#holdlock');
   if (h) {
     let t0 = 0, raf = 0;
     const fill = h.querySelector('.fill');
-    const stop = () => { cancelAnimationFrame(raf); t0 = 0; fill.style.width = '0%'; };
+    const stop = () => { cancelAnimationFrame(raf); t0 = 0; holding = false; fill.style.width = '0%'; };
     const tick = () => {
-      const k = Math.min(1, (performance.now() - t0) / 800);
+      const k = Math.min(1, (performance.now() - t0) / 600);
       fill.style.width = `${k * 100}%`;
       if (k >= 1) { stop(); doLock(); return; }
       raf = requestAnimationFrame(tick);
     };
-    h.addEventListener('pointerdown', (e) => { e.preventDefault(); t0 = performance.now(); vibrate(15); raf = requestAnimationFrame(tick); });
+    h.addEventListener('pointerdown', (e) => { e.preventDefault(); holding = true; t0 = performance.now(); vibrate(15); raf = requestAnimationFrame(tick); });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => h.addEventListener(ev, () => { if (t0) { stop(); toast('Keep holding to lock in'); } }));
   }
 }

@@ -29,7 +29,7 @@ G.week_km = ({ f, rng }) => {
     T = ['Only managed {k} km of training that week. Tactical taper or complete surrender?',
       '{k} km in the whole week before. That\'s barely a trip to Tesco and back.',
       'Just {k} km the week before. Resting the legs or resting on his laurels?',
-      'Weekly mileage: {k} km. Some people call that a warm-up. He called it a week.'];
+      'Weekly mileage: {k} km. Some call that a warm-up. He called it a week.'];
     said = `only ran ${v.k} kilometres all week`; interest = 0.65;
   } else if (k < 35) {
     T = ['{k} km in the legs the week before. Respectable. Suspiciously respectable.',
@@ -291,7 +291,7 @@ G.wind = ({ f, rng }) => {
   const g = w.gust_kmh, s = Math.round(w.wind_kmh);
   if ((g != null && g >= 38) || s >= 25) {
     const v = { g: Math.round(g ?? s), s };
-    const WT = ['Gusts up to {g} km/h. Flapping like a bin bag on the Seven Sisters Road.', 'Wind gusting to {g} km/h. Headwind up the Hill, tailwind on the way down. Swings and roundabouts.', 'Gusting {g} km/h. Hold on to your hats. And your dignity.'];
+    const WT = ['Gusts up to {g} km/h. Flapping like a bin bag on the Seven Sisters Road.', 'Wind gusting to {g} km/h. Headwind up the Hill. Swings and roundabouts.', 'Gusting {g} km/h. Hold on to your hats. And your dignity.'];
     if (s >= 20) WT.push('A blustery {s} km/h wind, gusting {g}. Lean runners need not apply.');
     return [{ cat: 'wind', family: 'day', features: ['wind'], text: fill(rng.pick(WT), v), said: 'battled a proper gale', hint: 7, interest: 0.75, factKeys: ['weather'] }];
   }
@@ -302,7 +302,7 @@ G.wind = ({ f, rng }) => {
 G.damp = ({ f, rng }) => {
   const w = f.weather; if (!w) return [];
   if (w.prcp_mm != null && w.prcp_mm >= 0.2) return [{ cat: 'damp', family: 'fluff', features: [], text: fill(rng.pick(['{p} mm of rain that hour. Slippery corners, or lovely cooling drizzle?', 'Rain falling at the start: {p} mm. Puddles on the course. Puddles in the shoes.']), { p: w.prcp_mm }), said: 'got rained on', hint: w.prcp_mm >= 1 ? 3 : 0, interest: 0.55, factKeys: ['weather'] }];
-  if (w.rhum != null && w.rhum >= 92) return [{ cat: 'damp', family: 'fluff', features: [], text: fill(rng.pick(['{h}% humidity. Less a run, more a wade through soup.', 'Humidity at {h}%. The air was basically a damp flannel.', 'Air so damp ({h}% humidity) you could wring it out.']), { h: Math.round(w.rhum) }), said: 'ran through soup', interest: 0.3, factKeys: ['weather'] }];
+  if (w.rhum != null && w.rhum >= 92) return [{ cat: 'damp', family: 'fluff', features: [], text: fill(rng.pick(['{h}% humidity. Less a run, more a wade through soup.', 'Humidity at {h}%. The air was basically a damp flannel.', '{h}% humidity at the start. Air so damp you could wring it out.']), { h: Math.round(w.rhum) }), said: 'ran through soup', interest: 0.3, factKeys: ['weather'] }];
   return [];
 };
 
@@ -337,7 +337,7 @@ G.block = ({ f, rng }) => {
 G.cross = ({ f, rng }) => {
   const X = f.cross_training_7d || {};
   const entries = Object.entries(X);
-  if (!entries.length) return [{ cat: 'cross', family: 'fluff', features: [], text: rng.pick(['No cross-training whatsoever that week. Pure, unfiltered runner.', 'Cross-training that week: none. Doesn\'t own a bike, a swimming cap or a yoga mat. Allegedly.']), said: 'did no cross-training whatsoever', interest: 0.15, factKeys: ['cross_training_7d'] }];
+  if (!entries.length) return [{ cat: 'cross', family: 'fluff', features: [], text: rng.pick(['No cross-training whatsoever that week. Pure, unfiltered runner.', 'Cross-training that week: none. Doesn\'t own a bike or a swimming cap. Allegedly.']), said: 'did no cross-training whatsoever', interest: 0.15, factKeys: ['cross_training_7d'] }];
   const [s, { count, minutes }] = rng.pick(entries);
   const v = { n: words(count), Nw: cap(words(count)), m: minutes, times: count === 2 ? 'twice' : `${words(count)} times` };
   const T = {
@@ -405,14 +405,14 @@ const GROUP = { week_km: 'training', week_rel: 'training', month_km: 'training',
   race_soon: 'diary', race_recent: 'diary', block: 'diary', cross: 'cross' };
 const OPINIONS = {
   training: {
-    pos: ['All those miles. He\'ll fly round.', 'Engine like a diesel lorry. Lump on.', 'That\'s a man in form. Easy money.', 'Proper graft in the bank. He\'s the one.', 'Fit as a flea. Back him.', 'The work is done. Now he collects.'],
-    neg: ['Overcooked. He\'ll be walking the Hill.', 'Legs like lead. Lay him.', 'Not enough in the tank. Swerve.', 'Tired as a Monday. No chance.', 'Undercooked. Pass.', 'Wrong side of the training plan. Avoid.'] },
+    pos: ['He\'ll fly round. Back him.', 'Engine like a diesel lorry. Lump on.', 'That\'s a man in form. Easy money.', 'Trust the process. He\'s the one.', 'Fit as a flea. Back him.', 'The work is done. Now he collects.'],
+    neg: ['He\'ll be walking the Hill.', 'Legs like lead. Lay him.', 'Not enough in the tank. Swerve.', 'Tired as a Monday. No chance.', 'Can\'t see it. Pass.', 'Wrong side of the training plan. Avoid.'] },
   form: {
-    pos: ['Class is permanent. Back him.', 'Bounce-back time. Back him.', 'He\'s the one they all have to beat.', 'Read the form however you like. I like him.'],
+    pos: ['Class is permanent. Back him.', 'Bounce-back time. Back him.', 'He\'s the one they all have to beat.', 'Ignore the form. I like him.'],
     neg: ['Peaked too soon. Sell.', 'Due a bad one. Mark my words.', 'Can\'t keep it up. Lay him.', 'Form is a liar. Swerve.'] },
   prep: {
     pos: ['Perfect preparation. He\'s ready.', 'Fresh as a daisy. He\'ll go well.', 'Smart prep. Clever lad.', 'Rested and raring. Lump on.'],
-    neg: ['Shocking preparation. Rusty as a gate.', 'Wrong prep. He\'ll pay for it on the Hill.', 'Did the wrong thing beforehand. Dead legs.', 'Amateur hour. No thanks.'] },
+    neg: ['Shocking preparation. Rusty as a gate.', 'Wrong prep. The Hill will punish him.', 'Did the wrong thing beforehand. Dead legs.', 'Amateur hour. No thanks.'] },
   weather: {
     pos: ['Loves these conditions. Born for it.', 'Perfect weather for him. Mark my words.', 'He thrives on a morning like this.', 'Weather\'s no excuse. He\'ll go.'],
     neg: ['Hates these conditions. Swerve.', 'Not a day for him. Trust me.', 'That weather will find him out.', 'Wrong weather, wrong runner.'] },
@@ -423,9 +423,9 @@ const OPINIONS = {
     pos: ['Cross-training! Strong as an ox.', 'All-round athlete. Dangerous.', 'Fitness is fitness. Back him.'],
     neg: ['Should\'ve been running instead.', 'Jack of all trades. Master of none.', 'Wrong sport, mate.'] },
 };
-const VOICE = {
-  jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker:', 'Jeff loves him:', 'Jeff swears by him:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff has gone off him:', 'Jeff is waving him away:'] },
-  pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam has a sneaky fancy:', 'Pam, reluctantly:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:', 'Pam, with a sigh:'] },
+const VOICE = { // openers are short so opener + quote fits the 10-word kicker
+  jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker:', 'Jeff loves him:', 'Jeff swears by him:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff\'s gone off him:', 'Jeff waves him away:'] },
+  pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam\'s sneaky fancy:', 'Pam, reluctantly:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:', 'Pam, with a sigh:'] },
 };
 
 // Give every assigned clue a style, balancing roughly thirds across the round, never repeating a wording in the
@@ -463,14 +463,17 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
       const rv = (tipVoices[x.runnerId] ||= new Set());
       let voice = rng.chance(0.55) ? 'jeff' : 'pam';
       if (rv.has(voice) && !rv.has(voice === 'jeff' ? 'pam' : 'jeff')) voice = voice === 'jeff' ? 'pam' : 'jeff';
-      let pool = VOICE[voice][lean].filter((t) => !usedIntros.has(t));
-      if (!pool.length) { voice = voice === 'jeff' ? 'pam' : 'jeff'; pool = VOICE[voice][lean].filter((t) => !usedIntros.has(t)); }
-      if (!pool.length) pool = VOICE[voice][lean];
+      let op = pickOpinion(`op_${GROUP[c.cat]}_${lean}`, OPINIONS[GROUP[c.cat]][lean]);
+      const fitsI = (v, q) => VOICE[v][lean].filter((t) => !usedIntros.has(t) && wc(t) + wc(q) <= MAX_KICK);
+      let pool = fitsI(voice, op);
+      if (!pool.length) { const other = voice === 'jeff' ? 'pam' : 'jeff'; if (fitsI(other, op).length) { voice = other; pool = fitsI(voice, op); } }
+      if (!pool.length) { // fall back to the shortest quote that still gets an unused opener
+        const shortest = [...OPINIONS[GROUP[c.cat]][lean]].sort((q1, q2) => wc(q1) - wc(q2));
+        for (const q of shortest) for (const v of [voice, voice === 'jeff' ? 'pam' : 'jeff']) if (!pool.length && fitsI(v, q).length) { op = q; voice = v; pool = fitsI(v, q); }
+      }
+      if (!pool.length) pool = [[...VOICE[voice][lean]].sort((p1, p2) => wc(p1) - wc(p2))[0]];
       const intro = rng.pick(pool);
       usedIntros.add(intro); rv.add(voice);
-      const bank = OPINIONS[GROUP[c.cat]][lean];
-      const fits = bank.filter((q) => wc(q) + wc(intro) <= MAX_KICK);
-      const op = pickOpinion(`op_${GROUP[c.cat]}_${lean}${fits.length < bank.length ? '_short' : ''}`, fits.length ? fits : bank);
       const kicker = `${intro} "${op}"`;
       const headline = c.headline || c.factSentence || splitFact(c.text).fact;
       text = `${headline} ${kicker}`;

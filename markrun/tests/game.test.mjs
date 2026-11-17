@@ -103,9 +103,23 @@ test('no leaks in 2000 generated rounds (clues, names, intros, odds, matchups)',
     const sess = freshSess();
     for (let k = 1; k <= 8 && rounds < 2000; k++, rounds++) {
       const r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: `leak${s}`, selectTries: 10, wildcardRate: 0.3, funfairRate: 0.3, alternatives: 2 }, rng: 9000 + s * 10 + k });
-      const ctx = { ...leakContext(Object.values(r.hidden.perfs)), raceWords: loadData(hist).raceWords, nicknames: r.public.runners.map((x) => x.nickname) };
+      const ctx = { ...leakContext(Object.values(r.hidden.perfs)), raceWords: loadData(hist).raceWords, nicknames: r.public.runners.flatMap((x) => [x.nickname, x.shortName]) };
       if (r.hidden.leaks.length) problems.push(...r.hidden.leaks.map((l) => JSON.stringify(l)));
       problems.push(...checkRound(r, ctx));
+      // declutter: every clue is a <= 8-word headline + a <= 10-word kicker, and text = headline + ' ' + kicker
+      for (const c of [...r.public.runners.map((x) => x.publicClue), ...Object.values(r.private).flat()]) {
+        if (!(c.headline && c.kicker)) problems.push(`missing headline/kicker: ${c.text}`);
+        else {
+          if (countWords(c.headline) > 8) problems.push(`headline > 8 words: ${c.headline}`);
+          if (countWords(c.kicker) > 10) problems.push(`kicker > 10 words: ${c.kicker}`);
+          if (c.text !== `${c.headline} ${c.kicker}`) problems.push(`text mismatch: ${c.text}`);
+        }
+      }
+      // props: only plausible ones
+      for (const pr of r.public.props || []) {
+        if (pr.id === 'funfair' && !(r.hidden.divOpen || r.public.theme.key === 'funfair')) problems.push('funfair prop offered when no funfair runner was possible');
+        if (!['funfair', 'photo', 'latelead'].includes(pr.id)) problems.push(`unknown prop ${pr.id}`);
+      }
       // the betting-phase commentary must be clean too
       problems.push(...betReactionLines(r, { p1: [{ type: 'win', runnerId: 'r1', stake: 300 }], p2: [] }, P2).flatMap((l) => checkText(l.text, ctx)));
       problems.push(...betRevealOrder(r, { p1: [{ type: 'win', runnerId: 'r2', stake: 300 }, { type: 'prop', propId: 'funfair', pick: 'yes', stake: 10 }], p2: [{ type: 'h2h', matchupId: 'm1', pick: r.public.matchups[0].a, stake: 20 }] }, { p1: 1000, p2: 1000 }, P2)
@@ -281,8 +295,8 @@ test('prop, in-play and multiplier settlement', () => {
   assert.equal(r.public.payoutMultiplier, 2);
   const order = r.racePlan.finishOrder;
   const win = r.public.runners.find((x) => x.id === order[0]);
-  const prop = r.public.props[0];
-  const outcome = r.hidden.propOutcomes[prop.id];
+  const prop = r.public.props?.[0] ?? { id: 'none', odds: { yes: 2, no: 2 } };
+  const outcome = r.hidden.propOutcomes[prop.id] ?? 'yes';
   const ip = inPlayMarket(r);
   assert.equal(ip.atM, 2500);
   assert.deepEqual(ip.standings.map((x) => x.place), [1, 2, 3, 4, 5]);
@@ -296,10 +310,11 @@ test('prop, in-play and multiplier settlement', () => {
   const dbl = (stake, dec) => Math.round(stake * (1 + 2 * (dec - 1)));
   const [w, pr] = res.payouts.p1.bets;
   if (!res.deadHeat) assert.equal(w.returned, dbl(100, win.odds.win));
-  assert.equal(pr.returned, dbl(50, outcome === 'yes' ? prop.odds.yes : prop.odds.no));
+  if (r.public.props?.length) assert.equal(pr.returned, dbl(50, outcome === 'yes' ? prop.odds.yes : prop.odds.no));
+  else assert.equal(pr.returned, 50, 'a bet on a prop that was not offered is refunded');
   const [ipb, pr2] = res.payouts.p2.bets;
   if (!res.deadHeat) assert.equal(ipb.returned, dbl(40, ip.odds[order[0]].win), 'in-play uses the market price, not the client claim');
-  assert.equal(pr2.returned, 0);
+  if (r.public.props?.length) assert.equal(pr2.returned, 0);
   assert.equal(res.payoutMultiplier, 2);
 });
 
@@ -360,4 +375,17 @@ test('generic Strava titles lead with the most entertaining true fact', () => {
     if (p.diversions?.length) assert.match(c.funFacts[0], /funfair|fairground/);
     else if (p.result.pbFlag === 'PB') assert.match(c.funFacts[0], /PB/);
   }
+});
+
+test('reveal punchlines: one short true line per card, never the same shape twice on a screen', () => {
+  const data = loadData(hist);
+  for (let i = 0; i + 5 <= data.perfs.length; i += 5) {
+    const used = new Set();
+    const cards = data.perfs.slice(i, i + 5).map((p) => revealCard('r', p, used));
+    for (const c of cards) assert.ok(c.punchline && countWords(c.punchline) <= 12, c.punchline);
+  }
+  const r = mk({ rng: 99 });
+  const res = settleRound(r, {}, { p1: 1000, p2: 1000 });
+  const shapes = res.reveal.map((x) => x.punchline.replace(/-?\d+(:\d\d)?/g, '#'));
+  assert.equal(new Set(shapes).size, shapes.length);
 });

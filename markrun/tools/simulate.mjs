@@ -79,11 +79,19 @@ for (let s = 0; s < SESSIONS; s++) {
       if (order.indexOf(favSide) < order.indexOf(other)) S.h2hFavWins++;
       S.h2hUnder.push(Math.max(m.odds.a, m.odds.b));
     }
-    // props
-    const pr = P.props[0], outc = H.propOutcomes[pr.id];
-    if (P.theme.key === 'funfair') { S.propFun++; if (outc === 'yes') S.propYesFun++; } else { S.propNon++; if (outc === 'yes') S.propYesNon++; }
-    led('prop_yes', 100, outc === 'yes' ? Math.round(100 * pr.odds.yes) : 0);
-    led('prop_no', 100, outc === 'no' ? Math.round(100 * pr.odds.no) : 0);
+    // props (base rates are measured over ALL eligible rounds, whether or not the prop was offered)
+    if (P.theme.key !== 'funfair') {
+      S.photoN = (S.photoN || 0) + 1; if (plan.summary.winningMarginS <= 2) S.photoY = (S.photoY || 0) + 1;
+      S.lateN = (S.lateN || 0) + 1; if (plan.events.some((e) => e.type === 'lead_change' && e.atM > 4000)) S.lateY = (S.lateY || 0) + 1;
+      if (H.divOpen) { S.propNon++; if (H.runners.some((r) => r.diverted)) S.propYesNon++; }
+    } else { S.propFun++; if (H.propOutcomes.funfair === 'yes') S.propYesFun++; }
+    const pr = P.props?.[0];
+    S.propOffered = (S.propOffered || 0) + (pr ? 1 : 0);
+    if (pr) {
+      const outc = H.propOutcomes[pr.id];
+      led(`prop_${pr.id}_yes`, 100, outc === 'yes' ? Math.round(100 * pr.odds.yes) : 0);
+      led(`prop_${pr.id}_no`, 100, outc === 'no' ? Math.round(100 * pr.odds.no) : 0);
+    }
 
     // win strategies
     const win = (k2, id) => led(k2, 100, id === winner ? Math.round(100 * odds(id)) : 0);
@@ -108,7 +116,7 @@ for (let s = 0; s < SESSIONS; s++) {
 
     // settle with a mixed bet slip to exercise every bet type + the multiplier
     const bets = {
-      p1: [{ type: 'win', runnerId: fav.id, stake: 100 }, { type: 'h2h', matchupId: 'm1', pick: P.matchups[0].a, stake: 50 }, { type: 'prop', propId: pr.id, pick: 'no', stake: 20 }],
+      p1: [{ type: 'win', runnerId: fav.id, stake: 100 }, { type: 'h2h', matchupId: 'm1', pick: P.matchups[0].a, stake: 50 }, ...(pr ? [{ type: 'prop', propId: pr.id, pick: 'no', stake: 20 }] : [])],
       p2: [{ type: 'win', runnerId: R.pick(P.runners).id, stake: 100 }, { type: 'inplay', runnerId: leader, stake: 50, odds: ip.odds[leader].win }],
     };
     const lines = betRevealOrder(round, bets, { p1: 1000, p2: 1000 }, players);
@@ -138,7 +146,7 @@ const report = {
   calibration: { logLoss: (S.logLoss / N).toFixed(3), uniform: (S.logLossU / N).toFixed(3) },
   h2h: { favouriteWins: pct(S.h2hFavWins / S.h2h), underdogDecimalMedian: q(S.h2hUnder, 0.5) },
   halfwayMarket: { leaderWins: pct(S.ipLeaderWins / S.ip), logLoss: (S.ipLogLoss / S.ip).toFixed(3) },
-  props: { funfairYesRate_nonFunfairRounds: pct(S.propYesNon / Math.max(1, S.propNon)), funfairStakesVisitorWins: `${S.propYesFun}/${S.propFun}` },
+  props: { offeredIn: pct(S.propOffered / N), funfairYesRate_whenPlausible: pct(S.propYesNon / Math.max(1, S.propNon)), funfairStakesVisitorWins: `${S.propYesFun}/${S.propFun}`, photoRate: pct(S.photoY / S.photoN), lateLeadRate: pct(S.lateY / S.lateN) },
   strategyROI_100perBet: roi,
   themes: Object.fromEntries(Object.entries(S.themes).map(([k, v]) => [k, pct(v / N)])),
   round1Bands: S.round1Bands, consecutiveBandThemeRepeats: S.bandRepeats, maxPBDaysInAField: S.pbMax,

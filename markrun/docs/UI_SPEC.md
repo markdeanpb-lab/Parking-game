@@ -67,3 +67,39 @@ Every screen does one job. Big buttons sit at the bottom (thumb zone), with prog
 - **Tight shots** only when the clock is slow: the start, the Hill if slowed, the funfair moment, the last 300 m.
 - **Few, consistent shot types**: wide drone, side tracking from distance, head-on telephoto, the finish-line camera. Drop the rotating filler mix (blimp/chase/front/side cycling).
 - **No camera shake**, and no FOV pumping.
+
+## Premium pass (approved by the user; runs after the declutter)
+Source: Fable's re-prioritised review ("make the current loop premium; no big new features").
+- **P1 Finish set-piece:** a locked finish-line camera for the last ~150 m. Slow motion on the line, using the broadcast clock eased equally for all runners. A 3 s replay, then a per-player "MARK WINS 500pp" stamp. 3D + UI.
+- **P2 Transitions and pacing:** one shared wipe plus sting between all phases. Time budgets: intros ≤45 s, reveal ≤20 s, results ≤60 s. Pre-staking allowed during intros. UI.
+- **P3 Sound and haptics for every action:**
+  - chip pitch rises with the stake;
+  - lock-in thunk with a callout;
+  - 10 s timer tick;
+  - final-km music lift;
+  - photo-finish heartbeat;
+  - coin cascade on payouts;
+  - music ducked under the voices, and voices never overlap.
+
+  UI.
+- **P4 Money in the race:** one live "if it ended now" number per player, flashing only on changes. Game (`provisionalNet`) + UI.
+- **P5 One visual and motion system:** the race HUD uses the same fonts, tokens and panels as the menus, one easing curve, 150/400 ms durations, and counting numbers. 3D.
+- **P6 Results choreography:** the winner is flipped last with the punchline, a tug-of-war payout, and avatars on awards. UI.
+- **P7 Bet reveal face-off:** both players' chips on the runner cards, with a CLASH highlight and the biggest stake last. UI.
+- **P8 Start and end of night:**
+  - a cold open greeting the players by name;
+  - an Options button;
+  - one award at a time;
+  - Rematch named after the loser;
+  - a final-round Underdog Special for the trailing player.
+
+  UI + game.
+- **Safeguards:**
+  - runners ≥15% of frame height mid-race;
+  - a priority interrupt for lead changes involving backed runners;
+  - the gap is shown when a backed runner is within 5 s;
+  - a five-face strip plus a "Review & lock" shortcut on the phone;
+  - kickers kept visible or spoken;
+  - simulator re-run after the clue changes.
+
+**Deferred:** Saturday Futures, The Marriage Ledger, "I Remember That One", halfway cash-out/double-down, a pre-recorded voice-over, and new prop types.
