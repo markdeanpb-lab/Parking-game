@@ -1,0 +1,8 @@
+{
+  "_doc": "Manual curation overrides for the importer. novelty/main: run_dates forced into a pool. race_include/race_exclude: Strava activity ids. course_notes: run_date -> note shown after the race.",
+  "novelty": [],
+  "main": [],
+  "race_include": [],
+  "race_exclude": [],
+  "course_notes": { "2023-04-22": "Course diverted around the funfair that week." }
+}

@@ -2,3 +2,7 @@ node_modules/
 *.osm
 .DS_Store
 tests/out/
+markrun/node_modules/
+markrun/data/*.db-wal
+markrun/data/*.db-shm
+markrun/data/session.db*
