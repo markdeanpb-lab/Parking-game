@@ -103,7 +103,7 @@ export function createFallbackRaceView(container, { course, round, plan, speed =
       ctx.fillStyle = run?.colour?.primary || '#fff'; ctx.fillRect(0, 0, W * 0.012, rowH * 0.82);
       ctx.restore();
       ctx.fillStyle = i === 0 ? INK : '#fff';
-      ctx.fillText(`${i + 1}  ${(run?.nickname || p.id).slice(0, 18)}`, lx + W * 0.02, y + rowH * 0.41);
+      ctx.fillText(`${i + 1}  ${(run?.shortName || run?.nickname || p.id).slice(0, 16)}`, lx + W * 0.02, y + rowH * 0.41);
     });
     // clock
     ctx.font = `${Math.round(H * 0.04)}px "Lilita One", sans-serif`; ctx.textAlign = 'left';

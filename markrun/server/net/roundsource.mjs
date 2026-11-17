@@ -28,6 +28,7 @@ async function loadGame() {
 }
 
 export function sourceName() { return game ? 'game' : 'fixture'; }
+loadGame(); // eager: report the real source from the start (and fail loudly in logs at boot, not mid-game)
 
 function fixtureRound(players, roundNumber) {
   const r = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));

@@ -22,16 +22,21 @@ const SOURCE = arg('source', 'auto');
 fs.mkdirSync(OUT, { recursive: true });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'markrun-e2e-'));
-const env = { ...process.env, PORT: '0', MARKRUN_SESSION_DB: path.join(tmp, 'session.db'), MARKRUN_HOST: '127.0.0.1' };
+const RESTART_AFTER = Number(arg('restart-after', 0));
+const env = { ...process.env, PORT: String(arg('port', RESTART_AFTER ? 18790 : 0)), MARKRUN_SESSION_DB: path.join(tmp, 'session.db'), MARKRUN_HOST: '127.0.0.1' };
 if (SOURCE === 'fixture') env.MARKRUN_ROUND_SOURCE = 'fixture';
-const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.mjs', '--fresh'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
-let srvOut = '';
-srv.stdout.on('data', (d) => { srvOut += d; });
-srv.stderr.on('data', (d) => { srvOut += d; });
-const port = await new Promise((res, rej) => {
-  const t = setTimeout(() => rej(new Error(`server did not start:\n${srvOut}`)), 15000);
-  const iv = setInterval(() => { const m = srvOut.match(/MARKRUN_READY port=(\d+)/); if (m) { clearTimeout(t); clearInterval(iv); res(Number(m[1])); } }, 50);
-});
+let srv, srvOut = '';
+async function startServer(fresh) {
+  srvOut = '';
+  srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.mjs', ...(fresh ? ['--fresh'] : [])], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  srv.stdout.on('data', (d) => { srvOut += d; });
+  srv.stderr.on('data', (d) => { srvOut += d; });
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => rej(new Error(`server did not start:\n${srvOut}`)), 15000);
+    const iv = setInterval(() => { const m = srvOut.match(/MARKRUN_READY port=(\d+)/); if (m) { clearTimeout(t); clearInterval(iv); res(Number(m[1])); } }, 50);
+  });
+}
+const port = await startServer(true);
 const BASE = `http://127.0.0.1:${port}`;
 console.log('server on', BASE);
 
@@ -76,6 +81,12 @@ try {
   await tv.waitForSelector('.lobby .qr svg');
   await sleep(600);
   await shot(tv, '01-tv-lobby-empty');
+  // "Refresh Historical Data" confirmation (cancelled: e2e must never go online)
+  await tv.click('[data-refresh]');
+  await tv.waitForSelector('#tvmodal [data-ok]');
+  await sleep(700);
+  await shot(tv, '01b-tv-refresh-confirm');
+  await tv.click('#tvmodal [data-cancel]');
 
   // settings: rounds -> ROUNDS
   for (let i = 0; i < 12; i++) {
@@ -123,7 +134,9 @@ try {
   await shot(pa, '07-phoneA-intro-cards');
 
   for (let round = 1; round <= ROUNDS; round++) {
-    await waitPhase('BETTING', 120000);
+    const hb = await waitPhase('BETTING', 120000);
+    if (SOURCE !== 'fixture' && hb.source !== 'game') throw new Error(`round ${round} did not come from the real game module (source=${hb.source})`);
+    console.log(`round ${round}: source=${hb.source} bankrolls=${JSON.stringify(hb.bankrolls)}`);
     await pa.waitForSelector('#lockbtn:not([disabled])');
     await sleep(400);
     if (round === 1) await shot(tv, '08-tv-betting');
@@ -194,13 +207,31 @@ try {
         await sleep(150);
       }
       if ((await health()).phase !== 'RESULTS') break;
-      await sleep(Math.max(900, 9000 / SPEED));
+      if (round === 1 && stages[i] === 'payouts') {
+        await pa.waitForSelector('.net-big', { timeout: 10000 });
+        await Promise.all([shot(pa, '21-phoneA-payout'), shot(pb, '22-phoneB-payout')]);
+        await sleep(Math.max(1500, 22000 / SPEED));
+      } else await sleep(Math.max(900, 9000 / SPEED));
       if (round === 1) await shot(tv, `20-tv-results-${i}-${stages[i]}`);
-      if (round === 1 && stages[i] === 'payouts') { await pa.waitForSelector('.net-big'); await shot(pa, '21-phoneA-payout'); await shot(pb, '22-phoneB-payout'); }
     }
     await waitPhase('SCOREBOARD', 120000);
     await sleep(800);
     if (round === 1) { await shot(tv, '23-tv-scoreboard'); await shot(pa, '24-phoneA-scoreboard'); }
+    if (round === RESTART_AFTER) {
+      const before = await health();
+      console.log(`RESTART TEST: killing host during SCOREBOARD of round ${round}`, JSON.stringify(before));
+      srv.kill('SIGKILL');
+      await sleep(1500);
+      const p2 = await startServer(false);
+      if (p2 !== port) throw new Error(`restarted on a different port ${p2}`);
+      const after = await waitPhase('SCOREBOARD', 20000);
+      console.log('RESTART TEST: host back', JSON.stringify(after));
+      if (JSON.stringify(after.bankrolls ?? after.players ?? null) !== JSON.stringify(before.bankrolls ?? before.players ?? null)) throw new Error('session state changed across restart');
+      await pa.waitForSelector('#readybtn', { timeout: 30000 });
+      await sleep(3000); // phones/TV reconnect with their tokens
+      await shot(tv, `restart-tv-after-round${round}`);
+      await shot(pa, `restart-phoneA-after-round${round}`);
+    }
     // ready up on both phones -> next round / finale
     await pa.waitForSelector('#readybtn');
     await pa.click('#readybtn');

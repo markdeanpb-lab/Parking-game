@@ -46,7 +46,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, phase: game.s.phase, round: game.s.roundNumber, players: game.s.players.length, source: rounds.sourceName(), joinUrl, tvUrl }));
+    return res.end(JSON.stringify({ ok: true, phase: game.s.phase, round: game.s.roundNumber, players: game.s.players.length, bankrolls: game.s.players.map((p) => [p.name, p.bankroll]), history: (game.s.history || []).length, source: rounds.sourceName(), joinUrl, tvUrl }));
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
   if (url.pathname.startsWith('/ws')) return notFound(res);

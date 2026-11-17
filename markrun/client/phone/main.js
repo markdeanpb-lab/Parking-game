@@ -195,8 +195,8 @@ function renderBottomReady(phase) {
   const waiting = S.players.filter((p) => !p.ready && p.id !== me.id).map((p) => p.name);
   let label, show = true;
   if (phase === 'LOBBY') label = me.ready ? "✓ READY — waiting…" : "I'M READY ▶";
-  else if (phase === 'RESULTS') { show = S.resultsStage >= 3; label = me.ready ? '✓ READY' : 'READY FOR NEXT ROUND ▶'; }
-  else if (phase === 'SCOREBOARD') label = me.ready ? '✓ READY' : (S.roundNumber >= S.roundsPerGame ? 'SHOW THE CHAMPION ▶' : 'READY FOR NEXT ROUND ▶');
+  else if (phase === 'RESULTS') { show = S.resultsStage >= 3; label = me.ready ? '✓ READY' : 'NEXT ROUND ▶'; }
+  else if (phase === 'SCOREBOARD') label = me.ready ? '✓ READY' : (S.roundNumber >= S.roundsPerGame ? 'SHOW THE CHAMPION ▶' : 'NEXT ROUND ▶');
   else if (phase === 'FINALE') label = me.ready ? '✓ READY' : 'PLAY AGAIN ↻';
   if (!show) { bb.innerHTML = ''; return; }
   const sum = me.ready && waiting.length ? `<div class="summary"><span>Waiting for ${esc(waiting.join(' & '))}…</span></div>` : '';

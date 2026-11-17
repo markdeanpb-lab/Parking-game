@@ -216,3 +216,27 @@ test('static server: routes, redirect, no path traversal, data files', async () 
   await stop(srv);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('"Refresh Historical Data" only runs in the lobby and blocks starting while it runs', async () => {
+  let release;
+  const calls = [];
+  const fake = { ...rounds, runRefresh: ({ onProgress }) => { calls.push(1); onProgress('parkrun', 'checking'); return new Promise((r) => { release = () => r({ ok: true }); }); } };
+  const g = new Game({ state: newSessionState(), rounds: fake, timeScale: 1000 });
+  await g.join({ name: 'Mark' });
+  const lines = [];
+  const p = g.refreshData((step, msg) => lines.push(`${step}:${msg}`));
+  await tick();
+  assert.equal(g.s.refreshing, true);
+  assert.equal(g.commonView().refreshing, true);
+  await assert.rejects(g.refreshData(() => {}), /already running/);
+  await assert.rejects(g.start(), /refreshing/);
+  release();
+  assert.equal((await p).ok, true);
+  assert.equal(g.s.refreshing, false);
+  assert.deepEqual(lines, ['parkrun:checking']);
+  await g.start();
+  assert.equal(g.s.phase, 'INTRO');
+  await assert.rejects(g.refreshData(() => {}), /only allowed in the lobby/);
+  assert.equal(calls.length, 1);
+  g.dispose();
+});

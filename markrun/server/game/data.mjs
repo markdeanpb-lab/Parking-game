@@ -3,8 +3,18 @@ const cache = new WeakMap();
 
 const j = (s, d = null) => { if (s == null) return d; try { return JSON.parse(s); } catch { return d; } };
 
+// Cache is keyed on the DB handle AND the last ingest stamp, so a Refresh Historical Data run is picked up immediately.
 export function loadData(hist) {
-  if (cache.has(hist)) return cache.get(hist);
+  let ver = '';
+  try { ver = hist.prepare("SELECT value FROM meta WHERE key='last_ingest'").get()?.value ?? ''; } catch { /* no meta table */ }
+  const hit = cache.get(hist);
+  if (hit && hit.__ver === ver) return hit;
+  const data = loadDataUncached(hist);
+  Object.defineProperty(data, '__ver', { value: ver });
+  cache.set(hist, data);
+  return data;
+}
+function loadDataUncached(hist) {
   const perfRows = hist.prepare(`SELECT p.*, r.event_number, r.position, r.time_text, r.age_grade, r.pb_flag
     FROM performances p JOIN parkrun_results r USING (run_date) ORDER BY p.run_date`).all();
   const factRows = hist.prepare('SELECT run_date, key, value, basis, refs FROM facts').all();
@@ -40,7 +50,6 @@ export function loadData(hist) {
     hasDiversions: hasDiv,
     raceWords: raceDenyWords(factRows),
   };
-  cache.set(hist, data);
   return data;
 }
 

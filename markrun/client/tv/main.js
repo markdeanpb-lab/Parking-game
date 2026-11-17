@@ -224,7 +224,8 @@ function showSub(item) {
   audio.duck(true);
   const s = el(`<div class="sub"><span class="who ${item.speaker === 'pam' ? 'pam' : 'jeff'}">${item.speaker === 'pam' ? 'PAM' : 'JEFF'}</span><span>${esc(item.text)}</span></div>`);
   subsEl.appendChild(s);
-  while (subsEl.children.length > 2) subsEl.firstElementChild.remove();
+  const maxSubs = ['RESULTS', 'SCOREBOARD', 'FINALE', 'LOBBY'].includes(S?.phase) ? 1 : 2;
+  while (subsEl.children.length > maxSubs) subsEl.firstElementChild.remove();
   const ttl = Math.max(3000, item.text.split(/\s+/).length * 420 + 1500);
   setTimeout(() => { s.classList.add('out'); setTimeout(() => s.remove(), 450); }, ttl);
   log({ type: 'line', text: item.text, speaker: item.speaker });
@@ -515,9 +516,9 @@ function matchupsHtml(round) {
     const a = runnerById(round, m.a), b = runnerById(round, m.b);
     if (!a || !b) return '';
     return `<div class="mu panel slant dark"><div class="unslant" style="display:flex;align-items:center;gap:18px"><span class="lbl">HEAD-TO-HEAD</span>
-      <span class="side"><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(a.nickname)} <span class="od">${esc(m.odds.displayA || `×${m.odds.a}`)}</span></span>
+      <span class="side"><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(runnerShort(a))} <span class="od">${esc(m.odds.displayA || `×${m.odds.a}`)}</span></span>
       <span class="vs">VS</span>
-      <span class="side"><i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(b.nickname)} <span class="od">${esc(m.odds.displayB || `×${m.odds.b}`)}</span></span></div></div>`;
+      <span class="side"><i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(runnerShort(b))} <span class="od">${esc(m.odds.displayB || `×${m.odds.b}`)}</span></span></div></div>`;
   }).join('');
 }
 
@@ -621,6 +622,7 @@ function raceScreen(st) {
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }
     document.body.classList.add('racing');
+    if (raceViewKind === '3d') root.querySelector('.live')?.remove(); // the 3D HUD has its own lap/distance chips
     if (raceViewKind !== '3d') { // the 3D broadcast has its own pre-roll countdown (horn plays on GO)
       audio.play('horn');
       setTimeout(() => audio.play('crowd', { dur: 3, peak: 0.25 }), 300);
@@ -710,7 +712,7 @@ function resultsScreen(st) {
           <div class="meta">${esc(meta)}${x.finsburyNumber ? ` · Finsbury run #${x.finsburyNumber}` : ''}</div>
           ${x.stravaTitle ? `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>` : ''}
           <div class="facts">${facts}</div>
-          ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'FINSBURY PB! 🏅' : 'PB! 🏅'}</div>` : ''}
+          ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'COURSE PB!' : 'PB! 🏅'}</div>` : ''}
           <div class="place">${ordinalHtml(f?.place || i + 1)}</div>
         </div></div>`;
     }).join('')}</div>`;
@@ -725,7 +727,7 @@ function resultsScreen(st) {
       if (i === 0 && x?.dateText) say(`The winner, ${r?.nickname}, was Mark on ${x.dateText}.`, 'jeff', 2);
       await sleepT(1900, t);
     }
-    if (res.archetype?.label) {
+    if (false) {
       root.appendChild(el(`<div class="archetype"><div class="arch panel yellow anim-pop" style="padding:12px 30px"><span class="display" style="font-size:34px">${esc(res.archetype.label)}</span>${res.archetype.blurb ? ` <span style="font-size:24px">— ${esc(res.archetype.blurb)}</span>` : ''}</div></div>`));
     }
     await waitVoice(t, 9000, 15000);
@@ -734,7 +736,8 @@ function resultsScreen(st) {
 
   async function stageClues(s) {
     const t = tok;
-    const items = (res.clueReview || []).filter((c) => c.verdict !== 'neutral' || c.quip).slice(0, 10);
+    const all = res.clueReview || [];
+    const items = [...all.filter((c) => c.verdict !== 'neutral'), ...all.filter((c) => c.verdict === 'neutral')].slice(0, 8);
     if (!items.length) { root.innerHTML = ''; await sleepT(300, t); done(2); return; }
     const clueText = new Map((s.clues || []).map((c) => [c.id, c]));
     root.innerHTML = head('CLUE POST-MORTEM', 'Useful… or a red herring? 🐟') + `<div class="clue-list">${items.map((c) => {
@@ -816,10 +819,10 @@ function resultsScreen(st) {
     const t = tok;
     const awards = res.awards || [];
     if (!awards.length && !res.archetype?.label) { await sleepT(200, t); done(4); return; }
-    root.innerHTML = head('ROUND AWARDS', '🏆') + `<div class="awards">${awards.map((a) => {
+    root.innerHTML = head('ROUND AWARDS', '🏆') + `<div class="awards">${res.archetype?.label ? `<div class="arch panel yellow anim-pop"><div class="al display">${esc(res.archetype.label)}</div><div class="ab">${esc(res.archetype.blurb || '')}</div></div>` : ''}${awards.map((a) => {
       const p = s.players.find((x) => x.id === a.playerId);
       return `<div class="award panel slant ${p ? '' : 'yellow'}" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="unslant" style="display:flex;align-items:center;gap:28px"><span class="trophy">🏆</span>${p ? avatarHtml(p.avatar, 84) : ''}<div><div class="at outlined white thin">${esc(a.title)}</div><div class="ax" style="color:${p ? '#fff' : 'var(--ink)'}">${esc(a.text || '')}</div></div></div></div>`;
-    }).join('')}${res.archetype?.label ? `<div class="arch panel yellow anim-pop" style="margin-top:20px"><div class="al display">${esc(res.archetype.label)}</div><div class="ab">${esc(res.archetype.blurb || '')}</div></div>` : ''}</div>`;
+    }).join('')}</div>`;
     for (const a of $$('.award', root)) { if (t.cancelled) return; a.classList.add('show'); audio.play('fanfare'); await sleepT(1500, t); }
     if (awards[0]) say(`${awards[0].title}! ${awards[0].text || ''}`, 'jeff', 2);
     await waitVoice(t, 6500, 12000);
@@ -832,6 +835,7 @@ function resultsScreen(st) {
     tok = makeToken();
     shownStage = s.resultsStage;
     voice.clear();
+    subsEl.innerHTML = '';
     const name = s.resultStages[s.resultsStage];
     log({ type: 'results-stage', stage: name });
     if (name !== 'order' && raceView) disposeRaceView();
