@@ -8,7 +8,7 @@ import QRCode from 'qrcode';
 import { serveStatic, notFound } from './net/static.mjs';
 import { pickLanAddress, lanCandidates } from './net/lan.mjs';
 import { Game, newSessionState } from './net/game.mjs';
-import { attachHub, isLoopback } from './net/hub.mjs';
+import { attachHub, isTrustedLocal, setTrustLoopback } from './net/hub.mjs';
 import crypto from 'node:crypto';
 import { loadSession, saveSession, clearSession } from './net/persist.mjs';
 import * as rounds from './net/roundsource.mjs';
@@ -45,7 +45,7 @@ const info = { roundSource: 'unknown' };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/') { // the host's own browser goes to the TV (with its key); anyone else is probably a phone
-    res.writeHead(302, { Location: isLoopback(req.socket.remoteAddress) ? `/tv?key=${tvKey}` : '/phone' });
+    res.writeHead(302, { Location: isTrustedLocal(req) ? `/tv?key=${tvKey}` : '/phone' });
     return res.end();
   }
   if (url.pathname === '/qr.svg') {
@@ -64,7 +64,12 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, LISTEN, async () => {
   const port = server.address().port;
   const host = pickLanAddress(arg('host') || process.env.MARKRUN_HOST);
-  const base = `http://${host}:${port}`;
+  // Cloud hosting (e.g. GitHub Codespaces): advertise the public https address instead of a LAN IP.
+  const cs = process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
+    ? `https://${process.env.CODESPACE_NAME}-${port}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}` : '';
+  const publicUrl = String(arg('public-url') || process.env.MARKRUN_PUBLIC_URL || cs).replace(/\/+$/, '');
+  const base = publicUrl || `http://${host}:${port}`;
+  if (publicUrl) setTrustLoopback(false);
   tvUrl = `${base}/tv`;
   joinUrl = `${base}/phone`;
   qrSvg = await QRCode.toString(joinUrl, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', color: { dark: '#14183cff', light: '#ffffffff' } });
@@ -72,7 +77,10 @@ server.listen(PORT, LISTEN, async () => {
   const others = lanCandidates().filter((c) => c.address !== host).map((c) => `${c.address} (${c.name})`);
   console.log('');
   console.log('  ███ MARKRUN host is up ███');
-  console.log(`  TV  (open on the computer driving the telly):  http://localhost:${port}/   or on a smart TV: ${tvUrl}?key=${tvKey}`);
+  if (publicUrl) {
+    console.log(`  ONLINE MODE - open this on the computer plugged into the TV (keep it private, it contains the TV key):`);
+    console.log(`  TV:  ${tvUrl}?key=${tvKey}`);
+  } else console.log(`  TV  (open on the computer driving the telly):  http://localhost:${port}/   or on a smart TV: ${tvUrl}?key=${tvKey}`);
   console.log(`  Phones join at:                                ${joinUrl}   (or scan the QR on the TV)`);
   if (others.length) console.log(`  Wrong network? Other addresses: ${others.join(', ')}  -> restart with --host <ip>`);
   console.log(`  Session: ${saved ? `resumed (${game.s.phase}, round ${game.s.roundNumber}, ${game.s.players.length} players)` : 'new'}  ·  Ctrl+C to stop`);

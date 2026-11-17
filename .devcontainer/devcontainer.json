@@ -1,0 +1,8 @@
+{
+  "name": "MARKRUN",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "postCreateCommand": "cd markrun && npm install && npm run build",
+  "forwardPorts": [8080],
+  "portsAttributes": { "8080": { "label": "MARKRUN", "onAutoForward": "silent" } },
+  "customizations": { "codespaces": { "openFiles": ["markrun/PLAY_ONLINE.md"] } }
+}

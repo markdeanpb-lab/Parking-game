@@ -5,7 +5,13 @@ import { WebSocketServer } from 'ws';
 import { GameError, REACTIONS } from './game.mjs';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
-export const isLoopback = (addr) => LOOPBACK.has(String(addr || ''));
+let trustLoopback = true;
+// Online/cloud mode: the hosting proxy connects from loopback, so loopback proves nothing - require the TV key.
+export function setTrustLoopback(v) { trustLoopback = !!v; }
+export const isLoopback = (addr) => trustLoopback && LOOPBACK.has(String(addr || ''));
+// A request relayed by a proxy (it carries forwarding headers) is never treated as the host's own browser.
+export const isTrustedLocal = (req) => isLoopback(req.socket.remoteAddress)
+  && !req.headers['x-forwarded-for'] && !req.headers['x-forwarded-host'] && !req.headers['forwarded'];
 
 export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKey = null } = {}) {
   const claims = new Map(); // reqId -> { c, playerId, timer }
@@ -35,7 +41,7 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKe
   });
 
   wss.on('connection', (ws, req) => {
-    const c = { ws, role: null, playerId: null, lastKey: null, alive: true, reactAt: [] , ip: req.socket.remoteAddress };
+    const c = { ws, role: null, playerId: null, lastKey: null, alive: true, reactAt: [] , ip: req.socket.remoteAddress, local: isTrustedLocal(req) };
     clients.add(c);
     ws.on('pong', () => { c.alive = true; });
     ws.on('message', async (data) => {
@@ -69,7 +75,7 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKe
     if (m.t === 'hello') {
       if (m.role === 'tv') {
         // the TV role is powerful (settings, kicks, race plan): only the host's own browser or a holder of the TV key
-        if (!isLoopback(c.ip) && !(tvKey && m.key === tvKey)) {
+        if (!c.local && !(tvKey && m.key === tvKey)) {
           send(c, { t: 'error', code: 'tv_auth', msg: 'This screen is not authorised as the TV. Open the TV link printed in the host console (it includes ?key=…).' });
           return undefined;
         }
