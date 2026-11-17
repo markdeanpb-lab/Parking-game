@@ -474,7 +474,7 @@ export class Game extends EventEmitter {
       const st = Math.floor(Number(stake));
       if (!Number.isFinite(st) || st < minStake) throw new GameError(`Minimum stake is ${minStake}.`);
       if (st > free) throw new GameError(`You only have ${free} left.`);
-      this.s.bets[playerId] = [...bets, { type: 'inplay', runnerId, stake: st, odds: o.win, display: o.display }];
+      this.s.bets[playerId] = [...bets, { type: 'inplay', runnerId, stake: st, odds: o.win, lockedOdds: o.win, display: o.display }];
       this.changed();
     });
   }
