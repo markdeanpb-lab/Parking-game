@@ -424,6 +424,14 @@ export class Game extends EventEmitter {
     return out;
   }
 
+  allClues() {
+    const r = this.s.round;
+    if (!r) return [];
+    const out = r.public.runners.filter((x) => x.publicClue).map((x) => ({ ...x.publicClue, runnerId: x.id, owner: 'public' }));
+    for (const [pid, list] of Object.entries(r.private || {})) for (const c of list || []) out.push({ ...c, owner: pid });
+    return out;
+  }
+
   commonView() {
     const s = this.s;
     const showRound = s.round && s.phase !== 'LOBBY';
@@ -444,6 +452,7 @@ export class Game extends EventEmitter {
       revealed: !!s.revealed,
       bets: s.revealed ? Object.fromEntries(s.players.map((p) => [p.id, s.bets[p.id] || []])) : null,
       results: showResults ? s.results : null,
+      clues: showResults ? this.allClues() : null, // after the race every clue (incl. private ones) can be reviewed
       resultsStage: s.phase === 'RESULTS' ? s.resultsStage : RESULT_STAGES.length,
       resultStages: RESULT_STAGES,
       history: s.history,

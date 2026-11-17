@@ -1,0 +1,425 @@
+// MARKRUN 3D race broadcast (three.js). See README notes at the bottom of this file for the shell-facing API.
+import * as THREE from 'three';
+import { buildCourse, PATH_W } from './course.js';
+import { buildWorld, mulberry } from './world.js';
+import { buildCrowd, crowdMembersFromZones } from './crowd.js';
+import { createRunner, disposeRunnerGeometry } from './runner.js';
+import { createSim, fmtTime } from './sim.js';
+import { buildShotList, createDirector, easeInOut } from './director.js';
+import { createHud, ordText } from './hud.js';
+import { buildFunfair } from './funfair.js';
+import { outlineUniforms, disposeMaterialCache, toon, mesh, canvasTexture } from './toon.js';
+import { buildPodium } from './podium.js';
+
+const PRE_ROLL = 8.5; // broadcast seconds of helicopter + start line before the gun (b runs from -PRE_ROLL)
+
+export function createRaceView(container, opts = {}) {
+  const { course, park, round, plan } = opts;
+  const backedBy = opts.backedBy || {};
+  const backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
+  const runnersPub = [...(round?.runners || [])].sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0));
+  const hasDiversion = !!plan?.runners?.some((r) => r.diversions && r.diversions.length);
+
+  // ---------- renderer / scene ----------
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, opts.maxPixelRatio ?? 1.5));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const canvas = renderer.domElement;
+  canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
+  if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+  container.appendChild(canvas);
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xcdeeff, 700, 3200);
+  const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.3, 9000);
+  const hemi = new THREE.HemisphereLight(0xdff0ff, 0x8fc070, 1.45); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff3dd, 2.3);
+  const sunDir = new THREE.Vector3(-0.45, 0.82, 0.38).normalize();
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
+  scene.add(sun); scene.add(sun.target);
+
+  // ---------- world ----------
+  const C = buildCourse(course, park, plan);
+  const world = buildWorld(scene, C, { course, park, hasFunfair: hasDiversion });
+  let funfair = null;
+  if (hasDiversion) {
+    const d = plan.runners.find((r) => r.diversions?.length).diversions[0];
+    const div = C.diversions[plan.runners.find((r) => r.diversions?.length).id][0];
+    funfair = buildFunfair(scene, C, world, div || d);
+  }
+  const crowdMembers = crowdMembersFromZones(C, world.anchors.crowdZones, 5, world.onPath);
+  if (funfair) crowdMembers.push(...funfair.crowd.map((m) => ({ ...m, zone: 'fair' })));
+  // one instanced crowd per zone so off-screen clusters are frustum-culled
+  const byZone = new Map(); for (const m of crowdMembers) { const k = m.zone ?? 'x'; if (!byZone.has(k)) byZone.set(k, []); byZone.get(k).push(m); }
+  const crowds = [...byZone.values()].map((list) => buildCrowd(scene, list));
+  const crowd = { update: (...a) => crowds.forEach((c) => c.update(...a)), dispose: () => crowds.forEach((c) => c.dispose()) };
+
+  // ---------- runners ----------
+  const sim = createSim(plan, C, runnersPub);
+  const runners = {};
+  for (const r of runnersPub) { const rr = createRunner(r); runners[r.id] = rr; scene.add(rr.root); }
+  const ids = runnersPub.map((r) => r.id);
+  const pubById = Object.fromEntries(runnersPub.map((r) => [r.id, r]));
+
+  // ---------- HUD ----------
+  const hud = createHud(container, { runners: runnersPub, backedBy, course, park, C });
+  const shots = buildShotList({ plan, sim, backedIds, hasDiversion });
+  const director = createDirector({ camera, C, sim, world, funfair });
+  let podium = null;
+
+  // ---------- events ----------
+  const timeline = [];
+  for (const e of plan.events || []) timeline.push({ at: e.broadcastS, evt: { ...e, kind: 'event' } });
+  for (const c of plan.commentary || []) timeline.push({ at: c.broadcastS, evt: { ...c, kind: 'commentary' } });
+  timeline.sort((a, b) => a.at - b.at);
+
+  // ---------- state ----------
+  let mode = 'idle'; // idle | intro | race | podium
+  let paused = false, disposed = false;
+  let b = -PRE_ROLL; // broadcast clock
+  let wall = 0; // wall clock seconds since creation
+  let raceCb = null, introState = null, freeze = 0, photoDone = false, raceDone = false;
+  let evIdx = 0, countdownIdx = 0;
+  const firedBanners = new Set();
+
+  // ---------- resize ----------
+  function resize() {
+    const w = container.clientWidth || window.innerWidth, h = container.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    outlineUniforms.uRes.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+  }
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
+  ro?.observe(container); window.addEventListener('resize', resize); resize();
+
+  // ---------- runner placement ----------
+  const startSlots = {};
+  {
+    const n = ids.length;
+    ids.forEach((id, i) => {
+      const lat = (i - (n - 1) / 2) * Math.min(1.25, (PATH_W - 1.6) / Math.max(1, n - 1));
+      const s = C.sample(0); startSlots[id] = { x: s.x + s.rx * lat - s.tx * 1.2, z: s.z + s.rz * lat - s.tz * 1.2, yaw: Math.atan2(s.tx, s.tz) };
+      startSlots[id].y = C.heightAt(startSlots[id].x, startSlots[id].z) + 0.16;
+    });
+  }
+  function placeAtStart(pose = 'idle') {
+    for (const id of ids) { const s = startSlots[id]; const r = runners[id]; r.root.position.set(s.x, s.y, s.z); r.root.rotation.set(0, s.yaw, 0); if (pose) r.set(pose); r.setPop(null); }
+  }
+  placeAtStart();
+
+  const celebrateFor = (place, n) => (place === 1 ? 'jump' : place === 2 ? 'fist' : place === 3 ? 'fist' : place === n ? 'collapse' : 'kneel');
+  function applyRace(bb, dt) {
+    const st = sim.stateAt(Math.max(0, bb));
+    const n = ids.length;
+    for (const id of ids) {
+      const s = st.byId[id], r = runners[id];
+      if (bb < 0) continue;
+      r.root.position.set(s.x, s.y, s.z);
+      // face along motion (smoothed with heading)
+      // celebrating finishers turn round to face the finish line / crowd
+      const yaw = Math.atan2(s.tx, s.tz) + (s.finished && s.post > 2.4 && !(s.place > 3 && s.post < 4) ? Math.PI * (s.place % 2 ? 1 : -1) * 0.92 : 0);
+      let cur = r.root.rotation.y; let d = yaw - cur; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+      r.root.rotation.y = cur + d * Math.min(1, dt * 10);
+      const p = { speed: s.vRace, rate: st.rate, slope: s.slope };
+      if (s.finished) {
+        const pl = s.place;
+        if (s.post < 1.6) { r.set('run'); p.speed = 3; p.rate = 1.2; }
+        else if (pl > 3 && s.post < 4) { r.set('trudge'); }
+        else r.set('celebrate', celebrateFor(pl, n));
+        r.setPop(null);
+      } else if (s.div > 0.3) {
+        r.set('distracted');
+        const ride = funfair?.anchors.rides.reduce((best, x) => (!best || x.pos.distanceToSquared(r.root.position) < best.pos.distanceToSquared(r.root.position) ? x : best), null);
+        if (ride) { const to = Math.atan2(ride.pos.x - s.x, ride.pos.z - s.z) - r.root.rotation.y; let a = to; while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; p.lookYaw = Math.max(-1.3, Math.min(1.3, a)); }
+        r.setPop(['!', 'heart', 'floss'][Math.floor((s.m - s.divInfo.fromM) / 120) % 3]);
+      } else {
+        r.set('run'); r.setPop(null);
+        const geo = C.geoOf(s.m);
+        p.effort = s.m > 4300 ? 0.4 + (s.m - 4300) / 700 * 0.5 : (geo > 1700 && geo < 2060) ? 0.7 : 0.1;
+      }
+      r.update(dt, p);
+    }
+  }
+
+  // ---------- name tags / HUD state ----------
+  const proj = new THREE.Vector3();
+  let _rects = null, _rectsAt = -1;
+  const hudRects = () => { if (_rectsAt !== wall || !_rects) { const cr = canvas.getBoundingClientRect(); _rects = [...hud.root.querySelectorAll('.mr-tower, .mr-map, .mr-top')].map((e) => { const r = e.getBoundingClientRect(); return { left: r.left - cr.left, right: r.right - cr.left, top: r.top - cr.top, bottom: (e.classList.contains('mr-tower') ? r.top + (e.querySelectorAll('.mr-row').length * ((e.querySelector('.mr-row')?.offsetHeight || 40) + 6)) : r.bottom) - cr.top }; }); _rectsAt = wall; } return _rects; };
+  function hudState(st, showTags = true) {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const tags = [];
+    for (const id of ids) {
+      const r = runners[id];
+      proj.set(r.root.position.x, r.root.position.y + r.height + 0.55, r.root.position.z);
+      const dist = proj.distanceTo(camera.position);
+      proj.project(camera);
+      let vis = showTags && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && proj.y < 0.82 && proj.y > -0.62 && dist > 9.5 && dist < 150;
+      const sx = (proj.x * 0.5 + 0.5) * w, sy = (-proj.y * 0.5 + 0.5) * h;
+      if (vis && hudRects().some((rc) => sx > rc.left - 40 && sx < rc.right + 40 && sy > rc.top - 10 && sy < rc.bottom + 40)) vis = false;
+      tags.push({ id, x: (proj.x * 0.5 + 0.5) * w, y: (-proj.y * 0.5 + 0.5) * h, visible: vis, pos: st ? st.order.indexOf(id) + 1 : 0, scale: Math.max(0.7, Math.min(1.15, 30 / dist)), dist });
+    }
+    // de-overlap (push farther tags upward)
+    tags.sort((a, b) => a.dist - b.dist);
+    const placed = [];
+    for (const t of tags) {
+      if (!t.visible) continue;
+      const tw = (pubById[t.id].nickname.length * 11 + 60) * t.scale;
+      for (let k = 0; k < 8; k++) { const hit = placed.find((p) => Math.abs(p.x - t.x) < (p.tw + tw) / 2 && Math.abs(p.y - t.y) < 30 * Math.max(p.scale, t.scale)); if (!hit) break; t.y = hit.y - 31 * Math.max(hit.scale, t.scale); }
+      t.tw = tw;
+      placed.push(t);
+    }
+    if (!st) return { tags };
+    return {
+      raceS: st.raceS, leaderM: st.leader.m, tags,
+      order: st.order.map((id) => ({ id, gapText: st.byId[id].gapText, finished: st.byId[id].finished })),
+      dots: st.order.map((id, i) => ({ x: st.byId[id].x, z: st.byId[id].z, colour: pubById[id].colour.primary, lead: i === 0, focus: director.shot?.ids?.includes(id) })),
+    };
+  }
+
+  // ---------- shadows follow the action ----------
+  function updateSun(target, size) {
+    const s = Math.max(30, Math.min(220, size));
+    const cam = sun.shadow.camera;
+    if (cam.right !== s) { cam.left = -s; cam.right = s; cam.top = s; cam.bottom = -s; cam.near = 1; cam.far = 900; cam.updateProjectionMatrix(); }
+    const texel = (2 * s) / sun.shadow.mapSize.x;
+    const tx = Math.round(target.x / texel) * texel, tz = Math.round(target.z / texel) * texel;
+    sun.target.position.set(tx, target.y, tz);
+    sun.position.set(tx + sunDir.x * 400, target.y + sunDir.y * 400, tz + sunDir.z * 400);
+  }
+
+  // ---------- intro ----------
+  const INTRO_POSES = ['wave', 'flex', 'point', 'stretch', 'spin', 'bow'];
+  function introPose(r, i) { const h = [...(r.personality || r.id)].reduce((a, c) => a + c.charCodeAt(0), i); return INTRO_POSES[h % INTRO_POSES.length]; }
+  function playIntro(onDone, o = {}) {
+    mode = 'intro'; hud.setDim(true); hud.results(null); clearPodium();
+    placeAtStart('idle');
+    const per = o.perRunnerS ?? opts.introPerRunnerS ?? 4.2;
+    const fly = o.flyoverS ?? 7;
+    introState = { t: 0, idx: -1, per, fly, onDone, waiting: false, segStart: 0, minSeg: 2.5, done: false, group: false };
+    return { flyoverS: fly, perRunnerS: per, runners: ids.slice() };
+  }
+  function advanceIntro(dt) {
+    const I = introState; if (!I) return;
+    I.t += dt;
+    const st = startSlots;
+    if (I.idx === -1) {
+      // helicopter flyover onto the start line
+      const u = Math.min(1, I.t / I.fly), k = easeInOut(u);
+      const s = C.sample(0);
+      const ctr = new THREE.Vector3(170, 0, -40);
+      const ang = 2.2 - k * 2.0, R = 520 - k * 470;
+      const pos = new THREE.Vector3(ctr.x + Math.cos(ang) * R, 190 - k * 170, ctr.z + Math.sin(ang) * R);
+      const end = new THREE.Vector3(s.x + s.tx * 22 + s.rx * 10, s.y + 9, s.z + s.tz * 22 + s.rz * 10);
+      pos.lerp(end, k * k);
+      const look = ctr.clone().setY(15).lerp(new THREE.Vector3(s.x, s.y + 1, s.z), Math.min(1, k * 1.2));
+      camera.position.copy(pos); camera.lookAt(look); setFov(50);
+      if (u >= 1) nextIntro();
+      return;
+    }
+    if (I.group) {
+      const s = C.sample(0); const u = (I.t - I.segStart) / 3;
+      camera.position.set(s.x + s.tx * (9 + u * 2) + s.rx * 2, s.y + 2.2 + u * 0.6, s.z + s.tz * (9 + u * 2) + s.rz * 2);
+      camera.lookAt(s.x, s.y + 1.3, s.z); setFov(46);
+      if (u >= 1 && !I.done) { I.done = true; hud.introCard(null); const cb = I.onDone; introState = null; mode = 'idle'; cb?.(); }
+      return;
+    }
+    const id = ids[I.idx]; const sl = st[id];
+    const u = I.t - I.segStart;
+    const fwd = new THREE.Vector3(Math.sin(sl.yaw), 0, Math.cos(sl.yaw)), rt = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const ht = runners[id].height;
+    const dist = 3.2 + ht * 0.6 - Math.min(0.6, u * 0.12);
+    camera.position.set(sl.x + fwd.x * dist + rt.x * 0.9, sl.y + ht * 0.62, sl.z + fwd.z * dist + rt.z * 0.9);
+    camera.lookAt(sl.x - rt.x * 1.25, sl.y + ht * 0.55, sl.z - rt.z * 1.25); setFov(40);
+    if (!I.waiting && u >= I.per) nextIntro();
+    if (I.waiting === 'released' && u >= I.minSeg) nextIntro();
+  }
+  function nextIntro() {
+    const I = introState; I.idx++; I.segStart = I.t;
+    for (const id of ids) runners[id].set('idle');
+    if (I.idx >= ids.length) { I.group = true; for (const id of ids) runners[id].set('pose', 'point'); hud.introCard(null); setTimeout(() => {}, 0); for (const id of ids) runners[id].set('wave'); return; }
+    const id = ids[I.idx]; const r = runners[id];
+    r.set(introPose(pubById[id], I.idx) === 'wave' ? 'wave' : 'pose', introPose(pubById[id], I.idx));
+    if (opts.introCards !== false) hud.introCard(pubById[id]);
+    I.waiting = false;
+    const ret = opts.onIntroRunner?.(id, I.idx);
+    if (ret && typeof ret.then === 'function') { I.waiting = true; ret.then(() => { if (introState === I) I.waiting = 'released'; }, () => { if (introState === I) I.waiting = 'released'; }); }
+  }
+
+  // ---------- race ----------
+  function playRace(onEvent, onDone) {
+    mode = 'race'; hud.setDim(false); hud.results(null); clearPodium(); introState = null; hud.introCard(null);
+    b = -PRE_ROLL; evIdx = 0; countdownIdx = 0; freeze = 0; photoDone = false; raceDone = false; firedBanners.clear();
+    raceCb = { onEvent, onDone };
+    placeAtStart('idle');
+    director.reset();
+  }
+  const countdowns = [[-3, '3'], [-2, '2'], [-1, '1'], [0, 'GO!']];
+  function bannerFor(e) {
+    const nick = (id) => pubById[id]?.nickname || id;
+    switch (e.type) {
+      case 'lead_change': return ['LEAD CHANGE!', `${nick(e.to)} hits the front`, '#ff3d8b'];
+      case 'overtake': { if (!backedIds.includes(e.by) && !backedIds.includes(e.on) && sim.stateAt(e.broadcastS).order.indexOf(e.by) > 1) return null; return ['OVERTAKE!', `${nick(e.by)} passes ${nick(e.on)}`, '#2e6fe0']; }
+      case 'hill': return [e.lap === 1 ? 'THE HILL!' : 'THE HILL AGAIN!', 'Legs of jelly incoming', '#3aa845'];
+      case 'lap': return ['LAP 2 OF 2', 'One more time round!', '#2e6fe0'];
+      case 'final_stretch': return ['FINAL STRETCH!', 'Here comes the finish', '#ff8a1f'];
+      case 'diversion': return firedBanners.has('div') ? null : (firedBanners.add('div'), ['DISTRACTED!', `${nick(e.who)} has spotted the funfair`, '#b04bff']);
+      case 'finish': return e.place === 1 && !sim.photoFinish ? ['WINNER!', nick(e.who), '#ffb000'] : null;
+      case 'breakaway': return ['BREAKAWAY!', `${nick(e.who)} makes a break`, '#ff3d8b'];
+      default: return null;
+    }
+  }
+  function stepRace(dt) {
+    if (freeze > 0) {
+      freeze -= dt;
+      if (freeze <= 0) { hud.photo(false); canvas.style.filter = ''; world.anchors.finishArch.visible = true; director.reset(); const w = sim.finishOrder[0]; hud.showBanner('WINNER!', pubById[w]?.nickname || w, '#ffb000', 2.6); }
+      return;
+    }
+    const prev = b;
+    b += dt;
+    // countdown
+    while (countdownIdx < countdowns.length && b >= countdowns[countdownIdx][0]) {
+      const [t, txt] = countdowns[countdownIdx++];
+      hud.countdown(txt);
+      raceCb?.onEvent?.({ kind: 'countdown', n: txt === 'GO!' ? 0 : Number(txt), text: txt, broadcastS: t });
+      if (t === -3) for (const id of ids) runners[id].set('ready');
+    }
+    // plan events + commentary
+    while (evIdx < timeline.length && b >= timeline[evIdx].at) {
+      const e = timeline[evIdx++].evt;
+      try { raceCb?.onEvent?.(e); } catch (err) { console.error(err); }
+      if (e.kind === 'event') { const bn = bannerFor(e); if (bn) hud.showBanner(...bn); }
+    }
+    // photo finish freeze-frame
+    if (sim.photoFinish && !photoDone && b >= sim.firstFinishB) {
+      photoDone = true; b = sim.firstFinishB; freeze = opts.photoFreezeS ?? 2.8; hud.photo(true); canvas.style.filter = 'grayscale(0.55) sepia(0.35) contrast(1.12)';
+      raceCb?.onEvent?.({ kind: 'photo_finish', broadcastS: b, ids: sim.finishOrder.slice(0, 2) });
+    }
+    if (!raceDone && b >= sim.lastFinishB + 3.5) { raceDone = true; raceCb?.onDone?.(); }
+  }
+
+  // ---------- podium ----------
+  function clearPodium() { if (podium) { podium.dispose(); podium = null; } }
+  function showPodium(results) {
+    mode = 'podium'; hud.setDim(true); introState = null;
+    clearPodium();
+    const order = results?.finishOrder?.length ? [...results.finishOrder].sort((a, b) => a.place - b.place) : sim.finishOrder.map((id, i) => ({ runnerId: id, place: i + 1, officialS: sim.byId[id].officialS, timeText: fmtTime(sim.byId[id].officialS) }));
+    podium = buildPodium(scene, C, world, runners, order, { camera });
+    if (opts.podiumCard !== false) hud.results(order.map((o) => ({ place: o.place, nickname: pubById[o.runnerId]?.nickname || o.runnerId, colour: pubById[o.runnerId]?.colour.primary || '#888', timeText: o.timeText || fmtTime(o.officialS) })));
+  }
+
+  // ---------- main loop ----------
+  let last = performance.now(), raf = 0;
+  const frameStats = { frames: 0, acc: 0, fps: 0 };
+  function setFov(f) { if (Math.abs(camera.fov - f) > 0.01) { camera.fov = f; camera.updateProjectionMatrix(); } }
+  function frame(dt, noRender = false) {
+    wall += dt;
+    let st = null;
+    if (!paused) {
+      if (mode === 'intro') advanceIntro(dt);
+      if (mode === 'race') stepRace(dt);
+    }
+    const ddt = paused ? 0 : dt;
+    if (mode === 'race') {
+      if (freeze > 0) {
+        // photo-finish freeze-frame: side-on at the line
+        const f = world.anchors.finish;
+        world.anchors.finishArch.visible = false; // virtual side-on camera looks straight down the line
+        camera.position.set(f.x + f.rx * 9 - f.tx * 0.6, f.y + 6.4, f.z + f.rz * 9 - f.tz * 0.6);
+        camera.lookAt(f.x - f.rx * 0.6 - f.tx * 0.6, f.y + 0.8, f.z - f.rz * 0.6 - f.tz * 0.6); setFov(42);
+        camera.updateMatrixWorld();
+        const a = new THREE.Vector3(f.x + f.rx * 3, f.y + 0.05, f.z + f.rz * 3).project(camera), c = new THREE.Vector3(f.x - f.rx * 3, f.y + 0.05, f.z - f.rz * 3).project(camera);
+        hud.photoLine([(a.x * 0.5 + 0.5) * canvas.clientWidth, (-a.y * 0.5 + 0.5) * canvas.clientHeight], [(c.x * 0.5 + 0.5) * canvas.clientWidth, (-c.y * 0.5 + 0.5) * canvas.clientHeight]);
+      } else director.update(b, ddt, shots);
+      st = b >= 0 ? sim.stateAt(b) : null;
+      if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
+      else applyRace(b, freeze > 0 ? 0 : ddt);
+      const shotType = director.shot?.type;
+      updateSun(director.cam.look, shotType === 'drone' || shotType === 'blimp' || shotType === 'heli' ? 160 : 45);
+    } else if (mode === 'podium' && podium) {
+      podium.update(ddt, wall);
+      for (const id of ids) runners[id].update(ddt, {});
+      updateSun(podium.center, 40);
+    } else {
+      for (const id of ids) runners[id].update(ddt, {});
+      if (mode === 'idle') {
+        const s = C.sample(0); const a = wall * 0.12;
+        camera.position.set(s.x + Math.sin(a) * 14, s.y + 4.5, s.z + Math.cos(a) * 14); camera.lookAt(s.x, s.y + 1.2, s.z); setFov(45);
+      }
+      updateSun(new THREE.Vector3(startSlots[ids[0]]?.x ?? 0, 0, startSlots[ids[0]]?.z ?? 0), mode === 'intro' && introState?.idx === -1 ? 160 : 40);
+    }
+    world.update(wall);
+    funfair?.update(wall);
+    const rpos = ids.map((id) => runners[id].root.position);
+    crowd.update(wall, camera.position, rpos, mode === 'podium' ? 0.9 : null);
+    hud.update(dt, mode === 'race' ? hudState(st, b > -1) : mode === 'intro' ? { tags: [] } : hudState(null, false));
+    if (!noRender) renderer.render(scene, camera);
+  }
+  function loop(now) {
+    if (disposed) return;
+    raf = requestAnimationFrame(loop);
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    frameStats.frames++; frameStats.acc += dt; if (frameStats.acc > 1) { frameStats.fps = frameStats.frames / frameStats.acc; frameStats.frames = 0; frameStats.acc = 0; }
+    frame(dt);
+  }
+  if (!opts.manualLoop) raf = requestAnimationFrame(loop);
+
+  function dispose() {
+    disposed = true; cancelAnimationFrame(raf);
+    ro?.disconnect(); window.removeEventListener('resize', resize);
+    clearPodium();
+    for (const id of ids) { scene.remove(runners[id].root); runners[id].dispose(); }
+    crowd.dispose(); funfair?.dispose(); world.dispose(); hud.dispose();
+    scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    disposeRunnerGeometry(); disposeMaterialCache();
+    renderer.dispose(); renderer.forceContextLoss?.(); canvas.remove();
+  }
+
+  // debug / test helpers (used by preview + screenshot harness)
+  const debug = {
+    seek(bb, warm = 1.2) {
+      mode = 'race'; hud.setDim(false); introState = null; clearPodium(); raceCb = raceCb || {}; hud.introCard(null); hud.results(null); hud.photo(false); canvas.style.filter = '';
+      director.reset();
+      const steps = Math.round(warm * 30);
+      for (let i = steps; i >= 0; i--) {
+        b = bb - i / 30;
+        evIdx = timeline.findIndex((x) => x.at > b); if (evIdx < 0) evIdx = timeline.length;
+        countdownIdx = countdowns.findIndex((c) => c[0] > b); if (countdownIdx < 0) countdownIdx = countdowns.length;
+        photoDone = b >= sim.firstFinishB; raceDone = b >= sim.lastFinishB + 3.5; freeze = 0;
+        if (b < -3) for (const id of ids) runners[id].set('idle'); else if (b < 0) for (const id of ids) runners[id].set('ready');
+        if (i > 0) { director.update(b, 1 / 30, shots); if (b >= 0) applyRace(b, 1 / 30); else for (const id of ids) runners[id].update(1 / 30, {}); }
+      }
+      paused = true; frame(0);
+    },
+    introAt(idx, t = 1.5) {
+      playIntro(() => {}, {}); paused = false;
+      if (idx < 0) { introState.t = t; advanceIntro(0); frame(0); paused = true; return; }
+      introState.t = introState.fly; advanceIntro(0);
+      while (introState && introState.idx < idx) { introState.t = introState.segStart + introState.per + 0.01; advanceIntro(0); }
+      for (let i = 0; i < t * 30; i++) { advanceIntro(1 / 30); for (const id of ids) runners[id].update(1 / 30, {}); }
+      paused = true; frame(0);
+    },
+    podiumAt(t = 3) { hud.introCard(null); showPodium(null); for (let i = 0; i < t * 30; i++) { podium.update(1 / 30, i / 30); for (const id of ids) runners[id].update(1 / 30, {}); } paused = true; frame(0); },
+    photoAt() { this.seek(sim.firstFinishB - 0.05); paused = false; photoDone = false; for (let i = 0; i < 3; i++) frame(1 / 30); paused = true; frame(0); },
+    render() { frame(0); },
+    lookFrom(px, py, pz, lx, ly, lz, fov = 45) { mode = 'debugcam'; camera.position.set(px, py, pz); camera.lookAt(lx, ly, lz); setFov(fov); hud.setDim(true); renderer.render(scene, camera); },
+    step(dt, render = true) { frame(dt, !render); },
+    get mode() { return mode; },
+    get b() { return b; }, shots, sim, C, director, renderer, scene, camera, info: () => renderer.info, fps: () => frameStats.fps,
+  };
+
+  return {
+    playIntro, playRace, showPodium,
+    setPaused(p) { paused = !!p; },
+    dispose,
+    /** extras */
+    hudRoot: hud.root,
+    get broadcastTime() { return b; },
+    get durationS() { return PRE_ROLL + sim.lastFinishB + 3.5; },
+    preRollS: PRE_ROLL,
+    _debug: debug,
+  };
+}

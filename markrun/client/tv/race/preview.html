@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MARKRUN race preview</title>
+<link rel="stylesheet" href="/client/shared/theme.css">
+<style>
+  html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;font-family:Nunito,sans-serif}
+  #stage{position:absolute;inset:0}
+  #sub{position:absolute;left:0;right:0;bottom:0;height:15%;display:flex;align-items:center;justify-content:center;color:#fff;font:700 2.2vw Nunito,sans-serif;text-shadow:0 2px 0 #000;pointer-events:none}
+  #ctl{position:absolute;right:8px;bottom:8px;display:flex;gap:6px;z-index:5}
+  #ctl button{font:14px sans-serif;padding:4px 8px}
+  body.shot #ctl{display:none}
+</style></head>
+<body>
+<div id="stage"></div>
+<div id="sub"></div>
+<div id="ctl"><button data-a="intro">Intro</button><button data-a="race">Race</button><button data-a="podium">Podium</button><button data-a="pause">Pause</button><span id="fps" style="color:#fff;font:12px monospace"></span></div>
+<script type="module" src="/client/dist/race-preview.js"></script>
+</body></html>
