@@ -22,9 +22,10 @@ TV:     http://192.168.1.23:8080/tv
 Phones: http://192.168.1.23:8080/phone   (or scan the QR code on the TV)
 ```
 
-1. **TV:** open the TV address in Chrome or Edge on the computer. Send it to the TV over HDMI, or cast the tab or screen. Press **F** for fullscreen, then click once so sound and the commentators' voices can start.
+1. **TV:** open the TV address in Chrome or Edge **on the host computer** (it is recognised automatically). If you'd rather use a smart-TV browser instead, use the `…/tv?key=…` address printed in the console: the key stops phones from posing as the TV. Send it to the TV over HDMI, or cast the tab or screen. Press **F** for fullscreen, then click once so sound and the commentators' voices can start.
 2. **Phones:** both phones must be on the **same Wi-Fi** as the computer. Scan the QR code on the TV, type a name, pick an avatar and you're in.
-3. **Start:** use the TV lobby, then pick the starting pot, rounds, bet timer, drinking-game mode, voice and music. Press **Space/Enter** on the TV (or tap "ready" on the phones) to move things along.
+3. If Mark is playing, he ticks **"I'm Mark (the runner)"** on his phone. He remembers his own runs, so the other player gets an extra hot tip.
+4. **Start:** use the TV lobby, then pick the starting pot, rounds, bet timer, drinking-game mode, voice and music. Press **Space/Enter** on the TV (or tap "ready" on the phones) to move things along.
 
 TV keys: `Space`/`Enter`/`→` next · `M` mute · `F` fullscreen · `L` force-lock all bets.
 
@@ -40,10 +41,10 @@ Useful start options:
 
 ## How a round works
 1. **Introductions:** five anonymous historical Marks, each with a random nickname, colours and look.
-2. **Clues:** each runner has 3 clues. One is public, on the TV and both phones. Each of you also gets one private clue 🤫 on your own phone. Clue facts are true, but the framing is mischievous. Dates, years, times and PBs are never shown before betting.
-3. **Betting:** make win bets and head-to-head matchups at the bookie's odds. The bookie prices only what the clues reveal, never the result. Bets stay hidden until both of you lock in, then there's a dramatic reveal.
-4. **The race:** a 3D broadcast of the real race. The broadcast clock runs faster through the middle and slows for the finale. The same clock applies to every runner, so real positions and overtakes are preserved.
-5. **Results:** the finish order, the reveal of who each runner really was (date, official time, Strava title), which clues were useful and which were red herrings, payouts, awards, then the scoreboard.
+2. **Clues:** each runner has 3 clues. One is public, on the TV and both phones. Each of you also gets one private clue on your own phone, either 🤫 gossip or one 🔥 **HOT TIP**. A hot tip is a true insider fact from the race itself, and the bookie hasn't priced it. Clue facts are true, but the framing is mischievous: some clues are hedged, some are plain facts, and some are Jeff or Pam confidently tipping (or slating) a runner. Dates, years, times and PBs are never shown before betting.
+3. **Betting:** make win bets, head-to-head matchups and a side bet ("Will anyone visit the funfair?") at the bookie's odds. The bookie prices only what the public clues reveal, never the result. Bets stay hidden until both of you lock in, then the TV reveals them one at a time, smallest first. The final round pays double.
+4. **The race:** a 3D broadcast of the real race. The broadcast clock runs faster through the middle and slows for the finale. The same clock applies to every runner, so real positions and overtakes are preserved. At halfway the race pauses for the **HALFWAY MARKET**: one in-play bet each at live odds. Your phone shows where your runners are and buzzes on lead changes. On the six real funfair weekends (Easter and August bank holidays), the GPS shows the course was diverted round the fairground. Those runners get distracted by the rides.
+5. **Results:** cards flip over from last place to the winner, showing who each runner really was (date, official time, Strava title). Then come the clues that mattered (useful or red herring), payouts, awards and the scoreboard. Screens move on by themselves, or press **Next** on either phone. After the last round there's a champion ceremony with a superlatives reel.
 
 ## Your data (imported once, played forever)
 All history lives in **`data/markrun.db`** (SQLite). It holds:
