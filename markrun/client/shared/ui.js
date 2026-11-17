@@ -70,7 +70,7 @@ export function runnerById(round, id) { return round?.runners?.find((r) => r.id 
 
 export function betLabel(round, b) {
   if (!round || !b) return '';
-  if (b.type === 'win') return `${runnerById(round, b.runnerId)?.nickname || b.runnerId} to WIN`;
+  if (b.type === 'win' || b.type === 'special') return `${b.type === 'special' || b.boost ? '🚀 ' : ''}${runnerById(round, b.runnerId)?.nickname || b.runnerId} to WIN`;
   if (b.type === 'inplay') return `${runnerById(round, b.runnerId)?.nickname || b.runnerId} to WIN (halfway)`;
   if (b.type === 'prop') { const pr = round.props?.find((x) => x.id === b.propId); return `${pr?.text || 'Side bet'} — ${String(b.pick).toUpperCase()}`; }
   // head-to-heads use short names so the line fits a phone
@@ -81,7 +81,11 @@ export function betLabel(round, b) {
   return `${pick} to beat ${other}`;
 }
 export function betOdds(round, b) {
-  if (b.type === 'win') return runnerById(round, b.runnerId)?.odds?.win ?? 0;
+  if (b.type === 'win' || b.type === 'special') {
+    const dec = runnerById(round, b.runnerId)?.odds?.win ?? 0;
+    const boost = (b.type === 'special' || b.boost) && round?.underdogSpecial ? round.underdogSpecial.boost || 1.5 : 1;
+    return Math.round((1 + (dec - 1) * boost) * 100) / 100;
+  }
   if (b.type === 'inplay') return Number(b.odds) || 0;
   if (b.type === 'prop') { const pr = round?.props?.find((x) => x.id === b.propId); return (b.pick === 'yes' ? pr?.odds?.yes : pr?.odds?.no) ?? 0; }
   const m = round?.matchups?.find((x) => x.id === b.matchupId);
@@ -115,7 +119,7 @@ export function confetti(container = document.body, { count = 120, colours = ['#
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function betRunnerId(b) { return b?.type === 'prop' ? null : (b?.runnerId || b?.pick || null); }
-export function betKind(b) { return { win: 'WIN', h2h: 'HEAD-TO-HEAD', prop: 'SIDE BET', inplay: 'HALFWAY' }[b?.type] || ''; }
+export function betKind(b) { return b?.boost ? 'UNDERDOG SPECIAL' : ({ win: 'WIN', special: 'UNDERDOG SPECIAL', h2h: 'HEAD-TO-HEAD', prop: 'SIDE BET', inplay: 'HALFWAY' }[b?.type] || ''); }
 
 // Clue text, styled by the game module's clue `style`: tipster clues end with a commentator's quoted opinion.
 export function clueHtml(c) {
@@ -135,7 +139,8 @@ export function clueHtml(c) {
 // Odds exactly as shown when betting (fractional where the game provides it).
 export function oddsText(round, b) {
   if (!b) return '';
-  if (b.type === 'win') return runnerById(round, b.runnerId)?.odds?.display || `×${betOdds(round, b)}`;
+  if ((b.type === 'win' || b.type === 'special') && !(b.type === 'special' || b.boost)) return runnerById(round, b.runnerId)?.odds?.display || `×${betOdds(round, b)}`;
+  if (b.type === 'win' || b.type === 'special') return `×${betOdds(round, b)} 🚀`;
   if (b.type === 'inplay') return b.display || `×${Number(b.lockedOdds ?? b.odds) || ''}`;
   if (b.type === 'prop') { const pr = round?.props?.find((x) => x.id === b.propId); return (b.pick === 'yes' ? pr?.odds?.displayYes : pr?.odds?.displayNo) || `×${betOdds(round, b)}`; }
   const m = round?.matchups?.find((x) => x.id === b.matchupId);

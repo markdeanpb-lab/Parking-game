@@ -80,7 +80,7 @@ export function fallbackSettle(round, betsByPlayer, bankrolls) {
     const res = (bets || []).map((b) => {
       staked += b.stake;
       let won = false, returned = 0;
-      if (b.type === 'win') {
+      if (b.type === 'win' || b.type === 'special') {
         const r = pub.runners.find((x) => x.id === b.runnerId);
         won = place.get(b.runnerId) === 1;
         returned = won ? Math.round(b.stake * (r?.odds?.win ?? 2)) : 0;

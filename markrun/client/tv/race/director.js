@@ -33,8 +33,10 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
   let gunEnd = 0.25 + 8;
   for (let t = 0.25; t < 30; t += 0.25) if (rate(t) > 7) { gunEnd = Math.max(gunEnd, t); break; }
   let bSlow = firstFin - 6;
-  for (let t = firstFin - 6; t > gunEnd; t -= 0.25) if (rate(t) > 6) { bSlow = t; break; }
-  const b4700 = Math.max(bSlow, Math.min(firstFin - 6, leaderAtB(4700)));
+  for (let t = firstFin - 12; t > gunEnd; t -= 0.25) if (rate(t) > 6) { bSlow = t; break; }
+  // the finish-line camera locks on for the last ~150 m of the leading contenders
+  const bFin = Math.max(bSlow + 4, Math.min(firstFin - 3, leaderAtB(4850)));
+  const b4700 = Math.max(bSlow, Math.min(bFin, leaderAtB(4700)));
 
   out.push({ type: 'heli', a: -8.5, b: -3.2, hard: true });
   out.push({ type: 'startgo', a: -3.2, b: 0.25 });
@@ -85,11 +87,11 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
   {
     const len = b4700 - bSlow;
     if (len >= 8) { const n = Math.max(1, Math.round(len / 11)); for (let i = 0; i < n; i++) out.push({ type: i % 2 ? 'headon' : 'side', a: bSlow + (len * i) / n, b: bSlow + (len * (i + 1)) / n }); }
-    if (out.at(-1).type === 'headon' && out.at(-1).a >= bSlow) out.at(-1).b = firstFin - 6;
-    else out.push({ type: 'headon', a: Math.max(bSlow, out.at(-1).b), b: firstFin - 6 });
+    if (out.at(-1).type === 'headon' && out.at(-1).a >= bSlow) out.at(-1).b = bFin;
+    else out.push({ type: 'headon', a: Math.max(bSlow, out.at(-1).b), b: bFin });
   }
   if (out.at(-1).b - out.at(-1).a < 6 && out.length > 4) { const l = out.pop(); out.at(-1).b = l.b; }
-  out.push({ type: 'finishcam', a: firstFin - 6, b: lastFin + 2.5, hard: true });
+  out.push({ type: 'finishcam', a: bFin, b: lastFin + 2.5, hard: true });
   out.push({ type: 'celebrate', a: lastFin + 2.5, b: lastFin + 90 });
 
   // priority interrupts (one at a time, 12 s apart): lead change, or an overtake involving a backed runner
@@ -232,13 +234,16 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         look = c.clone().addScaledVector(h, s.back * 0.15); fov = s.fov; break;
       }
       case 'finishcam': {
+        // low, side-on to the line, telephoto; pans with the next contender and settles on the line as they cross
         const h = new THREE.Vector3(fin.tx, 0, fin.tz), r = new THREE.Vector3(-h.z, 0, h.x);
-        pos = new THREE.Vector3(fin.x, fin.y, fin.z).addScaledVector(h, 16).addScaledVector(r, -4).add(up.clone().multiplyScalar(2.6));
+        if (!s.fside) s.fside = world.inPark(fin.x + r.x * 16, fin.z + r.z * 16) ? 1 : -1;
+        const line = new THREE.Vector3(fin.x, fin.y + 1.0, fin.z);
+        pos = line.clone().addScaledVector(r, s.fside * 16).addScaledVector(h, 2.6).add(up.clone().multiplyScalar(1.5));
         const st = sim.stateAt(Math.max(0, b));
         const next = st.order.map((id) => st.byId[id]).find((x) => !x.finished);
-        const arch = new THREE.Vector3(fin.x, fin.y + 2.2, fin.z);
-        look = next ? arch.clone().lerp(new THREE.Vector3(next.x, next.y + 1.3, next.z), Math.min(0.8, 18 / Math.max(18, next.distToFinish))) : arch;
-        fov = 34; s.smoothLook = true; break;
+        const k = next ? Math.min(1, Math.max(0, next.distToFinish / 150)) : 0;
+        look = next ? line.clone().lerp(new THREE.Vector3(next.x, next.y + 1.0, next.z), Math.min(1, 0.25 + k)) : line;
+        fov = 22; s.smoothLook = true; break;
       }
       case 'celebrate': {
         const st = sim.stateAt(Math.max(0, b));
@@ -266,7 +271,7 @@ export function createDirector({ camera, C, sim, world, funfair }) {
     }
     const T = evaluate(s, b);
     const gy = C.heightAt(T.pos.x, T.pos.z) + 1.2; if (T.pos.y < gy) T.pos.y = gy;
-    if (s.smoothLook) { if (!smoothLook || dt <= 0) smoothLook = smoothLook || T.look.clone(); smoothLook.lerp(T.look, 1 - Math.exp(-3 * dt)); T.look.copy(smoothLook); }
+    if (s.smoothLook) { if (!smoothLook) smoothLook = T.look.clone(); smoothLook.lerp(T.look, 1 - Math.exp(-2.5 * dt)); T.look.copy(smoothLook); }
     m4.lookAt(T.pos, T.look, up); q.setFromRotationMatrix(m4);
     let pos = T.pos, quat = q, fov = T.fov;
     if (glide) {

@@ -4,6 +4,10 @@
 import { connect } from '../shared/net.js';
 import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, betRunnerId, oddsText, betOutcome, confetti, clueParts } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
+import { createAudio } from '../shared/sfx.js';
+
+const audio = createAudio(); // tiny UI sounds (chip taps); unlocked by the first touch
+window.addEventListener('pointerdown', () => { if (!audio.ready()) { audio.unlock(); audio.setVolume(0.6); } }, { capture: true });
 
 const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '🐼', '🦖', '🐧', '🐝', '🦩', '🐶'];
 const AVATAR_COLOURS = ['#ff4d5a', '#ffb000', '#2ec27e', '#2f8cff', '#9b5cff', '#ff6fb5', '#13c4c4', '#ff7a1a'];
@@ -251,7 +255,8 @@ function renderFlow() {
         <div class="rn"><span class="lane">LANE ${r.lane}</span><b>${esc(nameOf(r))}</b><span class="odds num">${esc(r.odds?.display || '')}</span></div></div>
       ${clueBlock(r.publicClue, '📺')}
       ${priv.map((c) => clueBlock(c, c.tier === 'hot' ? '🔥' : '🤫', c.tier === 'hot' ? 'hot' : 'secret')).join('')}
-      ${bet ? `<div class="onit">✓ ${money(bet.stake)} on to win</div>` : ''}`;
+      ${bet ? `<div class="onit">✓ ${money(bet.stake)} on to win${bet.boost ? ' 🚀' : ''}</div>` : ''}
+      ${mySpecial() && !slip.some((x) => x.boost) && !bet ? `<div class="special">🚀 <b>${esc(mySpecial().label || 'UNDERDOG SPECIAL')}</b> — ${esc(mySpecial().text || 'one win pick at boosted odds')}</div>` : ''}`;
     acts = tray ? trayHtml() : `${navBack}<button class="btn ${bet ? 'white' : 'yellow'} grow" data-open="win" data-id="${r.id}">${bet ? 'Change stake' : 'Back to win'}</button><button class="btn blue nav" data-nav="1" aria-label="Next">›</button>`;
   } else if (st.kind === 'h2h') {
     const m = S.round.matchups.find((x) => x.id === st.id);
@@ -282,11 +287,15 @@ function renderFlow() {
   app.innerHTML = screen(topbar(), main, acts, { dots: dotsHtml(list), cls: `flow ${st.kind}` });
   wireFlow(list);
 }
+const mySpecial = () => (S.round?.underdogSpecial && S.round.underdogSpecial.playerId === me.id ? S.round.underdogSpecial : null);
+const boostUsedElsewhere = () => slip.some((b) => b.boost && !(tray && tray.kind === 'win' && b.runnerId === tray.id));
 function trayHtml() {
   const room = left() + (tray.prev || 0);
+  const sp = tray.kind === 'win' && mySpecial() && !boostUsedElsewhere() ? mySpecial() : null;
   const chips = [10, 50, 100].map((v) => `<button class="chip" data-add="${v}" ${tray.stake + v > room ? 'disabled' : ''}>+${v}</button>`).join('');
   return `<div class="tray"><div class="ts"><span>Stake</span><b class="num">${money(tray.stake)}</b><button class="chip ghost" data-add="clear">clear</button></div>
     <div class="tc">${chips}<button class="chip max" data-add="max">${isFinale() ? 'ALL IN' : 'MAX'}</button></div>
+    ${sp ? `<button class="chip boost ${tray.boost ? 'on' : ''}" data-boost="1">🚀 ${esc(sp.label || 'UNDERDOG SPECIAL')} · winnings ×${sp.boost || 1.5}${tray.boost ? ' ✓' : ''}</button>` : ''}
     <div class="tb2"><button class="btn white" data-tray="cancel">${tray.prev ? 'Remove' : 'Cancel'}</button><button class="btn green grow" data-tray="ok" ${tray.stake < rules().minStake ? 'disabled' : ''}>Done ✓</button></div></div>`;
 }
 function openTray(kind, id, pick) {
@@ -294,15 +303,15 @@ function openTray(kind, id, pick) {
   const { maxBets, minStake } = rules();
   if (!ex && slip.length >= maxBets) { toast(`Max ${maxBets} bets — remove one in Review`, 'red'); vibrate([40, 30, 40]); return; }
   if (!ex && left() < minStake) { toast(isFinale() ? "You're out of money!" : "That's your limit this round (half your bankroll)", 'red'); return; }
-  tray = { kind, id, pick, stake: ex ? ex.stake : Math.min(50, left()), prev: ex ? ex.stake : 0 };
+  tray = { kind, id, pick, stake: ex ? ex.stake : Math.min(50, left()), prev: ex ? ex.stake : 0, boost: !!ex?.boost };
   vibrate(10);
 }
 function commitTray(ok) {
   const t = tray; tray = null;
   const ex = findBet(t.kind, t.id);
   if (!ok) { if (ex && t.prev) slip = slip.filter((b) => b !== ex); slipChanged(); return; }
-  const bet = t.kind === 'win' ? { type: 'win', runnerId: t.id, stake: t.stake } : t.kind === 'h2h' ? { type: 'h2h', matchupId: t.id, pick: t.pick, stake: t.stake } : { type: 'prop', propId: t.id, pick: t.pick, stake: t.stake };
-  if (ex) Object.assign(ex, bet); else slip.push(bet);
+  const bet = t.kind === 'win' ? { type: 'win', runnerId: t.id, stake: t.stake, ...(t.boost ? { boost: true } : {}) } : t.kind === 'h2h' ? { type: 'h2h', matchupId: t.id, pick: t.pick, stake: t.stake } : { type: 'prop', propId: t.id, pick: t.pick, stake: t.stake };
+  if (ex) { delete ex.boost; Object.assign(ex, bet); } else slip.push(bet);
   slipChanged();
   vibrate(15);
 }
@@ -319,9 +328,11 @@ function wireFlow(list) {
       if (b.dataset.add === 'clear') tray.stake = 0;
       else if (b.dataset.add === 'max') tray.stake = room;
       else tray.stake = Math.min(room, tray.stake + Number(b.dataset.add));
-      vibrate(8);
+      vibrate(b.dataset.add === 'max' ? [10, 20, 30] : 8);
+      audio.play('chip', { p: room ? tray.stake / room : 0 });
       return renderFlow();
     }
+    if (b.dataset.boost && tray) { tray.boost = !tray.boost; vibrate(tray.boost ? [20, 30, 60] : 10); audio.play(tray.boost ? 'reveal' : 'pop'); return renderFlow(); }
     if (b.dataset.tray) { const ok = b.dataset.tray === 'ok'; const was = tray?.kind; commitTray(ok); if (ok && was === 'win') toast('✓ On the slip'); return renderFlow(); }
     if (b.dataset.rm) { slip.splice(Number(b.dataset.rm), 1); slipChanged(); vibrate(10); return renderFlow(); }
     return undefined;
@@ -351,6 +362,7 @@ function doLock() {
   if (!net.open) { toast('Not connected — retrying…', 'red'); net.reconnect(); return; }
   send({ t: 'lock', bets: slip });
   vibrate([30, 30, 120]);
+  audio.play('thunk');
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -510,7 +522,7 @@ function renderFinale(fresh) {
   const won = place === 1;
   app.innerHTML = screen(topbar(), `<div class="big-emoji">${won ? '👑' : place === sorted.length ? '🥄' : '🥈'}</div>
     <h1 class="h">${won ? 'CHAMPION!' : `You finished ${ordWord(place)}`}</h1><p class="sub big">${money(me.bankroll)}</p>${standHtml()}`,
-  readyBtn(me.ready ? '✓ READY' : 'PLAY AGAIN ↻'));
+  readyBtn(me.ready ? '✓ READY' : won ? 'REMATCH? ↻' : 'DEMAND A REMATCH ↻'));
   app.onclick = (e) => { if (e.target.closest('#readybtn')) { send({ t: 'ready', value: !me.ready }); vibrate(25); } };
   if (fresh && won) confetti(document.body, { count: 150 });
 }

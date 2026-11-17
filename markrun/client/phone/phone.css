@@ -198,3 +198,8 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 .pr span { flex: none; }
 .stand .sr span { flex: none; }
 .rhead .rn .lane { background: #fff !important; color: var(--ink) !important; text-shadow: none !important; border-left: 8px solid var(--c1) !important; }
+
+.chip.boost { grid-column: 1 / -1; background: linear-gradient(135deg, #7b4dff, #ff6fb5); color: #fff; font-size: 16px; min-height: 44px; }
+.chip.boost.on { background: var(--grass); }
+.special { background: linear-gradient(135deg, #7b4dff, #ff6fb5); color: #fff; border: 3px solid var(--ink); border-radius: 14px; padding: 8px 12px; font-size: 14px; font-weight: 800; text-align: center; }
+.special b { font-family: var(--font-display); font-weight: 400; font-size: 16px; letter-spacing: .04em; }

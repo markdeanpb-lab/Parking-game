@@ -130,6 +130,19 @@ export function createAudio() {
       for (const m of [48, 55, 60, 63]) for (const det of [-8, 8]) osc('sawtooth', mtof(m), t, 0.16, { gain: 0.05, a: 0.01, rel: 0.5, filter: { freq: 1800 }, detune: det });
       SFX.cymbal(t, 0.1);
     },
+    chip(t, { p = 0.3 } = {}) { // pitch rises with the stake (p = stake / max, 0..1)
+      const f = 420 + Math.min(1, Math.max(0, p)) * 900;
+      const o = osc('triangle', f, t, 0.03, { gain: 0.16, a: 0.003, rel: 0.12 }); o.frequency.exponentialRampToValueAtTime(f * 1.5, t + 0.06);
+      noise(t, 0.01, { gain: 0.06, a: 0.001, rel: 0.03, type: 'highpass', freq: 4000 });
+    },
+    heartbeat(t, { beats = 5, bpm = 92 } = {}) {
+      for (let i = 0; i < beats; i++) { const tt = t + i * 60 / bpm; osc('sine', 62, tt, 0.04, { gain: 0.55, a: 0.004, rel: 0.16 }); osc('sine', 54, tt + 0.22, 0.04, { gain: 0.4, a: 0.004, rel: 0.2 }); }
+    },
+    coins(t, { n = 14 } = {}) {
+      for (let i = 0; i < n; i++) { const tt = t + i * 0.07 + Math.random() * 0.03; const f = 2200 + Math.random() * 1800; osc('sine', f, tt, 0.01, { gain: 0.05, a: 0.002, rel: 0.18 }); osc('sine', f * 1.5, tt + 0.01, 0.01, { gain: 0.025, a: 0.002, rel: 0.12 }); }
+    },
+    thunk(t) { osc('sine', 95, t, 0.05, { gain: 0.6, a: 0.002, rel: 0.25 }); noise(t, 0.03, { gain: 0.25, a: 0.002, rel: 0.08, type: 'lowpass', freq: 900 }); },
+    wipe(t) { const n = noise(t, 0.18, { gain: 0.16, a: 0.04, rel: 0.12, freq: 800, q: 1.5 }); n.f.frequency.exponentialRampToValueAtTime(4200, t + 0.25); osc('triangle', 880, t + 0.16, 0.03, { gain: 0.05, a: 0.004, rel: 0.15 }); },
     pop(t) { const o = osc('sine', 520, t, 0.02, { gain: 0.18, a: 0.003, rel: 0.12 }); o.frequency.exponentialRampToValueAtTime(1100, t + 0.08); },
     tick(t) { osc('square', 1600, t, 0.005, { gain: 0.04, a: 0.001, rel: 0.03, filter: { freq: 3000 } }); },
     lock(t) { osc('sine', 140, t, 0.04, { gain: 0.4, a: 0.002, rel: 0.2 }); noise(t, 0.02, { gain: 0.2, a: 0.002, rel: 0.05, freq: 2500, q: 1 }); osc('triangle', 660, t + 0.06, 0.05, { gain: 0.08, a: 0.005, rel: 0.2 }); osc('triangle', 990, t + 0.14, 0.08, { gain: 0.08, a: 0.005, rel: 0.3 }); },
@@ -152,6 +165,7 @@ export function createAudio() {
   const PROGS = {
     lobby: { bpm: 92, chords: [[60, 64, 67, 71], [57, 60, 64, 67], [53, 57, 60, 64], [55, 59, 62, 67]], arp: [0, 2, 1, 3, 2, 1, 3, 2], swing: 0.08, shaker: true, block: false },
     betting: { bpm: 108, chords: [[57, 60, 64], [53, 57, 60], [60, 64, 67], [55, 59, 62]], arp: [0, 1, 2, 1, 0, 2, 1, 2], swing: 0.05, shaker: true, block: true },
+    final: { bpm: 138, chords: [[57, 60, 64], [57, 60, 64], [53, 57, 60], [55, 59, 62]], arp: [0, 2, 1, 2, 0, 2, 1, 2], swing: 0, shaker: true, block: true },
     results: { bpm: 100, chords: [[60, 64, 67], [65, 69, 72], [55, 59, 62], [60, 64, 67]], arp: [0, 1, 2, 3, 2, 1, 0, 1], swing: 0.06, shaker: false, block: false },
   };
   function scheduleMusic() {
