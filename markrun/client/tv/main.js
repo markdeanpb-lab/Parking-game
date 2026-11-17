@@ -168,7 +168,9 @@ function switchScreen(key, st, prev) {
   }[phase];
   screen = make ? make(st, prev) : { };
   screen.key = key;
-  if (phase !== 'RACE' && phase !== 'RESULTS' && phase !== 'INTRO') disposeRaceView();
+  const keepForRace = phase === 'BETTING' && raceView && raceViewRound === st.round?.roundId && canReuseView(raceView);
+  if (keepForRace) { try { raceView.setPaused(true); } catch { /* */ } document.body.classList.remove('racing'); }
+  else if (phase !== 'RACE' && phase !== 'RESULTS' && phase !== 'INTRO') disposeRaceView();
 }
 
 let lastMusic = null;
@@ -415,10 +417,14 @@ function refreshFinished(ok, msg) {
 // =====================================================================================================
 let raceView = null;
 let raceViewKind = null;
+let raceViewRound = null;
+// The intro's 3D world can be re-used for the race (built once per round) if the view can take the plan AND the
+// players' picks after creation; otherwise a fresh view is made at RACE so the HUD can tag who backed whom.
+const canReuseView = (v) => raceViewKind === '3d' && typeof v?.loadPlan === 'function' && (typeof v?.setBackedBy === 'function' || v?.loadPlan.length >= 2);
 function disposeRaceView() {
   if (!raceView) return;
   try { raceView.dispose(); } catch (e) { console.warn(e); }
-  raceView = null; raceViewKind = null;
+  raceView = null; raceViewKind = null; raceViewRound = null;
   raceLayer.innerHTML = '';
   document.body.classList.remove('racing');
 }
@@ -428,7 +434,12 @@ async function makeRaceView(opts, { allow2d = true } = {}) {
   const full = { course: w.course, park: w.park, speed: SPEED, ...opts };
   if (Race3D?.createRaceView && !FORCE_2D) {
     try {
-      raceView = await Race3D.createRaceView(raceLayer, full);
+      try { raceView = await Race3D.createRaceView(raceLayer, full); } catch (e) {
+        if (full.plan || !full.round) throw e; // older views needed a plan even for the intro
+        raceLayer.innerHTML = '';
+        raceView = await Race3D.createRaceView(raceLayer, { ...full, plan: introPlan(full.round) });
+      }
+      raceViewRound = full.round?.roundId || null;
       raceViewKind = '3d';
       window.__markrun.raceView = raceView;
       log({ type: 'raceview', kind: '3d' });
@@ -493,7 +504,7 @@ function introScreen(st) {
     if (!FORCE_2D && Race3D?.createRaceView) {
       const byId = new Map(runners.map((r, i) => [r.id, i]));
       const v = await makeRaceView({
-        round, plan: introPlan(round), backedBy: {}, introCards: false,
+        round, backedBy: {}, introCards: false,
         onIntroRunner: (id) => (tok.cancelled ? undefined : showRunner(byId.get(id) ?? 0)),
       }, { allow2d: false }).catch(() => null);
       if (v && !tok.cancelled) {
@@ -692,7 +703,7 @@ function raceScreen(st) {
   let clockIv = null, mkIv = null;
   async function runMarket(v) {
     marketState = 'waiting';
-    try { v.setPaused(true); } catch { /* */ }
+    try { v.setPaused(true, { market: true, marketText: 'Bet on your phones — one bet each!' }); } catch { /* */ }
     audio.play('bell'); audio.play('crowd', { dur: 2, peak: 0.2 });
     say('Halfway! The market is open. One bet each — quick!', 'jeff', 3);
     send({ t: 'marketOpen', roundId: round.roundId });
@@ -713,7 +724,17 @@ function raceScreen(st) {
   const loadHb = setInterval(() => send({ t: 'raceTime', roundId: round.roundId, b: -100000 + (Date.now() - loadT0) / 1000 }), 2000);
   tok.timers.push(loadHb);
   (async () => {
-    const v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {} });
+    let v = null;
+    if (raceView && raceViewRound === round.roundId && canReuseView(raceView)) {
+      try {
+        if (typeof raceView.setBackedBy === 'function') { raceView.setBackedBy(st.backedBy || {}); raceView.loadPlan(st.racePlan); }
+        else raceView.loadPlan(st.racePlan, { backedBy: st.backedBy || {} });
+        raceView.setPaused(false);
+        v = raceView;
+        log({ type: 'raceview', kind: '3d', reused: true });
+      } catch (e) { console.warn('could not re-use the intro view', e); }
+    }
+    if (!v) v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {} });
     clearInterval(loadHb);
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }

@@ -204,7 +204,7 @@ try {
         if (await pa.$('#modal .mkr:not([disabled])')) { opened = true; break; }
         await sleep(200);
       }
-      if (opened) {
+      if (opened) try {
         if (round === 1) { await sleep(300); await shot(pa, '19b-phoneA-market'); }
         await pa.click('[data-ms="100"]', { timeout: 3000 }).catch(() => {});
         await pa.click('#modal .mkr:not([disabled])', { timeout: 5000 });
@@ -218,7 +218,8 @@ try {
         await sleep(1500);
         await pa.waitForFunction(() => !document.querySelector('#modal .market'), null, { timeout: 30000 });
         if (round === 1) await shot(pa, '19f-phoneA-live');
-      } else console.log(`  round ${round}: no halfway market (game module has no inPlayMarket yet?)`);
+      } catch (e) { console.log(`  round ${round}: market closed before the bot could bet (slow headless) - ${e.message.split('\n')[0]}`); }
+      else console.log(`  round ${round}: no halfway market (game module has no inPlayMarket yet?)`);
     }
     if (round === 1 && (await health()).phase === 'RACE') {
       await shot(pa, '17-phoneA-race');
@@ -282,6 +283,7 @@ try {
   await shot(pa, '26-phoneA-finale');
 
   // restart-resume: host restarts during FINALE, TV/phones reconnect
+  if (RACE === '2d' && !inplayPlaced) throw new Error('no halfway (inplay) bet was placed');
   ok = true;
 } catch (e) {
   console.error('E2E FAILED:', e.stack || e.message);
