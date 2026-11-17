@@ -8,6 +8,10 @@ import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
 import { Race3D, introPlan } from './race-bridge.js';
+import { provisionalNet } from '../../server/game/provisional.mjs';
+import * as Moments from '../../server/game/moments.mjs';
+import { broadcastToRace, distanceAt } from '../../server/game/raceplan.mjs';
+const moment = (name, ...a) => { try { return typeof Moments[name] === 'function' ? Moments[name](...a) : null; } catch { return null; } };
 
 const params = new URLSearchParams(location.search);
 const SPEED = Math.max(0.25, Number(params.get('speed')) || 1);
@@ -132,14 +136,22 @@ function onState(st) {
     for (const p of st.players) {
       const old = prevPlayers.get(p.id);
       if (!old) { audio.play('join'); if (st.phase === 'LOBBY') voice.say(`${p.name} has entered the paddock!`, 'pam', { priority: 1 }); }
-      else if (!old.locked && p.locked && st.phase === 'BETTING') { audio.play('lock'); voice.say(lockLine(p.name), Math.random() < 0.5 ? 'jeff' : 'pam', { priority: 1 }); }
+      else if (!old.locked && p.locked && st.phase === 'BETTING') { audio.play('thunk'); audio.play('lock'); const l = moment('lockLine', { name: p.name }) || { text: lockLine(p.name), speaker: 'jeff' }; voice.say(l.text, l.speaker, { priority: 2 }); }
       else if (old.connected && !p.connected) setTimeout(() => { const q = S?.players.find((x) => x.id === p.id); if (q && !q.connected) toast(`${p.name}'s phone dropped out — it'll reconnect`, 'red'); }, 5000);
     }
   }
   prevPlayers = now;
   const key = screenKey(st);
-  if (!screen || screen.key !== key) switchScreen(key, st, prev);
-  else screen.update?.(st, prev);
+  if (!screen || screen.key !== key) {
+    if (!screen) switchScreen(key, st, prev);
+    else { // wipe across, swap under it (no hard DOM swaps)
+      const old = screen;
+      screen = { key, pending: true, destroy: () => old.destroy?.() };
+      playWipe();
+      setTimeout(() => { if (screen.key === key && screen.pending) { screen = old; switchScreen(key, S, prev); } }, 210);
+    }
+  }
+  else if (!screen.pending) screen.update?.(st, prev);
   renderHud(st);
   renderNextHint(st);
   phaseMusic(st);
@@ -152,6 +164,12 @@ function screenKey(st) {
   return `${st.phase}|${st.gameNumber}`;
 }
 
+const wipeEl = el('<div id="wipe"><i></i><b></b></div>');
+document.body.appendChild(wipeEl);
+function playWipe() {
+  wipeEl.classList.remove('go'); void wipeEl.offsetWidth; wipeEl.classList.add('go');
+  audio.play('wipe');
+}
 function switchScreen(key, st, prev) {
   try { screen?.destroy?.(); } catch (e) { console.warn(e); }
   screenEl.innerHTML = '';
@@ -217,12 +235,12 @@ function renderHud(st) {
 function renderNextHint(st) {
   const label = {
     INTRO: 'Skip intros ⏭', RACE: 'Skip race ⏭', RESULTS: 'Next ▶', SCOREBOARD: st.roundNumber >= st.roundsPerGame ? 'Final results ▶' : 'Next round ▶',
-    FINALE: 'Play again ↻', BETTING: st.revealed ? 'Start race ▶' : null,
+    FINALE: (() => { const lo = [...st.players].sort((a, b) => a.bankroll - b.bankroll)[0]; return st.players.length > 1 && lo ? `${lo.name} demands a REMATCH ↻` : 'Play again ↻'; })(), BETTING: st.revealed ? 'Start race ▶' : null,
   }[st.phase];
   if (!label) { nextHint.innerHTML = ''; return; }
   if (nextHint.dataset.label === label) return;
   nextHint.dataset.label = label;
-  nextHint.innerHTML = `<button class="btn ${st.phase === 'RACE' || st.phase === 'INTRO' ? 'ghost small' : 'white'}">${label} <span style="opacity:.6;font-size:.7em">SPACE</span></button>`;
+  nextHint.innerHTML = `<button class="btn ${st.phase === 'RACE' || st.phase === 'INTRO' ? 'ghost small' : st.phase === 'FINALE' ? 'red big rematch' : 'white'}">${label} <span style="opacity:.6;font-size:.7em">SPACE</span></button>`;
   nextHint.firstElementChild.addEventListener('click', (e) => { e.stopPropagation(); unlockAll(); advance(); });
 }
 
@@ -299,7 +317,7 @@ function lobbyScreen(st) {
     <div class="tagline">Real parkruns. Real Mark. Fake money. 🍷</div>
     <div class="qr-card panel white"><div class="qr"></div><div class="scan">📱 SCAN TO JOIN</div><div class="url"></div></div>
     <div class="slots"></div>
-    <div class="settings panel cream"></div>
+    <div class="settings panel cream hidden"></div>
     <div class="start-wrap"></div>
   </div>`);
   screenEl.appendChild(root);
@@ -338,9 +356,32 @@ function lobbyScreen(st) {
     const allReady = s.players.length && s.players.every((p) => p.ready);
     $('.start-wrap', root).innerHTML = `<button class="btn green ${s.players.length ? 'pulse' : ''}" data-start ${s.players.length ? '' : 'disabled'}>${s.players.length ? (s.players.length === 1 ? 'START SOLO ▶' : "LET'S RACE ▶") : 'Waiting for players…'}</button>
       <div class="hint">${s.refreshing ? '⏳ Refreshing historical data…' : s.players.length ? (allReady ? 'Everyone is ready!' : 'Press SPACE — or everyone taps READY on their phone') : 'Up to 4 players · best with 2'}</div>
-      <button class="btn small white refresh-btn" data-refresh ${s.refreshing ? 'disabled' : ''}>⟳ Refresh Historical Data</button>`;
+      <button class="btn small white refresh-btn" data-options>⚙ Options</button>`;
+    if (optsOpen) renderOptions(s);
   }
   let prevLobby = new Set(st.players.map((p) => p.id));
+  let optsOpen = false;
+  function renderOptions(s) {
+    let m = $('#tvmodal.opts');
+    if (!m) { m = openModal('<h2 class="outlined white thin">⚙ Options</h2><div class="optgrid"></div><div class="row"><button class="btn small white" data-refresh>⟳ Refresh Historical Data…</button><span style="flex:1"></span><button class="btn green" data-ok>Done <small>ENTER</small></button></div>'); m.classList.add('opts');
+      m.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.ok !== undefined) { optsOpen = false; closeModal(); return; } handleSetting(b); }); }
+    $('.optgrid', m).innerHTML = $('.settings', root).innerHTML;
+  }
+  function handleSetting(b) {
+    audio.play('tick');
+    if (b.dataset.refresh !== undefined) { optsOpen = false; return confirmRefresh(); }
+    const k = b.closest('[data-k]')?.dataset.k;
+    if (!k) return undefined;
+    const st2 = S.settings;
+    if (b.dataset.toggle !== undefined) return send({ t: 'settings', settings: { [k]: !st2[k] } });
+    const d = Number(b.dataset.d);
+    let v;
+    if (k === 'startingBankroll') { const i = BANKROLLS.indexOf(st2[k]); v = BANKROLLS[Math.max(0, Math.min(BANKROLLS.length - 1, (i < 0 ? 2 : i) + d))]; }
+    else if (k === 'betTimer') { const i = TIMERS.indexOf(st2[k]); v = TIMERS[Math.max(0, Math.min(TIMERS.length - 1, (i < 0 ? 0 : i) + d))]; }
+    else if (k === 'volume') v = Math.round(Math.max(0, Math.min(1, (st2.volume ?? 0.8) + d * 0.1)) * 10) / 10;
+    else v = st2[k] + d;
+    return send({ t: 'settings', settings: { [k]: v } });
+  }
   render(st);
   root.addEventListener('click', (e) => {
     unlockAll();
@@ -349,6 +390,7 @@ function lobbyScreen(st) {
     audio.play('tick');
     if (b.dataset.start !== undefined) return advance();
     if (b.dataset.refresh !== undefined) return confirmRefresh();
+    if (b.dataset.options !== undefined) { optsOpen = true; return renderOptions(S); }
     if (b.dataset.kick) return send({ t: 'kick', playerId: b.dataset.kick });
     const k = b.closest('[data-k]')?.dataset.k;
     if (!k) return;
@@ -418,6 +460,7 @@ function refreshFinished(ok, msg) {
 // =====================================================================================================
 // INTRO
 // =====================================================================================================
+let coldOpenDone = null;
 let raceView = null;
 let raceViewKind = null;
 let raceViewRound = null;
@@ -484,7 +527,7 @@ function introScreen(st) {
     say(r.intro || `${r.nickname}. ${r.tagline || ''}`, i % 2 ? 'pam' : 'jeff', 3);
     const cp = clueParts(r.publicClue, 8);
     if (cp.kicker && !/^…/.test(cp.kicker)) say(`${cp.headline} ${cp.kicker}`, i % 2 ? 'jeff' : 'pam', 2); // the joke lives in the kicker
-    await waitVoice(tok, 4800, 14000);
+    await waitVoice(tok, 4800, 6500); // intros <= ~45 s in total
   }
   async function finish() {
     if (tok.cancelled) return;
@@ -492,14 +535,26 @@ function introScreen(st) {
     box.innerHTML = `<div class="bets-open"><div class="anim-pop"><div class="big outlined">BETS ARE OPEN!</div><div class="sub2 outlined white thin">📱 Grab your phones — your secret clues are waiting 🤫</div></div></div>`;
     audio.play('kaching');
     say('The book is open! Check your phones for your secret clues.', 'pam', 3);
-    await waitVoice(tok, 3200, 6000);
+    await waitVoice(tok, 2500, 4000);
     if (!tok.cancelled) send({ t: 'introDone', roundId: round.roundId });
   }
 
   const t0 = Date.now();
   const hb = setInterval(() => send({ t: 'progress', phase: 'INTRO', roundId: round.roundId, value: Date.now() - t0 }), 2000);
   tok.timers.push(hb);
+  async function coldOpen() {
+    if (round.number !== 1 || coldOpenDone === st.gameNumber) return;
+    coldOpenDone = st.gameNumber;
+    box.innerHTML = `<div class="cold"><div class="cw outlined">MARK<span>RUN</span></div><div class="cs outlined white thin">${esc(st.players.map((p) => p.name).join(' vs '))}</div><div class="cp">${st.players.map((p) => avatarHtml(p.avatar, 110)).join('<span class="vsx outlined">VS</span>')}</div></div>`;
+    audio.play('drumroll', { dur: 1.4 }); setTimeout(() => { audio.play('fanfare'); audio.play('crowd', { dur: 3, peak: 0.3 }); }, T(1500));
+    const lines = moment('coldOpenLines', st.players.map((p) => ({ name: p.name }))) || [{ speaker: 'jeff', text: `Good evening, ${st.players.map((p) => p.name).join(' and ')}! Welcome to MARKRUN!` }];
+    await sleepT(1600, tok);
+    lines.slice(0, 2).forEach((l) => say(l.text, l.speaker, 3));
+    await waitVoice(tok, 6000, 9000);
+  }
   (async () => {
+    await coldOpen();
+    if (tok.cancelled) return;
     // 3D: helicopter fly-over + a close-up per runner; our card + voice line hold each shot (onIntroRunner)
     if (!FORCE_2D && Race3D?.createRaceView) {
       const byId = new Map(runners.map((r, i) => [r.id, i]));
@@ -525,7 +580,7 @@ function introScreen(st) {
     box.innerHTML = titleHtml;
     audio.play('fanfare');
     sayIntroLines(round);
-    await waitVoice(tok, 4200, 14000);
+    await waitVoice(tok, 4200, 6000);
     for (let i = 0; i < runners.length && !tok.cancelled; i++) { await showRunner(i); if (!tok.cancelled) await sleepT(700, tok); }
     await finish();
   })();
@@ -605,59 +660,69 @@ function bettingScreen(st) {
 function revealScreen(st) {
   const tok = makeToken();
   const round = st.round;
+  const runners = [...round.runners].sort((a, b) => a.lane - b.lane);
   let seq = (st.revealSeq || []).filter((x) => x && x.bet);
-  if (!seq.length) { // fallback: interleave players, smallest first
+  if (!seq.length) {
     const lines = (st.betLines || []).slice();
     seq = st.players.flatMap((p) => (st.bets?.[p.id] || []).map((bet) => ({ playerId: p.id, bet }))).sort((a, b) => a.bet.stake - b.bet.stake)
       .map((x) => ({ ...x, line: lines.shift() || null }));
   }
-  const root = el(`<div class="reveal">
+  const pcol = (pid) => st.players.find((p) => p.id === pid)?.avatar?.colour || '#fff';
+  const root = el(`<div class="faceoff">
     <div class="rh outlined">THE BETS ARE IN!</div>
-    <div class="spot"></div>
-    <div class="tally">${st.players.map((p) => `<div class="tcol panel slant" data-pid="${p.id}" style="background:${esc(p.avatar.colour)}"><div class="unslant"><div class="who">${avatarHtml(p.avatar, 64)}<span>${esc(p.name)}</span><span class="tot num" data-tot>0pp</span></div><div class="chips"></div></div></div>`).join('')}</div>
+    <div class="fo-grid">${runners.map((r) => `<div class="fo-card" data-rid="${r.id}"><div class="fo-top" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 150)}</div></div><b>${esc(tvName(r))}</b><span class="num">${esc(r.odds?.display || '')}</span><div class="fo-chips"></div></div>`).join('')}</div>
+    <div class="fo-side"></div>
+    <div class="fo-legend">${st.players.map((p) => `<span class="lg">${avatarHtml(p.avatar, 40)}<b>${esc(p.name)}</b><i data-tot="${p.id}">0pp</i></span>`).join('')}</div>
   </div>`);
   screenEl.appendChild(root);
-  const spot = $('.spot', root);
-  const totals = {};
+  const tot = {};
   (async () => {
-    audio.play('drumroll', { dur: 1.6 / SPEED + 0.2 });
-    say(seq.length ? "Right then. Let's see the damage, smallest first." : 'Nobody has bet a penny. Cowards, the lot of them.', 'jeff', 3);
-    await sleepT(1800, tok);
+    audio.play('drumroll', { dur: 1.2 / SPEED + 0.2 });
+    say(seq.length ? 'Right then. The bets, smallest first!' : 'Nobody has bet a penny. Cowards, the lot of them.', 'jeff', 3);
+    await sleepT(1300, tok);
+    const maxStake = Math.max(1, ...seq.map((x) => x.bet.stake));
     for (let i = 0; i < seq.length && !tok.cancelled; i++) {
       const { playerId, bet, line } = seq[i];
       const p = st.players.find((x) => x.id === playerId);
-      const r = runnerById(round, betRunnerId(bet));
-      const odds = betOdds(round, bet);
-      const oddsTxt = oddsText(round, bet);
+      const rid = betRunnerId(bet);
       const big = i === seq.length - 1 && seq.length > 1;
-      spot.innerHTML = `<div class="spotcard"><div class="anim-pop"><div class="sc panel ${big ? 'yellow' : 'white'}">
-        <div class="scp">${avatarHtml(p?.avatar, 110)}<div class="scn">${esc(p?.name || '')}</div></div>
-        <div class="scr">${r ? portrait(r, 150) : '<span class="propicon big">🎡</span>'}</div>
-        <div class="scb"><div class="sck">${betKind(bet)}${big ? ' · THE BIG ONE' : ''}</div><div class="scl">${esc(betLabel(round, bet))}</div><div class="sco">${esc(oddsTxt)} · pays ${money(bet.stake * odds)}</div></div>
-        <div class="scs num">${money(bet.stake)}</div></div></div></div>`;
-      audio.play(big ? 'kaching' : 'pop');
-      if (line?.text) say(line.text, line.speaker || (i % 2 ? 'pam' : 'jeff'), 3);
-      totals[playerId] = (totals[playerId] || 0) + bet.stake;
-      const col = root.querySelector(`.tcol[data-pid="${playerId}"]`);
-      if (col) {
-        col.querySelector('.chips').appendChild(el(`<div class="tchip anim-pop">${r ? `<i style="background:${esc(r.colour.primary)}"></i>` : '🎡 '}<span>${esc(bet.type === 'prop' ? 'Side bet' : runnerShort(r))}</span><b>${money(bet.stake)}</b></div>`));
-        col.querySelector('[data-tot]').textContent = money(totals[playerId]);
-      }
-      await waitVoice(tok, 2600, 9000);
+      const chip = el(`<div class="fchip ${big ? 'big' : ''} anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<b>${money(bet.stake)}</b>${bet.type === 'h2h' ? '<i>⚔️</i>' : bet.type === 'special' || bet.boost ? '<i>🚀</i>' : ''}</div>`);
+      const card = rid ? root.querySelector(`.fo-card[data-rid="${rid}"] .fo-chips`) : null;
+      if (card) card.appendChild(chip);
+      else $('.fo-side', root).appendChild(el(`<div class="fside anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<span>🎡 ${esc(betLabel(round, bet))}</span><b>${money(bet.stake)}</b></div>`));
+      if (rid) root.querySelector(`.fo-card[data-rid="${rid}"]`)?.classList.add('backed');
+      audio.play(big ? 'kaching' : 'chip', { p: bet.stake / maxStake });
+      tot[playerId] = (tot[playerId] || 0) + bet.stake;
+      const tEl = root.querySelector(`[data-tot="${playerId}"]`); if (tEl) tEl.textContent = money(tot[playerId]);
+      if (line?.text) say(line.text, line.speaker || 'jeff', big ? 3 : 1);
+      await sleepT(big ? 1600 : 900, tok);
     }
     if (tok.cancelled) return;
-    if (!(st.revealSeq || []).length) { // clash banter when the game module didn't provide lines
-      const picks = st.players.map((p) => new Set((st.bets?.[p.id] || []).filter((b) => b.type === 'win').map((b) => b.runnerId)));
-      let shared = null;
-      if (picks.length >= 2) for (const r of picks[0]) if (picks.slice(1).every((s) => s.has(r))) shared = runnerById(round, r);
-      if (shared) { spot.innerHTML = `<div class="spotcard"><div class="same panel yellow anim-pop">Great minds… both backing ${esc(shared.nickname)}! 🤝</div></div>`; say(`They've both gone for ${shared.nickname}. Either genius, or a shared delusion.`, 'pam', 3); await waitVoice(tok, 2200, 7000); }
+    // CLASH: opposite sides of a head-to-head, or big win money on different runners
+    const clashes = [];
+    if (st.players.length >= 2) {
+      const [pa, pb] = st.players;
+      const ba = st.bets?.[pa.id] || [], bb = st.bets?.[pb.id] || [];
+      for (const x of ba.filter((q) => q.type === 'h2h')) { const y = bb.find((q) => q.type === 'h2h' && q.matchupId === x.matchupId && q.pick !== x.pick); if (y) clashes.push([x.pick, y.pick]); }
+      const top = (bs, p) => bs.filter((q) => q.type === 'win' || q.type === 'special').sort((u, v) => v.stake - u.stake)[0];
+      const wa = top(ba), wb = top(bb);
+      if (!clashes.length && wa && wb && wa.runnerId !== wb.runnerId && wa.stake >= 0.2 * pa.bankroll && wb.stake >= 0.2 * pb.bankroll) clashes.push([wa.runnerId, wb.runnerId]);
+      if (clashes.length) {
+        for (const rid of clashes[0]) root.querySelector(`.fo-card[data-rid="${rid}"]`)?.classList.add('clash');
+        root.appendChild(el('<div class="clash-stamp"><div class="anim-pop outlined">CLASH!</div></div>'));
+        audio.play('sting'); audio.play('stamp');
+        const ln = seq.map((x) => x.line?.text).find((t) => /both|against|clash|opposite|other side/i.test(t || ''));
+        say(ln || `${pa.name} and ${pb.name} are on opposite sides. Somebody's sleeping on the sofa tonight.`, 'pam', 3);
+        await sleepT(2200, tok);
+      }
     }
+    await waitVoice(tok, 1200, 4000);
     if (tok.cancelled) return;
     for (const n of (Race3D?.createRaceView && !FORCE_2D ? [] : ['3', '2', '1'])) {
       if (tok.cancelled) return;
       const c = el(`<div class="countdown outlined anim-pop">${n}</div>`);
       root.appendChild(c); audio.play('beep');
-      await sleepT(800, tok); c.remove();
+      await sleepT(700, tok); c.remove();
     }
     if (!tok.cancelled) send({ t: 'revealDone', roundId: round.roundId });
   })();
@@ -686,13 +751,61 @@ function marketHtml(s) {
 function raceScreen(st) {
   const tok = makeToken();
   const round = st.round;
-  const root = el(`<div class="race-ov"><div class="live panel slant red"><div class="unslant" style="display:flex;gap:14px;align-items:center"><span class="dot"></span>LIVE · ${esc(round.title)}</div></div><div class="market-layer"></div></div>`);
+  const root = el(`<div class="race-ov"><div class="live panel slant red"><div class="unslant" style="display:flex;gap:14px;align-items:center"><span class="dot"></span>LIVE · ${esc(round.title)}</div></div><div class="market-layer"></div><div class="ifnow"></div><div class="stamps"></div></div>`);
   screenEl.appendChild(root);
   document.body.classList.add('racing');
   const mkLayer = $('.market-layer', root);
   let lastWhoosh = 0;
   let finished = 0;
   let marketState = 'idle'; // idle | waiting | open | done
+  // P4: ONE live number per player - "if it ended now" - from the game's provisionalNet and the live order
+  const ifnowEl = $('.ifnow', root);
+  const lastNet = {};
+  let ifIv = null;
+  function liveOrder(b) {
+    const plan = st.racePlan;
+    const raceS = broadcastToRace(plan.timeMap, Math.max(0, b));
+    return plan.runners.map((r) => ({ id: r.id, d: distanceAt(r.progress, raceS), f: r.officialS, done: raceS >= r.officialS }))
+      .sort((x, y) => (x.done && y.done ? x.f - y.f : (y.d - x.d) || (x.f - y.f))).map((x) => x.id);
+  }
+  function updateIfNow(v) {
+    const b = v?.broadcastTime;
+    if (!Number.isFinite(b) || b < 3 || !S?.bets) return;
+    let nets;
+    try { nets = provisionalNet(S.round, S.bets, liveOrder(b)); } catch { return; }
+    if (!ifnowEl.children.length) ifnowEl.innerHTML = S.players.map((p) => `<div class="ifp" data-pid="${p.id}">${avatarHtml(p.avatar, 40)}<span class="nm">${esc(p.name)}</span><b class="num">±0</b></div>`).join('') + '<div class="ifl">if it ended now</div>';
+    for (const p of S.players) {
+      const n = Math.round(nets?.[p.id] ?? 0);
+      if (lastNet[p.id] === n) continue;
+      const row = ifnowEl.querySelector(`.ifp[data-pid="${p.id}"]`);
+      if (!row) continue;
+      const bEl = row.querySelector('b');
+      const prevN = lastNet[p.id];
+      lastNet[p.id] = n;
+      if (prevN == null) { bEl.textContent = signedMoney(n); continue; }
+      countUp(bEl, prevN, n, 600, (x) => signedMoney(x));
+      row.classList.remove('up', 'down'); void row.offsetWidth; row.classList.add(n > prevN ? 'up' : 'down');
+    }
+  }
+  // P8: per-player stamps after the finish replay
+  let stamped = false;
+  function showStamps() {
+    if (stamped || tok.cancelled) return;
+    stamped = true;
+    let nets = {};
+    try { nets = provisionalNet(S.round, S.bets || {}, st.racePlan.finishOrder); } catch { /* */ }
+    const box = $('.stamps', root);
+    S.players.forEach((p, i) => {
+      const n = Math.round(nets[p.id] ?? 0);
+      setTimeout(() => {
+        if (tok.cancelled) return;
+        box.appendChild(el(`<div class="stamp ${n > 0 ? 'win' : n < 0 ? 'lose' : ''}" style="--c:${esc(p.avatar.colour)}">${avatarHtml(p.avatar, 70)}<span>${esc(p.name.toUpperCase())} ${n > 0 ? `WINS ${money(n)}` : n < 0 ? signedMoney(n) : 'BREAKS EVEN'}</span></div>`));
+        audio.play(n > 0 ? 'kaching' : n < 0 ? 'boo' : 'stamp');
+        const l = moment('stampLine', { name: p.name, net: n });
+        if (l) say(l.text, l.speaker, 3);
+      }, T(350 + i * 1100));
+    });
+  }
   let priceSaid = false;
   let marketResolve = null;
   let clockIv = null, mkIv = null;
@@ -706,7 +819,7 @@ function raceScreen(st) {
     mkLayer.innerHTML = marketHtml(S);
     mkIv = setInterval(() => {
       const t = mkLayer.querySelector('[data-mkt]');
-      if (t && S?.market?.closesAt) t.textContent = `${Math.max(0, Math.ceil((S.market.closesAt - net.serverNow()) / 1000))}s`;
+      if (t && S?.market?.closesAt) { const left = Math.max(0, Math.ceil((S.market.closesAt - net.serverNow()) / 1000)); if (left <= 10 && left !== t.dataset.last * 1) { t.dataset.last = left; audio.play('tick'); } t.textContent = `${left}s`; }
     }, 200);
     await new Promise((res) => { marketResolve = res; setTimeout(res, 20000); tok.timers.push(setTimeout(() => { if (!S?.market) res(); }, 3500)); });
     clearInterval(mkIv);
@@ -730,7 +843,7 @@ function raceScreen(st) {
         log({ type: 'raceview', kind: '3d', reused: true });
       } catch (e) { console.warn('could not re-use the intro view', e); }
     }
-    if (!v) v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {} });
+    if (!v) v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {}, onWinnerStamp: () => showStamps() });
     clearInterval(loadHb);
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }
@@ -744,11 +857,13 @@ function raceScreen(st) {
     log({ type: 'race-start', kind: raceViewKind });
     // report the broadcast clock so phones can show their runners live (they never get the plan)
     clockIv = setInterval(() => { const b = v.broadcastTime; if (Number.isFinite(b)) send({ t: 'raceTime', roundId: round.roundId, b }); }, 1000);
+    ifIv = setInterval(() => updateIfNow(v), 500);
     v.playRace((e) => {
       if (tok.cancelled || !e) return;
       log({ type: 'race-event', e: e.type || 'line', text: e.text });
       if (e.kind === 'countdown') { audio.play(e.n === 0 ? 'go' : 'beep'); if (e.n === 0) { audio.play('horn'); audio.play('crowd', { dur: 3, peak: 0.28 }); } return; }
-      if (e.kind === 'photo_finish') { audio.play('stamp'); say("It's a photo finish! Hold your breath!", 'pam', 3); return; }
+      if (e.kind === 'photo_finish') { audio.play('stamp'); audio.play('heartbeat', { beats: 5 }); say("It's a photo finish! Hold your breath!", 'pam', 3); return; }
+      if (e.kind === 'winner_replay_done') { showStamps(); return; }
       if (e.text && (e.kind === 'commentary' || !e.type)) { if (marketState !== 'waiting') voice.say(e.text, e.speaker || 'jeff', { priority: e.priority || 2 }); return; }
       switch (e.type) {
         case 'overtake': if (Date.now() - lastWhoosh > 1500) { lastWhoosh = Date.now(); audio.play('whoosh'); } break;
@@ -757,13 +872,14 @@ function raceScreen(st) {
         case 'lap':
           if (marketState === 'idle' && S?.marketAvailable) { log({ type: 'market' }); runMarket(v); } else audio.play('bell');
           break;
-        case 'final_stretch': audio.play('crowd', { dur: 6, peak: 0.4 }); break;
-        case 'finish': finished++; if (finished === 1) { audio.play('fanfare'); audio.play('crowd', { dur: 4, peak: 0.45 }); } break;
+        case 'final_stretch': audio.play('crowd', { dur: 6, peak: 0.4 }); if (S?.settings?.music !== false) audio.startMusic('final'); break;
+        case 'finish': finished++; if (finished === 1) { audio.stopMusic(0.6); audio.play('fanfare'); audio.play('crowd', { dur: 4, peak: 0.45 }); } break;
         default: break;
       }
     }, async () => {
       if (tok.cancelled) return;
       log({ type: 'race-done' });
+      if (!stamped) { showStamps(); await sleepT(400 + S.players.length * 1100, tok); }
       await sleepT(2500, tok);
       if (!tok.cancelled) send({ t: 'raceDone', roundId: round.roundId });
     });
@@ -791,7 +907,7 @@ function raceScreen(st) {
       }
       mkLayer.innerHTML = marketHtml(s);
     },
-    destroy: () => { cancelToken(tok); clearInterval(clockIv); clearInterval(mkIv); marketResolve?.(); },
+    destroy: () => { cancelToken(tok); clearInterval(clockIv); clearInterval(mkIv); clearInterval(ifIv); marketResolve?.(); audio.stopMusic(0.8); },
   };
 }
 
@@ -832,7 +948,7 @@ function resultsScreen(st) {
     }
     const lines = res.commentary || [];
     lines.slice(0, 2).forEach((l) => say(l.text, l.speaker, 3));
-    await waitVoice(t, 5500, 14000);
+    await waitVoice(t, 4000, 7000);
     done(0);
   }
 
@@ -868,10 +984,21 @@ function resultsScreen(st) {
       const x = rv.get(order[i]);
       const r = runnerById(round, order[i]);
       audio.play(i === 0 ? 'fanfare' : 'reveal');
-      if (i === 0 || i === cards.length - 1) say(`${i === 0 ? 'The winner' : 'And in last place'}, ${r?.nickname}: ${x?.headline || x?.dateText || ''}`, i === 0 ? 'jeff' : 'pam', 2);
-      await sleepT(i === 0 ? 3200 : 2600, t);
+      if (i === cards.length - 1 && cards.length > 1) say(`And in last place, ${r?.nickname}: ${x?.dateText || ''}`, 'pam', 2);
+      if (i === 0) { cards[0].classList.add('winner-big'); say(`The winner, ${r?.nickname}: ${x?.dateText || ''}, ${res.finishOrder[0]?.timeText || ''}.`, 'jeff', 3); }
+      await sleepT(i === 0 ? 1800 : 2200, t);
     }
-    await waitVoice(t, 6000, 12000);
+    // a beat of silence, then the punchline lands
+    const w0 = rv.get(order[0]) || {};
+    const generic = !w0.stravaTitle || /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$/i.test(String(w0.stravaTitle).trim());
+    const punch = w0.punchline || (!generic ? `“${w0.stravaTitle}”` : '');
+    await waitVoice(t, 900, 5000);
+    if (punch && !t.cancelled) {
+      root.appendChild(el(`<div class="punch"><div class="anim-pop">${esc(punch)}</div></div>`));
+      audio.play('stamp');
+      say(punch.replace(/[“”]/g, ''), 'pam', 3);
+    }
+    await waitVoice(t, 3000, 6000);
     done(1);
   }
 
@@ -896,9 +1023,9 @@ function resultsScreen(st) {
       els[i].classList.add('show');
       setTimeout(() => { audio.play('sting'); audio.play('stamp'); }, T(250));
       if (items[i].quip) say(items[i].quip, i % 2 ? 'jeff' : 'pam', 2);
-      await waitVoice(t, 2800, 8000);
+      await waitVoice(t, 2500, 5000);
     }
-    await waitVoice(t, 3500, 9000);
+    await waitVoice(t, 2000, 4000);
     done(2);
   }
 
@@ -911,11 +1038,10 @@ function resultsScreen(st) {
       return `<div class="pay panel slant" data-pid="${p.id}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;flex-direction:column;height:100%">
         <div class="who">${avatarHtml(p.avatar, 90)}${esc(p.name)}</div>
         <div class="lines">${lines}</div>
-        <div class="net num" data-net="${pay.net}">${signedMoney(0)}</div>
-        <div class="bank">Bankroll: <span data-bank>${money(pay.bankroll - pay.net)}</span></div>
+        <div class="net num outlined ${pay.net > 0 ? 'green' : pay.net < 0 ? 'red' : 'white'}" data-net="${pay.net}" style="visibility:hidden">${signedMoney(pay.net)}</div>
         ${drinking ? drinkHtml(pay.net, p.id) : ''}
       </div></div>`;
-    }).join('')}</div>`;
+    }).join('')}</div>${tugHtml(s, true)}`;
     await sleepT(600, t);
     for (const l of $$('.pl', root)) { if (t.cancelled) return; l.classList.add('show'); audio.play(l.classList.contains('won') ? 'kaching' : 'pop'); await sleepT(700, t); }
     await sleepT(400, t);
@@ -924,14 +1050,14 @@ function resultsScreen(st) {
       const pay = res.payouts?.[p.id]; if (!pay) continue;
       const panel = root.querySelector(`.pay[data-pid="${p.id}"]`);
       const netEl = panel.querySelector('.net');
-      const bankEl = panel.querySelector('[data-bank]');
-      netEl.classList.add(pay.net > 0 ? 'green' : pay.net < 0 ? 'red' : 'white');
-      netEl.classList.add('outlined');
-      countUp(netEl, 0, pay.net, T(1800), (v) => signedMoney(v));
-      countUp(bankEl, pay.bankroll - pay.net, pay.bankroll, T(1800), (v) => money(v));
+      const bankEl = null;
+      netEl.style.visibility = 'visible'; netEl.classList.add('anim-pop');
+      void bankEl;
       if (!best || pay.net > best.net) best = { ...pay, p, panel };
       if (!worst || pay.net < worst.net) worst = { ...pay, p, panel };
     }
+    tugAnimate(root, s);
+    if (best && best.net > 0) audio.play('coins', { n: Math.min(30, 8 + Math.round(best.net / 40)) });
     await sleepT(1900, t);
     if (t.cancelled) return;
     const everyone = s.settings.drinkingMode ? (res.drinks || []).filter((d) => !d.playerId) : [];
@@ -949,7 +1075,7 @@ function resultsScreen(st) {
       say(loseLine(worst.p.name, worst.net), 'pam', 3);
     }
     if (!best?.net && !worst?.net) say('Nobody won, nobody lost. The bookie is furious.', 'pam', 2);
-    await waitVoice(t, 7000, 14000);
+    await waitVoice(t, 5000, 8000);
     done(3);
   }
   function drinkHtml(net, pid) {
@@ -972,7 +1098,7 @@ function resultsScreen(st) {
     }).join('')}</div>`;
     for (const a of $$('.award', root)) { if (t.cancelled) return; a.classList.add('show'); audio.play('fanfare'); await sleepT(1500, t); }
     if (awards[0]) say(`${awards[0].title}! ${awards[0].text || ''}`, 'jeff', 2);
-    await waitVoice(t, 6500, 12000);
+    await waitVoice(t, 4500, 7000);
     done(4);
   }
 
@@ -980,9 +1106,11 @@ function resultsScreen(st) {
     if (s.resultsStage === shownStage) return;
     if (tok) cancelToken(tok);
     tok = makeToken();
+    const first = shownStage === -1;
     shownStage = s.resultsStage;
     voice.clear();
     subsEl.innerHTML = '';
+    if (!first) playWipe();
     const name = s.resultStages[s.resultsStage];
     log({ type: 'results-stage', stage: name });
     if (name !== 'order' && raceView) disposeRaceView();
@@ -994,6 +1122,23 @@ function resultsScreen(st) {
   }
   if (res) runStage(st);
   return { update: (s) => { if (s.results) runStage(s); }, destroy: () => { if (tok) cancelToken(tok); disposeRaceView(); } };
+}
+// payouts: one bar, each player's share of the money on the sofa, sliding from before to after
+function tugHtml(s, before) {
+  const res = s.results;
+  const rows = s.players.map((p) => { const pay = res?.payouts?.[p.id]; const after = pay?.bankroll ?? p.bankroll; return { p, before: Math.max(0, after - (pay?.net || 0)), after: Math.max(0, after) }; });
+  const tot = rows.reduce((a, r) => a + (before ? r.before : r.after), 0) || 1;
+  return `<div class="tug">${rows.map((r) => `<div class="seg" data-pid="${r.p.id}" data-after="${r.after}" style="flex-grow:${Math.max(0.0001, (before ? r.before : r.after) / tot)};background:${esc(r.p.avatar.colour)}">${avatarHtml(r.p.avatar, 56)}<b class="num" data-from="${r.before}">${money(before ? r.before : r.after)}</b></div>`).join('')}</div>`;
+}
+function tugAnimate(root, s) {
+  const segs = $$('.tug .seg', root);
+  const tot = segs.reduce((a, x) => a + Number(x.dataset.after), 0) || 1;
+  segs.forEach((x) => {
+    x.style.flexGrow = String(Math.max(0.0001, Number(x.dataset.after) / tot));
+    const b = x.querySelector('b');
+    countUp(b, Number(b.dataset.from), Number(x.dataset.after), T(1600), (v) => money(v));
+  });
+  void s;
 }
 function winLine(name, net) {
   const l = [`${name} cleans up! Up ${moneySay(net)}. Insufferable for the rest of the evening.`, `Kerching! ${name} is ${moneySay(net)} richer and won't let anyone forget it.`, `${name} read that race like a book.`];
@@ -1111,6 +1256,6 @@ function finaleScreen(st) {
     k++;
   }
   const startReel = setTimeout(() => { showReel(); reelIv = setInterval(showReel, T(6500)); }, T(6500));
-  setTimeout(() => say('Press space, or tap ready on your phones, to go again.', 'pam', 1), T(6500 * (reel.length + 1)));
+  setTimeout(() => { const l = moment('rematchLine', st.players.map((p) => ({ name: p.name, bankroll: p.bankroll }))); say(l?.text || 'Press space, or tap ready on your phones, to go again.', l?.speaker || 'pam', 2); }, T(6500 * (Math.min(reel.length, 7) + 1)));
   return { destroy: () => { clearInterval(again); clearInterval(reelIv); clearTimeout(startReel); } };
 }

@@ -27,7 +27,7 @@ export function buildCrowd(scene, members) {
   const R = mulberry(99);
   const N = members.length;
   const group = new THREE.Group(); scene.add(group);
-  if (!N) return { update() {}, hideWhere() {}, dispose() { scene.remove(group); }, group };
+  if (!N) return { update() {}, hideWhere() {}, setMask() {}, dispose() { scene.remove(group); }, group };
   const bodyG = gumdrop();
   const eyeG = new THREE.SphereGeometry(0.15, 8, 5); eyeG.scale(0.8, 1.15, 0.5);
   const pupG = new THREE.SphereGeometry(0.075, 6, 4); pupG.scale(0.85, 1.2, 0.5);
@@ -55,10 +55,11 @@ export function buildCrowd(scene, members) {
   for (const m of [body, hands, ...tops]) if (m.instanceColor) m.instanceColor.needsUpdate = true;
 
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  let mask = null;
   const mat = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), s = new THREE.Vector3(), base = new THREE.Matrix4(), loc = new THREE.Matrix4();
   function place(i, t, force) {
     const m = M[i];
-    if (m.hidden) { for (const im of [body]) im.setMatrixAt(i, zero); for (let k = 0; k < 2; k++) { eyes.setMatrixAt(i * 2 + k, zero); pups.setMatrixAt(i * 2 + k, zero); hands.setMatrixAt(i * 2 + k, zero); } if (m.tk >= 0) tops[m.tk].setMatrixAt(m.ti, zero); return; }
+    if (m.hidden || (mask && mask(m.x, m.z))) { for (const im of [body]) im.setMatrixAt(i, zero); for (let k = 0; k < 2; k++) { eyes.setMatrixAt(i * 2 + k, zero); pups.setMatrixAt(i * 2 + k, zero); hands.setMatrixAt(i * 2 + k, zero); } if (m.tk >= 0) tops[m.tk].setMatrixAt(m.ti, zero); return; }
     const ex = m.ex;
     const ph = t * m.sp * (0.5 + ex * 0.6) + m.ph;
     const hop = Math.max(0, Math.sin(ph)) * 0.32 * ex;
@@ -113,7 +114,9 @@ export function buildCrowd(scene, members) {
     scene.remove(group);
   }
   function hideWhere(fn) { let any = false; for (let i = 0; i < N; i++) if (!M[i].hidden && fn(M[i].x, M[i].z)) { M[i].hidden = true; place(i, 0); any = true; } if (any) flag(); }
-  return { update, dispose, hideWhere, group, members: M };
+  // temporary visibility mask (e.g. clear the camera's sightline); re-applied on the next update
+  function setMask(fn) { if (fn === mask) return; mask = fn; for (let i = 0; i < N; i++) place(i, 0); flag(); }
+  return { update, dispose, hideWhere, setMask, group, members: M };
 }
 
 // Fill crowd zones defined along the course.

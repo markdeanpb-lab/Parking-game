@@ -238,11 +238,18 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         const h = new THREE.Vector3(fin.tx, 0, fin.tz), r = new THREE.Vector3(-h.z, 0, h.x);
         if (!s.fside) s.fside = world.inPark(fin.x + r.x * 16, fin.z + r.z * 16) ? 1 : -1;
         const line = new THREE.Vector3(fin.x, fin.y + 1.0, fin.z);
-        pos = line.clone().addScaledVector(r, s.fside * 16).addScaledVector(h, 2.6).add(up.clone().multiplyScalar(1.5));
+        pos = line.clone().addScaledVector(r, s.fside * 15).addScaledVector(h, 11).add(up.clone().multiplyScalar(1.9));
         const st = sim.stateAt(Math.max(0, b));
         const next = st.order.map((id) => st.byId[id]).find((x) => !x.finished);
-        const k = next ? Math.min(1, Math.max(0, next.distToFinish / 150)) : 0;
-        look = next ? line.clone().lerp(new THREE.Vector3(next.x, next.y + 1.0, next.z), Math.min(1, 0.25 + k)) : line;
+        const fins = st.order.map((id) => st.byId[id]).filter((x) => x.finished).sort((a, c) => a.post - c.post);
+        const fresh = fins[0];
+        if (fresh && fresh.post < 6 && (!next || next.distToFinish > 45)) {
+          // hold on the runner who just finished (celebration / winner stamp moment) until the next one is close
+          look = new THREE.Vector3(fresh.x, fresh.y + 1.1, fresh.z);
+        } else {
+          const k = next ? Math.min(1, Math.max(0, next.distToFinish / 150)) : 0;
+          look = next ? line.clone().lerp(new THREE.Vector3(next.x, next.y + 1.0, next.z), Math.min(1, 0.25 + k)) : line;
+        }
         fov = 22; s.smoothLook = true; break;
       }
       case 'celebrate': {

@@ -280,7 +280,7 @@ function renderFlow() {
       <div class="review">${lines || '<p class="sub">No bets yet. Sitting this one out is allowed (and cowardly).</p>'}</div>
       <div class="totals"><span>Staked <b>${money(staked())}</b></span><span>Left <b>${money(left())}</b></span></div>
       <p class="sub small">${isFinale() ? '🔥 Double payout finale — everything can go on it.' : `Max ${money(capOf())} this round (half your bankroll).`}</p>`;
-    acts = `<button class="btn white nav" data-edit="1">Edit</button>${open
+    acts = `<button class="btn white nav" data-edit="1">✏️ Edit</button>${open
       ? `<button class="btn red grow hold" id="holdlock"><span class="fill"></span><span class="lbl">HOLD TO LOCK IN 🔒</span></button>`
       : '<button class="btn grow" disabled>Betting opens after the intros…</button>'}`;
   }
@@ -404,7 +404,9 @@ function renderRace(fresh) {
       return `<div class="lv ${x.place === 1 ? 'lead' : ''}"><span class="lp">${ordWord(x.place)}</span><div><b>${esc(runnerShort(r))}</b><small>${money(mine.get(x.runnerId) || 0)} · ${trend}</small></div></div>`;
     }).join('');
     const more = mine.size > 3 ? `<p class="sub small">+${mine.size - 3} more on the TV</p>` : '';
-    main = `<div class="kick">YOUR RUNNERS</div>${rows}${more}`;
+    const best = (L.mine || []).slice().sort((a, b) => a.place - b.place)[0];
+    const hero = best ? `<div class="race-hero">${portrait(runnerById(S.round, best.runnerId), 130)}</div>` : '';
+    main = `${hero}<div class="kick">YOUR RUNNERS</div>${rows}${more}`;
     // haptics on lead changes involving my runners
     if (lastLeader && L.leaderId && L.leaderId !== lastLeader && (mine.has(L.leaderId) || mine.has(lastLeader))) {
       vibrate(mine.has(L.leaderId) ? [60, 40, 60, 40, 160] : [300]);

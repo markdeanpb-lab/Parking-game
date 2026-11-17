@@ -66,7 +66,7 @@ test('bets stay hidden until everyone has locked; phones never get the race plan
   const tv = g.tvView(); const pa = g.phoneView(a.id); const pb = g.phoneView(b.id);
   assert.equal(tv.bets, null, 'TV sees no bets before all lock');
   assert.equal(pb.bets, null, 'other phone sees no bets');
-  assert.deepEqual(pb.me.bets, [{ type: 'win', runnerId: pub.runners[3].id, matchupId: undefined, pick: undefined, stake: 40 }], 'own draft restored');
+  assert.deepEqual(pb.me.bets, [{ type: 'win', runnerId: pub.runners[3].id, matchupId: undefined, propId: undefined, pick: undefined, stake: 40 }], 'own draft restored');
   assert.ok(!JSON.stringify(pb).includes('"stake":100'), "phone B never sees A's stake");
   assert.ok(!JSON.stringify(tv).includes('"stake":100'), "TV never sees A's stake before reveal");
   assert.equal(pa.players.find((p) => p.id === a.id).locked, true);

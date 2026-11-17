@@ -86,19 +86,24 @@ try {
   await sleep(600);
   await shot(tv, '01-tv-lobby-empty');
   // "Refresh Historical Data" confirmation (cancelled: e2e must never go online)
-  await tv.click('[data-refresh]');
+  await tv.click('[data-options]');
+  await tv.click('#tvmodal [data-refresh]');
   await tv.waitForSelector('#tvmodal [data-ok]');
   await sleep(700);
   await shot(tv, '01b-tv-refresh-confirm');
   await tv.click('#tvmodal [data-cancel]');
 
-  // settings: rounds -> ROUNDS
+  // settings live behind one "Options" button: rounds -> ROUNDS
+  await tv.click('[data-options]');
+  await tv.waitForSelector('#tvmodal [data-k="roundsPerGame"]');
   for (let i = 0; i < 12; i++) {
-    const cur = await tv.$eval('[data-k="roundsPerGame"] .val', (e) => Number(e.textContent));
+    const cur = await tv.$eval('#tvmodal [data-k="roundsPerGame"] .val', (e) => Number(e.textContent));
     if (cur === ROUNDS) break;
-    await tv.click(`[data-k="roundsPerGame"] [data-d="${cur > ROUNDS ? -1 : 1}"]`);
-    await sleep(120);
+    await tv.click(`#tvmodal [data-k="roundsPerGame"] [data-d="${cur > ROUNDS ? -1 : 1}"]`);
+    await sleep(200);
   }
+  await shot(tv, '01c-tv-options');
+  await tv.click('#tvmodal [data-ok]');
 
   // phones join
   await pa.goto(`${BASE}/phone`);
@@ -201,7 +206,7 @@ try {
     await pb.click('.rvbtn');
     await hold(pb);
     // reveal
-    await tv.waitForSelector('.reveal .spot .sc', { timeout: 20000 });
+    await tv.waitForSelector('.faceoff .fchip, .faceoff .fside, .faceoff .clash-stamp', { timeout: 20000 });
     await sleep(Math.max(400, 3000 / SPEED));
     if (round === 1) { await shot(tv, '15-tv-reveal'); await shot(pb, '16-phoneB-revealed'); }
     await waitPhase('RACE', 60000);

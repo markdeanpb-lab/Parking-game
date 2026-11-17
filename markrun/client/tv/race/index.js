@@ -20,7 +20,13 @@
 // Race: playRace starts PRE_ROLL (8.5 s) before the gun (flyover + title, start line, countdown). onEvent receives
 //   {kind:'countdown', n, text}, every plan event as {kind:'event', ...event}, every commentary line as
 //   {kind:'commentary', ...line}, and {kind:'photo_finish', ids} when the top two finish within 1.5 s (the broadcast
-//   freezes for photoFreezeS with a caption). onDone fires 3.5 s after the last finisher.
+//   freezes for photoFreezeS (default 1.4 s) with a caption). onDone fires 3.5 s after the last finisher.
+// Finish set-piece: the finish-line camera (low, side-on, telephoto) locks on ~150 m out; the broadcast clock eases to
+//   0.35x for ~1 s either side of the first finish (all runners equally, so order/timing are untouched); the photo
+//   freeze (margins <= 1.5 s) follows; then a ~3.2 s instant REPLAY of the winner's last 60 m from a head-on angle
+//   (broadcast time holds still during it, nothing fires). Then onEvent({kind:'winner_replay_done', winnerId,
+//   photoFinish}) and opts.onWinnerStamp?.({winnerId, photoFinish}) fire: the shell shows its stamp there (without
+//   the hook the view shows its own WINNER stinger). opts.finishSlowMo=false / opts.finishReplay=false disable them.
 // seek(t): resume mid-broadcast (e.g. after a TV reload). Call it right after playRace(onEvent, onDone) with the
 //   broadcast time t (-preRollS .. end): runners, camera and director jump there and nothing at or before t fires
 //   again. After playIntro(onDone), seek(t) jumps t seconds into the intro (flyoverS + index * perRunnerS lands on
@@ -87,7 +93,7 @@ export function createRaceView(container, opts = {}) {
   // one instanced crowd per zone so off-screen clusters are frustum-culled
   const byZone = new Map(); for (const m of crowdMembers) { const k = m.zone ?? 'x'; if (!byZone.has(k)) byZone.set(k, []); byZone.get(k).push(m); }
   const crowds = [...byZone.values()].map((list) => buildCrowd(scene, list));
-  const crowd = { update: (...a) => { crowds.forEach((c) => c.update(...a)); fairCrowd?.update(...a); }, dispose: () => { crowds.forEach((c) => c.dispose()); fairCrowd?.dispose(); } };
+  const crowd = { update: (...a) => { crowds.forEach((c) => c.update(...a)); fairCrowd?.update(...a); }, setMask: (fn) => crowds.forEach((c) => c.setMask(fn)), dispose: () => { crowds.forEach((c) => c.dispose()); fairCrowd?.dispose(); } };
 
   // ---------- runners ----------
   const runners = {};
@@ -135,7 +141,7 @@ export function createRaceView(container, opts = {}) {
   let wall = 0; // wall clock seconds since creation
   let raceCb = null, introState = null, freeze = 0, photoDone = false, raceDone = false;
   // finish set-piece: slow motion on the line (all runners equally), then an instant replay, then the winner stamp
-  let replay = null, replayDone = false, curSlow = 1;
+  let replay = null, replayDone = false, curSlow = 1, finMaskSide = 0;
   const SLOW = 0.35, REPLAY_S = 3.2;
   let evIdx = 0, countdownIdx = 0;
   let titleShown = false, hudDt = 0;
@@ -420,7 +426,7 @@ export function createRaceView(container, opts = {}) {
       raceCb?.onEvent?.({ kind: 'photo_finish', broadcastS: b, ids: sim.finishOrder.slice(0, 2) });
     }
     // instant replay once the slow-mo has eased out (photo finishes go via the freeze-frame first)
-    if (!replayDone && !replay && !sim.photoFinish && b >= sim.firstFinishB + 1.1) startReplay();
+    if (!replayDone && !replay && b >= sim.firstFinishB + 1.1) startReplay();
     if (!raceDone && b >= sim.lastFinishB + 3.5) { raceDone = true; raceCb?.onDone?.(); }
   }
   // 0.35x for ~1 s either side of the first finish, eased in/out over 0.6 s (same clock for every runner)
@@ -553,6 +559,13 @@ export function createRaceView(container, opts = {}) {
       // cut away trees between a tracking camera and its subject
       const occ = !freeze && marketT == null && ['side', 'headon', 'finishcam'].includes(director.shot?.type);
       world.setOcclusionCorridor(occ ? camera.position : null, occ ? director.cam.look : null);
+      // finish-line camera: clear the near-side spectators out of its sightline down the home straight
+      const fsd = !freeze && !replay && director.shot?.type === 'finishcam' ? director.shot.fside : 0;
+      if (fsd !== finMaskSide) {
+        finMaskSide = fsd;
+        const f = world.anchors.finish;
+        crowd.setMask(fsd ? (x, z) => { const lat = ((x - f.x) * f.rx + (z - f.z) * f.rz) * fsd, al = (x - f.x) * f.tx + (z - f.z) * f.tz; return lat > 0 && lat < 16 && al > -75 && al < 14 && lat < (15 * (al + 150)) / 161 + 2.5; } : null);
+      }
       if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
       else if (replay) { const u = Math.min(1, replay.t / REPLAY_S); curSlow = Math.max(0.2, (replay.b1 - replay.b0) / REPLAY_S * 1.7 * Math.pow(1 - u, 0.7)); applyRace(replayB(), ddt); }
       else applyRace(b, freeze > 0 ? 0 : ddt);

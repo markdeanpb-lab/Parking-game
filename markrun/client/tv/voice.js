@@ -32,7 +32,8 @@ export function createVoice({ onLine, onIdle } = {}) {
   function next() {
     clearTimeout(watchdog);
     current = null;
-    const item = queue.shift();
+    let item = queue.shift();
+    while (item && item.priority < 3 && Date.now() - item.at > 8000) item = queue.shift(); // stale: drop it
     if (!item) { onIdle?.(); return; }
     current = item;
     onLine?.(item);
