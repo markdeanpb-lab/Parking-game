@@ -5,12 +5,14 @@
 //                             photoFreezeS?=2.8, maxPixelRatio?=1.5, introCards?=true, podiumCard?=true,
 //                             marketOnPause?=true, marketText?='Place your halfway bets!' })
 //  -> { playIntro(onDone, {perRunnerS, flyoverS}?) -> {flyoverS, perRunnerS, runners},
-//       loadPlan(plan), playRace(onEvent, onDone), seek(t), showPodium(results|null, {card?}),
+//       loadPlan(plan, {backedBy}?), setBackedBy(backedBy), playRace(onEvent, onDone), seek(t), showPodium(results|null, {card?}),
 //       setPaused(bool, {market?, marketText?}?), setSpeed(x), dispose(),
 //       hudRoot, broadcastTime, durationS, preRollS }
 // One view can live across INTRO -> BETTING -> RACE -> RESULTS: create it without `plan` for the intro (the plan is
 //   only sent at RACE start), then loadPlan(plan) before playRace. loadPlan swaps in the race (sim, director, events,
 //   funfair if any runner has diversions) without rebuilding the world. Not allowed while a race is playing.
+//   setBackedBy(backedBy) (or loadPlan(plan, { backedBy })) updates the players' picks after betting: tower + name-tag
+//   badges and the director's backed-runner shots. During a race only the badges change (the shot list is kept).
 // Intro: ~7 s helicopter flyover with the round title card (round.public.title / .number / optional .theme), then each
 //   runner in lane order gets a close-up + pose + name card; onIntroRunner(id, index) fires at the start of each turn.
 //   STABLE API: return a Promise to hold the camera on that runner until it resolves (minimum 2.5 s), otherwise each
@@ -47,8 +49,8 @@ const PRE_ROLL = 8.5; // broadcast seconds of helicopter + start line before the
 export function createRaceView(container, opts = {}) {
   const { course, park, round } = opts;
   let plan = opts.plan || null;
-  const backedBy = opts.backedBy || {};
-  const backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
+  let backedBy = opts.backedBy || {};
+  let backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
   const runnersPub = [...(round?.runners || [])].sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0));
   let hasDiversion = false;
 
@@ -369,6 +371,12 @@ export function createRaceView(container, opts = {}) {
     if (!raceDone && b >= sim.lastFinishB + 3.5) { raceDone = true; raceCb?.onDone?.(); }
   }
 
+  function applyBackedBy(bb) {
+    backedBy = bb || {};
+    backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
+    hud.setBackedBy(backedBy);
+  }
+
   // ---------- seeking (TV reload / resume mid-broadcast) ----------
   function seekRace(bb, warm = 1.2) {
     if (!sim) throw new Error('createRaceView: seek in a race needs a plan');
@@ -541,7 +549,16 @@ export function createRaceView(container, opts = {}) {
     },
     setSpeed(x) { speed = Math.max(0.05, Number(x) || 1); },
     seek,
-    loadPlan(pl) { if (mode === 'race') throw new Error('createRaceView: loadPlan during a race'); setupPlan(pl); },
+    loadPlan(pl, { backedBy: bb } = {}) {
+      if (mode === 'race') throw new Error('createRaceView: loadPlan during a race');
+      if (bb) applyBackedBy(bb);
+      setupPlan(pl);
+    },
+    setBackedBy(bb) {
+      applyBackedBy(bb);
+      // re-plan the camera (backed-runner preference) unless a race is mid-broadcast
+      if (sim && mode !== 'race') { shots = buildShotList({ plan, sim, backedIds, hasDiversion }); }
+    },
     dispose,
     /** extras */
     hudRoot: hud.root,

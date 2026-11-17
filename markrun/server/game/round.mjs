@@ -176,7 +176,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
     nickname: chars[i].nickname, shortName: chars[i].shortName, tagline: chars[i].tagline,
     colour: chars[i].colour, look: chars[i].look, personality: chars[i].personality,
     intro: introLine(chars[i], i + 1),
-    publicClue: { id: clues[id].public.id, text: clues[id].public.text, category: clues[id].public.category, label: clues[id].public.label, style: clues[id].public.style },
+    publicClue: { id: clues[id].public.id, text: clues[id].public.text, category: clues[id].public.category, label: clues[id].public.label, style: clues[id].public.style, voice: clues[id].public.voice, lean: clues[id].public.lean },
     odds: { win: odds[i].win, display: odds[i].display, decimalText: odds[i].win.toFixed(2) },
   }));
 
@@ -201,7 +201,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
     commentators: COMMENTATORS,
   };
   const priv = {};
-  for (const p of players) priv[p.id] = ids.map((id) => { const c = clues[id].private[p.id]; return { runnerId: id, id: c.id, text: c.text, category: c.category, label: c.label, tier: c.tier, style: c.style }; });
+  for (const p of players) priv[p.id] = ids.map((id) => { const c = clues[id].private[p.id]; return { runnerId: id, id: c.id, text: c.text, category: c.category, label: c.label, tier: c.tier, style: c.style, voice: c.voice, lean: c.lean }; });
 
   const round = {
     id: roundId, number: roundNumber,

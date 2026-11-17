@@ -123,16 +123,26 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
   const tags = {};
   for (const r of runners) {
     const row = document.createElement('div'); row.className = 'mr-row';
-    const bl = backedBy[r.id] || [];
-    const backers = bl.map((n) => `<span class="mr-badge" style="--bc:${backerColour(n)}">${isEmoji(n) ? '' : '★'}${esc(String(n)).slice(0, 10)}</span>`).join('');
-    if (bl.length) { row.classList.add('backed'); row.style.setProperty('--bc', backerColour(bl[0])); }
-    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(shortOf(r))}</div><div class="mr-gap"></div></div><span class="mr-badges">${backers}</span>`;
+    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(shortOf(r))}</div><div class="mr-gap"></div></div><span class="mr-badges"></span>`;
     tower.appendChild(row); rows[r.id] = { el: row, pos: row.querySelector('.mr-pos'), gap: row.querySelector('.mr-gap'), last: '' };
     const tag = document.createElement('div'); tag.className = 'mr-tag';
-    tag.innerHTML = `<span class="mr-tb">${backers}</span><span class="mr-tp mr-num"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(shortOf(r))}</span>`;
+    tag.innerHTML = `<span class="mr-tb"></span><span class="mr-tp mr-num"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(shortOf(r))}</span>`;
     tag.style.opacity = '0';
     q('.mr-tags').appendChild(tag); tags[r.id] = { el: tag, pos: tag.querySelector('.mr-tp'), x: 0, y: 0, vis: false };
   }
+  // backer badges on the tower rows and name tags (rebuildable after betting)
+  function setBackedBy(bb = {}) {
+    for (const r of runners) {
+      const bl = (bb[r.id] || []).filter((n) => n != null && n !== '');
+      const backers = bl.map((n) => `<span class="mr-badge" style="--bc:${backerColour(n)}">${isEmoji(n) ? '' : '★'}${esc(String(n)).slice(0, 10)}</span>`).join('');
+      const row = rows[r.id].el;
+      row.classList.toggle('backed', bl.length > 0);
+      if (bl.length) row.style.setProperty('--bc', backerColour(bl[0])); else row.style.removeProperty('--bc');
+      row.querySelector('.mr-badges').innerHTML = backers;
+      tags[r.id].el.querySelector('.mr-tb').innerHTML = backers;
+    }
+  }
+  setBackedBy(backedBy);
   // minimap
   const mapCanvas = q('.mr-map canvas');
   const mctx = mapCanvas.getContext('2d');
@@ -248,7 +258,7 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     requestAnimationFrame(() => el.classList.add('on'));
   }
   function dispose() { root.remove(); }
-  return { root, update, redrawMap, showBanner, clearBanner, setDim, setDimTop, introCard, countdown, photo, photoLine, results, market, titleCard, dispose };
+  return { root, update, setBackedBy, redrawMap, showBanner, clearBanner, setDim, setDimTop, introCard, countdown, photo, photoLine, results, market, titleCard, dispose };
 }
 
 // shortName from the game module, else an abbreviated nickname that fits the tower
