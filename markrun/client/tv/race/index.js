@@ -1,18 +1,23 @@
 // MARKRUN 3D race broadcast (three.js).
 //
-// createRaceView(container, { course, park, round: Round.public, plan: RacePlan, backedBy: {runnerId: [playerName]},
-//                             onIntroRunner?(runnerId, index) -> void | Promise, introPerRunnerS?=4.2, photoFreezeS?=2.8,
-//                             maxPixelRatio?=1.5, introCards?=true, podiumCard?=true })
+// createRaceView(container, { course, park, round: Round.public, plan: RacePlan, backedBy: {runnerId: [playerName|emoji]},
+//                             onIntroRunner?(runnerId, index) -> void | Promise, speed?=1, introPerRunnerS?=4.2,
+//                             photoFreezeS?=2.8, maxPixelRatio?=1.5, introCards?=true, podiumCard?=true,
+//                             marketOnPause?=true, marketText?='Place your halfway bets!' })
 //  -> { playIntro(onDone, {perRunnerS, flyoverS}?) -> {flyoverS, perRunnerS, runners},
-//       playRace(onEvent, onDone), showPodium(results|null), setPaused(bool), dispose(),
-//       hudRoot, broadcastTime, durationS, preRollS }
-// Intro: ~7 s helicopter flyover, then each runner in lane order gets a close-up + pose + name card; onIntroRunner(id)
-//   fires at the start of each runner's turn. Return a Promise to hold the camera on that runner until it resolves
-//   (e.g. TTS finished; minimum 2.5 s), otherwise each turn lasts perRunnerS. Then a 3 s group shot -> onDone().
-// Race: playRace starts PRE_ROLL (8.5 s) before the gun (flyover + start line, countdown). onEvent receives
+//       playRace(onEvent, onDone), showPodium(results|null), setPaused(bool, {market?, marketText?}?), setSpeed(x),
+//       dispose(), hudRoot, broadcastTime, durationS, preRollS }
+// Intro: ~7 s helicopter flyover with the round title card (round.public.title / .number / optional .theme), then each
+//   runner in lane order gets a close-up + pose + name card; onIntroRunner(id, index) fires at the start of each turn.
+//   STABLE API: return a Promise to hold the camera on that runner until it resolves (minimum 2.5 s), otherwise each
+//   turn lasts perRunnerS. Then a 3 s group shot -> onDone(). Plans without events/commentary are supported.
+// Race: playRace starts PRE_ROLL (8.5 s) before the gun (flyover + title, start line, countdown). onEvent receives
 //   {kind:'countdown', n, text}, every plan event as {kind:'event', ...event}, every commentary line as
 //   {kind:'commentary', ...line}, and {kind:'photo_finish', ids} when the top two finish within 1.5 s (the broadcast
-//   freezes for photoFreezeS; commentary timing simply resumes after). onDone fires 3.5 s after the last finisher.
+//   freezes for photoFreezeS with a caption). onDone fires 3.5 s after the last finisher.
+// setPaused(true) during the race = HALFWAY MARKET: broadcast time stops exactly (no drift), the camera slowly orbits
+//   the leaders under a "MARKET OPEN" overlay; setPaused(false) resumes from the same broadcast time.
+// speed (opts.speed or setSpeed) scales the broadcast clock, e.g. 10 for fast e2e runs.
 // HUD: DOM overlay inside `container`; the bottom 15% is left clear for the shell's subtitles.
 import * as THREE from 'three';
 import { buildCourse, PATH_W } from './course.js';
@@ -21,10 +26,11 @@ import { buildCrowd, crowdMembersFromZones } from './crowd.js';
 import { createRunner, disposeRunnerGeometry } from './runner.js';
 import { createSim, fmtTime } from './sim.js';
 import { buildShotList, createDirector, easeInOut } from './director.js';
-import { createHud, ordText } from './hud.js';
+import { createHud, ordText, shortOf } from './hud.js';
 import { buildFunfair } from './funfair.js';
 import { outlineUniforms, disposeMaterialCache, toon, mesh, canvasTexture } from './toon.js';
 import { buildPodium } from './podium.js';
+import { buildDressing } from './dressing.js';
 
 const PRE_ROLL = 8.5; // broadcast seconds of helicopter + start line before the gun (b runs from -PRE_ROLL)
 
@@ -66,7 +72,9 @@ export function createRaceView(container, opts = {}) {
     const div = C.diversions[plan.runners.find((r) => r.diversions?.length).id][0];
     funfair = buildFunfair(scene, C, world, div || d);
   }
-  const crowdMembers = crowdMembersFromZones(C, world.anchors.crowdZones, 5, world.onPath);
+  const crowdMembers = crowdMembersFromZones(C, world.anchors.crowdZones, 5, world.onPath, world.blocked);
+  const dressing = buildDressing(scene, C, world, park);
+  crowdMembers.push(...dressing.crowd);
   if (funfair) crowdMembers.push(...funfair.crowd.map((m) => ({ ...m, zone: 'fair' })));
   // one instanced crowd per zone so off-screen clusters are frustum-culled
   const byZone = new Map(); for (const m of crowdMembers) { const k = m.zone ?? 'x'; if (!byZone.has(k)) byZone.set(k, []); byZone.get(k).push(m); }
@@ -99,6 +107,9 @@ export function createRaceView(container, opts = {}) {
   let wall = 0; // wall clock seconds since creation
   let raceCb = null, introState = null, freeze = 0, photoDone = false, raceDone = false;
   let evIdx = 0, countdownIdx = 0;
+  let titleShown = false;
+  let speed = Math.max(0.05, Number(opts.speed) || 1);
+  let marketT = null, marketBase = 0;
   const firedBanners = new Set();
 
   // ---------- resize ----------
@@ -140,6 +151,9 @@ export function createRaceView(container, opts = {}) {
       let cur = r.root.rotation.y; let d = yaw - cur; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
       r.root.rotation.y = cur + d * Math.min(1, dt * 10);
       const p = { speed: s.vRace, rate: st.rate, slope: s.slope };
+      // Pam's favourite gag: anyone who detoured through the funfair comes back holding candyfloss (eaten as they go)
+      const d0 = C.diversions[id]?.[0];
+      if (d0) r.setProp('floss', s.m > d0.toM - 20 ? Math.max(0.25, 1 - (s.m - d0.toM) / 3500) : 0);
       if (s.finished) {
         const pl = s.place;
         if (s.post < 1.6) { r.set('run'); p.speed = 3; p.rate = 1.2; }
@@ -182,7 +196,7 @@ export function createRaceView(container, opts = {}) {
     const placed = [];
     for (const t of tags) {
       if (!t.visible) continue;
-      const tw = (pubById[t.id].nickname.length * 11 + 60) * t.scale;
+      const tw = (shortOf(pubById[t.id]).length * 12 + 60) * t.scale;
       for (let k = 0; k < 8; k++) { const hit = placed.find((p) => Math.abs(p.x - t.x) < (p.tw + tw) / 2 && Math.abs(p.y - t.y) < 30 * Math.max(p.scale, t.scale)); if (!hit) break; t.y = hit.y - 31 * Math.max(hit.scale, t.scale); }
       t.tw = tw;
       placed.push(t);
@@ -215,7 +229,7 @@ export function createRaceView(container, opts = {}) {
   const INTRO_POSES = ['wave', 'flex', 'point', 'stretch', 'spin', 'bow'];
   function introPose(r, i) { const h = [...(r.personality || r.id)].reduce((a, c) => a + c.charCodeAt(0), i); return INTRO_POSES[h % INTRO_POSES.length]; }
   function playIntro(onDone, o = {}) {
-    mode = 'intro'; hud.setDim(true); hud.results(null); clearPodium();
+    mode = 'intro'; hud.setDim(true); hud.clearBanner(); hud.photo(false); hud.results(null); clearPodium(); hud.market(false); marketT = null; paused = false; canvas.style.filter = '';
     placeAtStart('idle');
     const per = o.perRunnerS ?? opts.introPerRunnerS ?? 4.2;
     const fly = o.flyoverS ?? 7;
@@ -227,6 +241,7 @@ export function createRaceView(container, opts = {}) {
     I.t += dt;
     const st = startSlots;
     if (I.idx === -1) {
+      if (!I.title && I.t > 0.8) { I.title = true; showTitle(true); }
       // helicopter flyover onto the start line
       const u = Math.min(1, I.t / I.fly), k = easeInOut(u);
       const s = C.sample(0);
@@ -257,8 +272,12 @@ export function createRaceView(container, opts = {}) {
     if (!I.waiting && u >= I.per) nextIntro();
     if (I.waiting === 'released' && u >= I.minSeg) nextIntro();
   }
+  function showTitle(on) {
+    const pr = round || {};
+    hud.titleCard(on, { title: pr.title || 'MARKRUN', kicker: pr.number ? `ROUND ${pr.number}` : 'LIVE FROM FINSBURY PARK', theme: pr.theme ? (typeof pr.theme === 'string' ? pr.theme : pr.theme.label || pr.theme.name || '') : '' });
+  }
   function nextIntro() {
-    const I = introState; I.idx++; I.segStart = I.t;
+    const I = introState; if (I.idx === -1) showTitle(false); I.idx++; I.segStart = I.t;
     for (const id of ids) runners[id].set('idle');
     if (I.idx >= ids.length) { I.group = true; for (const id of ids) runners[id].set('pose', 'point'); hud.introCard(null); setTimeout(() => {}, 0); for (const id of ids) runners[id].set('wave'); return; }
     const id = ids[I.idx]; const r = runners[id];
@@ -271,8 +290,8 @@ export function createRaceView(container, opts = {}) {
 
   // ---------- race ----------
   function playRace(onEvent, onDone) {
-    mode = 'race'; hud.setDim(false); hud.results(null); clearPodium(); introState = null; hud.introCard(null);
-    b = -PRE_ROLL; evIdx = 0; countdownIdx = 0; freeze = 0; photoDone = false; raceDone = false; firedBanners.clear();
+    mode = 'race'; hud.setDim(false); hud.results(null); clearPodium(); introState = null; hud.introCard(null); hud.titleCard(false); hud.market(false); marketT = null; paused = false; canvas.style.filter = '';
+    b = -PRE_ROLL; evIdx = 0; countdownIdx = 0; freeze = 0; photoDone = false; raceDone = false; firedBanners.clear(); titleShown = !!opts.skipRaceTitle; hud.setDimTop(false);
     raceCb = { onEvent, onDone };
     placeAtStart('idle');
     director.reset();
@@ -300,6 +319,8 @@ export function createRaceView(container, opts = {}) {
     }
     const prev = b;
     b += dt;
+    if (b < -4.2 && !titleShown) { titleShown = true; showTitle(true); hud.setDimTop(true); }
+    if (b >= -3.6 && titleShown === true) { titleShown = 'done'; showTitle(false); hud.setDimTop(false); }
     // countdown
     while (countdownIdx < countdowns.length && b >= countdowns[countdownIdx][0]) {
       const [t, txt] = countdowns[countdownIdx++];
@@ -315,7 +336,7 @@ export function createRaceView(container, opts = {}) {
     }
     // photo finish freeze-frame
     if (sim.photoFinish && !photoDone && b >= sim.firstFinishB) {
-      photoDone = true; b = sim.firstFinishB; freeze = opts.photoFreezeS ?? 2.8; hud.photo(true); canvas.style.filter = 'grayscale(0.55) sepia(0.35) contrast(1.12)';
+      photoDone = true; b = sim.firstFinishB; freeze = opts.photoFreezeS ?? 2.8; { const [a1, a2] = sim.finishOrder; hud.photo(true, `${shortOf(pubById[a1])} or ${shortOf(pubById[a2])}? Checking the camera...`); } canvas.style.filter = 'grayscale(0.55) sepia(0.35) contrast(1.12)';
       raceCb?.onEvent?.({ kind: 'photo_finish', broadcastS: b, ids: sim.finishOrder.slice(0, 2) });
     }
     if (!raceDone && b >= sim.lastFinishB + 3.5) { raceDone = true; raceCb?.onDone?.(); }
@@ -324,7 +345,7 @@ export function createRaceView(container, opts = {}) {
   // ---------- podium ----------
   function clearPodium() { if (podium) { podium.dispose(); podium = null; } }
   function showPodium(results) {
-    mode = 'podium'; hud.setDim(true); introState = null;
+    mode = 'podium'; hud.setDim(true); hud.clearBanner(); introState = null; hud.titleCard(false); hud.market(false); marketT = null; paused = false; canvas.style.filter = ''; hud.photo(false);
     clearPodium();
     const order = results?.finishOrder?.length ? [...results.finishOrder].sort((a, b) => a.place - b.place) : sim.finishOrder.map((id, i) => ({ runnerId: id, place: i + 1, officialS: sim.byId[id].officialS, timeText: fmtTime(sim.byId[id].officialS) }));
     podium = buildPodium(scene, C, world, runners, order, { camera });
@@ -353,6 +374,19 @@ export function createRaceView(container, opts = {}) {
         camera.updateMatrixWorld();
         const a = new THREE.Vector3(f.x + f.rx * 3, f.y + 0.05, f.z + f.rz * 3).project(camera), c = new THREE.Vector3(f.x - f.rx * 3, f.y + 0.05, f.z - f.rz * 3).project(camera);
         hud.photoLine([(a.x * 0.5 + 0.5) * canvas.clientWidth, (-a.y * 0.5 + 0.5) * canvas.clientHeight], [(c.x * 0.5 + 0.5) * canvas.clientWidth, (-c.y * 0.5 + 0.5) * canvas.clientHeight]);
+      } else if (paused && marketT != null) {
+        // HALFWAY MARKET: freeze-frame of the race, slow orbit around the leaders
+        marketT += dt;
+        const stm = sim.stateAt(Math.max(0, b));
+        const l0 = stm.byId[stm.order[0]];
+        const lead = stm.order.slice(0, 3).map((id) => stm.byId[id]).filter((r) => Math.abs(r.m - l0.m) < 25);
+        const c = new THREE.Vector3(); for (const r of lead) c.add(new THREE.Vector3(r.x, r.y, r.z)); c.divideScalar(Math.max(1, lead.length));
+        if (!marketBase) marketBase = Math.atan2(camera.position.x - c.x, camera.position.z - c.z);
+        const a = marketBase + marketT * 0.12, R = 10 + Math.min(25, l0.m - lead.at(-1).m) * 0.4;
+        const k = Math.min(1, marketT / 1.2); const ease = k * k * (3 - 2 * k);
+        const px = c.x + Math.sin(a) * R, pz = c.z + Math.cos(a) * R;
+        camera.position.set(px, Math.max(c.y + 3 + ease * 2, C.heightAt(px, pz) + 2.5), pz);
+        camera.lookAt(c.x, c.y + 2.3, c.z); setFov(44);
       } else director.update(b, ddt, shots);
       st = b >= 0 ? sim.stateAt(b) : null;
       if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
@@ -375,15 +409,17 @@ export function createRaceView(container, opts = {}) {
     funfair?.update(wall);
     const rpos = ids.map((id) => runners[id].root.position);
     crowd.update(wall, camera.position, rpos, mode === 'podium' ? 0.9 : null);
-    hud.update(dt, mode === 'race' ? hudState(st, b > -1) : mode === 'intro' ? { tags: [] } : hudState(null, false));
+    hud.update(dt, mode === 'race' ? hudState(st, b > -1 && marketT == null) : hudState(null, false));
     if (!noRender) renderer.render(scene, camera);
   }
   function loop(now) {
     if (disposed) return;
     raf = requestAnimationFrame(loop);
-    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const dt = Math.min(speed > 1 ? 0.25 : 0.1, (now - last) / 1000); last = now;
     frameStats.frames++; frameStats.acc += dt; if (frameStats.acc > 1) { frameStats.fps = frameStats.frames / frameStats.acc; frameStats.frames = 0; frameStats.acc = 0; }
-    frame(dt);
+    // opts.speed / setSpeed scale the broadcast clock (e2e runs the race fast); capped per frame so nothing is skipped
+    let left = dt * speed;
+    while (left > 1e-6) { const step = Math.min(left, 0.1); frame(step, left - step > 1e-6); left -= step; }
   }
   if (!opts.manualLoop) raf = requestAnimationFrame(loop);
 
@@ -392,7 +428,7 @@ export function createRaceView(container, opts = {}) {
     ro?.disconnect(); window.removeEventListener('resize', resize);
     clearPodium();
     for (const id of ids) { scene.remove(runners[id].root); runners[id].dispose(); }
-    crowd.dispose(); funfair?.dispose(); world.dispose(); hud.dispose();
+    crowd.dispose(); funfair?.dispose(); dressing.dispose(); world.dispose(); hud.dispose();
     scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     disposeRunnerGeometry(); disposeMaterialCache();
     renderer.dispose(); renderer.forceContextLoss?.(); canvas.remove();
@@ -425,6 +461,7 @@ export function createRaceView(container, opts = {}) {
     podiumAt(t = 3) { hud.introCard(null); showPodium(null); for (let i = 0; i < t * 30; i++) { podium.update(1 / 30, i / 30); for (const id of ids) runners[id].update(1 / 30, {}); } paused = true; frame(0); },
     photoAt() { this.seek(sim.firstFinishB - 0.05); paused = false; photoDone = false; for (let i = 0; i < 3; i++) frame(1 / 30); paused = true; frame(0); },
     render() { frame(0); },
+    unpause() { paused = false; },
     lookFrom(px, py, pz, lx, ly, lz, fov = 45) { mode = 'debugcam'; camera.position.set(px, py, pz); camera.lookAt(lx, ly, lz); setFov(fov); hud.setDim(true); renderer.render(scene, camera); },
     step(dt, render = true) { frame(dt, !render); },
     get mode() { return mode; },
@@ -433,7 +470,15 @@ export function createRaceView(container, opts = {}) {
 
   return {
     playIntro, playRace, showPodium,
-    setPaused(p) { paused = !!p; },
+    // During the race, pausing shows the HALFWAY MARKET freeze-frame (slow orbit; broadcast time does not advance).
+    setPaused(p, { market = true, marketText } = {}) {
+      p = !!p; if (p === paused) return; paused = p;
+      if (mode === 'race' && freeze <= 0 && opts.marketOnPause !== false && market) {
+        if (p) { marketT = 0; marketBase = 0; hud.market(true, marketText ?? opts.marketText ?? 'Place your halfway bets!'); canvas.style.filter = 'saturate(1.2) contrast(1.06)'; }
+        else { marketT = null; hud.market(false); canvas.style.filter = ''; director.reset(); }
+      }
+    },
+    setSpeed(x) { speed = Math.max(0.05, Number(x) || 1); },
     dispose,
     /** extras */
     hudRoot: hud.root,

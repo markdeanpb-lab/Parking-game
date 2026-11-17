@@ -29,6 +29,14 @@ export function validateBets(pub, bets, bankroll) {
       if (seen.has(k)) return { ok: false, error: 'One pick per matchup.' };
       seen.add(k);
       out.push({ type: 'h2h', matchupId: b.matchupId, pick: b.pick, stake });
+    } else if (b.type === 'prop') {
+      const pr = (pub.props || []).find((x) => x.id === b.propId);
+      if (!pr) return { ok: false, error: 'Unknown prop.' };
+      if (b.pick !== 'yes' && b.pick !== 'no') return { ok: false, error: 'Pick yes or no.' };
+      const k = `prop:${b.propId}`;
+      if (seen.has(k)) return { ok: false, error: 'One pick per prop.' };
+      seen.add(k);
+      out.push({ type: 'prop', propId: b.propId, pick: b.pick, stake });
     } else return { ok: false, error: 'Unknown bet type.' };
     total += stake;
   }
@@ -59,6 +67,11 @@ export function fallbackSettle(round, betsByPlayer, bankrolls) {
         const r = pub.runners.find((x) => x.id === b.runnerId);
         won = place.get(b.runnerId) === 1;
         returned = won ? Math.round(b.stake * (r?.odds?.win ?? 2)) : 0;
+      } else if (b.type === 'inplay') {
+        won = place.get(b.runnerId) === 1;
+        returned = won ? Math.round(b.stake * (Number(b.odds) || 2)) : 0;
+      } else if (b.type === 'prop') { // fixture mode can't settle props: void, stake returned
+        back += b.stake; return { ...b, won: false, returned: b.stake, void: true };
       } else {
         const m = (pub.matchups || []).find((x) => x.id === b.matchupId);
         const other = m.a === b.pick ? m.b : m.a;

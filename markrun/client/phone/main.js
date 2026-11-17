@@ -1,6 +1,6 @@
 // MARKRUN phone controller: join, private clues, bet slip, lock-in, race reactions, results, ready-up.
 import { connect } from '../shared/net.js';
-import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, confetti } from '../shared/ui.js';
+import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, confetti } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 
 const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '🐼', '🦖', '🐧', '🐝', '🦩', '🐶'];
@@ -44,6 +44,7 @@ const net = connect({
       toast(m.msg, 'red'); vibrate([60, 40, 60]);
     } else if (m.t === 'kicked') { store.del(TOKEN_KEY); S = null; me = null; toast('You were removed from the game', 'red'); render(); }
     else if (m.t === 'locked') { vibrate(80); }
+    else if (m.t === 'inplayOk') { toast('✓ Halfway bet placed!'); }
   },
 });
 const send = (m) => net.send(m);
@@ -83,7 +84,7 @@ function key() {
   if (!me) return `join|${lobby?.canJoin}|${(lobby?.players || []).map((p) => p.id + p.connected).join()}`;
   const ph = S.phase;
   if (ph === 'INTRO' || ph === 'BETTING') return `bet|${S.round?.roundId}|${me.locked ? 'L' : 'O'}|${S.revealed}`;
-  if (ph === 'RESULTS') return `res|${S.round?.roundId}|${S.resultsStage >= 3 ? 'pay' : 'wait'}`;
+  if (ph === 'RESULTS') return `res|${S.round?.roundId}|${S.resultsStage >= 3 ? 'pay' : S.resultsStage >= 1 ? 'who' : 'wait'}`;
   return `${ph}|${S.round?.roundId || ''}|${S.gameNumber}`;
 }
 
@@ -118,6 +119,8 @@ function update() {
   if (ph === 'LOBBY') { const l = $('#lobbylist'); if (l) l.innerHTML = lobbyList(); renderBottomReady('LOBBY'); }
   if (ph === 'RESULTS' || ph === 'SCOREBOARD' || ph === 'FINALE') renderBottomReady(ph);
   if (ph === 'SCOREBOARD') { const st = $('#stand'); if (st) st.innerHTML = standHtml(); }
+  if (ph === 'RACE') { renderLive(); renderMarket(); }
+  if (ph === 'LOBBY') { const mk = $('#markbtn'); if (mk) mk.outerHTML = markBtn(); }
 }
 
 function topbar() {
@@ -179,16 +182,24 @@ function doJoin() {
 // ---------------------------------------------------------------------------------------------------
 // LOBBY
 function lobbyList() {
-  return S.players.map((p) => `<div class="who-row">${avatarHtml(p.avatar, 40)}${esc(p.name)}${p.id === me.id ? ' (you)' : ''}<span class="st">${!p.connected ? '📵' : p.ready ? '✅ ready' : '…'}</span></div>`).join('');
+  return S.players.map((p) => `<div class="who-row">${avatarHtml(p.avatar, 40)}${esc(p.name)}${p.id === me.id ? ' (you)' : ''}${S.settings?.runnerPlayerId === p.id ? ' 🏃' : ''}<span class="st">${!p.connected ? '📵' : p.ready ? '✅ ready' : '…'}</span></div>`).join('');
+}
+function markBtn() {
+  const rp = S.settings?.runnerPlayerId;
+  const mine = rp === me.id;
+  const other = rp && !mine ? S.players.find((p) => p.id === rp) : null;
+  return `<button class="btn ${mine ? 'pink' : 'white'} block" id="markbtn">${mine ? "🏃 I'm Mark (the runner) ✓" : other ? `🏃 ${esc(other.name)} is Mark` : "🏃 I'm Mark (the runner)"}</button>`;
 }
 function renderLobby() {
   app.innerHTML = `${topbar()}
     <div class="hero-title outlined">YOU'RE IN!</div>
     <div class="card center"><div style="display:flex;justify-content:center">${avatarHtml(me.avatar, 110)}</div><h2>${esc(me.name)}</h2><p>You start with <b>${money(me.bankroll)}</b> of entirely fictional money.</p></div>
+    <div class="card center">${markBtn()}<p style="font-size:14px;margin-top:8px">Is this your parkrun history? The other player gets an extra 🔥 hot tip to make it fair.</p></div>
     <div class="card"><h2 style="font-size:22px">On the sofa</h2><div class="who-list" id="lobbylist">${lobbyList()}</div>
     <p style="font-size:14px;margin-top:12px">Look at the TV — the game starts when everyone's ready, or when the host presses start.</p></div>
     <div class="bottom-bar" id="bb"></div>`;
   renderBottomReady('LOBBY');
+  app.onclick = (e) => { if (e.target.closest('#markbtn')) { send({ t: 'iAmMark', value: S.settings?.runnerPlayerId !== me.id }); vibrate(15); } };
 }
 function renderBottomReady(phase) {
   const bb = $('#bb'); if (!bb) return;
@@ -198,10 +209,17 @@ function renderBottomReady(phase) {
   else if (phase === 'RESULTS') { show = S.resultsStage >= 3; label = me.ready ? '✓ READY' : 'NEXT ROUND ▶'; }
   else if (phase === 'SCOREBOARD') label = me.ready ? '✓ READY' : (S.roundNumber >= S.roundsPerGame ? 'SHOW THE CHAMPION ▶' : 'NEXT ROUND ▶');
   else if (phase === 'FINALE') label = me.ready ? '✓ READY' : 'PLAY AGAIN ↻';
-  if (!show) { bb.innerHTML = ''; return; }
+  const nextBtn = phase === 'RESULTS' && S.resultsStage < (S.resultStages?.length || 5) - 1 ? `<button class="btn blue" id="nextbtn">Next ▶</button>` : '';
+  if (!show) { bb.innerHTML = nextBtn ? `<div class="row2">${nextBtn}</div>` : ''; wireNext(); return; }
   const sum = me.ready && waiting.length ? `<div class="summary"><span>Waiting for ${esc(waiting.join(' & '))}…</span></div>` : '';
-  bb.innerHTML = `${sum}<button class="btn ${me.ready ? 'white' : 'green'}" id="readybtn">${label}</button>`;
+  bb.innerHTML = `${sum}<div class="row2">${nextBtn}<button class="btn ${me.ready ? 'white' : 'green'}" id="readybtn">${label}</button></div>`;
   $('#readybtn').onclick = () => { send({ t: 'ready', value: !me.ready }); vibrate(25); };
+  wireNext();
+}
+
+function wireNext() {
+  const b = $('#nextbtn');
+  if (b) b.onclick = () => { send({ t: 'next' }); vibrate(15); b.disabled = true; setTimeout(() => { b.disabled = false; }, 1200); };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -212,7 +230,7 @@ const left = () => me.bankroll - staked();
 function clampSlip() {
   if (!S?.round) { slip = []; return; }
   const { minStake, maxBets } = rules();
-  slip = slip.filter((b) => (b.type === 'win' ? runnerById(S.round, b.runnerId) : S.round.matchups?.some((m) => m.id === b.matchupId))).slice(0, maxBets);
+  slip = slip.filter((b) => (b.type === 'win' ? runnerById(S.round, b.runnerId) : b.type === 'prop' ? S.round.props?.some((x) => x.id === b.propId) : S.round.matchups?.some((m) => m.id === b.matchupId))).slice(0, maxBets);
   for (const b of slip) b.stake = Math.max(minStake, Math.floor(b.stake || minStake));
   // if over budget, trim from the last bet backwards
   let over = staked() - me.bankroll;
@@ -234,6 +252,15 @@ function slipChanged() {
 }
 function findWin(rid) { return slip.find((b) => b.type === 'win' && b.runnerId === rid); }
 function findH2h(mid) { return slip.find((b) => b.type === 'h2h' && b.matchupId === mid); }
+function findProp(pid) { return slip.find((b) => b.type === 'prop' && b.propId === pid); }
+function pickProp(pid, pick) {
+  const ex = findProp(pid);
+  if (ex && ex.pick === pick) slip = slip.filter((b) => b !== ex);
+  else if (ex) ex.pick = pick;
+  else { if (!canAdd()) return; slip.push({ type: 'prop', propId: pid, pick, stake: defaultStake() }); toast('✓ Side bet added'); }
+  vibrate(15);
+  slipChanged();
+}
 function defaultStake() { const { minStake } = rules(); return Math.max(minStake, Math.min(50, left())); }
 function canAdd() {
   const { minStake, maxBets } = rules();
@@ -260,13 +287,18 @@ function pickH2h(mid, pick) {
 function renderBetting() {
   const round = S.round;
   const runners = [...round.runners].sort((a, b) => a.lane - b.lane);
-  const priv = new Map((me.privateClues || []).map((c) => [c.runnerId, c]));
+  const privList = me.privateClues || [];
+  const hot = privList.filter((c) => c.tier === 'hot');
+  const dbl = Number(round.payoutMultiplier) >= 2;
   app.innerHTML = `${topbar()}
+    ${dbl ? '<div class="card center dbl"><div class="outlined" style="font-size:30px">DOUBLE PAYOUT FINALE ×2</div><p style="color:#fff">Every winning bet pays double this round!</p></div>' : ''}
+    ${round.theme?.label ? `<div class="card theme"><span class="tk">THEME</span><b>${esc(round.theme.label)}</b>${round.theme.blurb ? `<p>${esc(round.theme.blurb)}</p>` : ''}</div>` : ''}
     ${round.notice ? `<div class="card center" style="background:var(--grape);color:#fff;padding:12px"><b>🃏 ${esc(round.notice)}</b></div>` : ''}
+    ${hot.length ? `<button class="hotbar" data-jump="${hot[0].runnerId}">🔥 You have ${hot.length === 1 ? 'a HOT TIP' : `${hot.length} HOT TIPS`} this round — tap to see ${hot.length === 1 ? 'it' : 'the first'}</button>` : ''}
     <div class="section-title">The field <small>swipe for all ${runners.length} →</small></div>
     <div class="carousel" id="car">${runners.map((r) => {
-      const pc = priv.get(r.id);
-      return `<div class="rcard" data-rid="${r.id}">
+      const pcs = privList.filter((c) => c.runnerId === r.id);
+      return `<div class="rcard ${pcs.some((c) => c.tier === 'hot') ? 'has-hot' : ''}" data-rid="${r.id}">
         <div class="head stripe" style="--c1:${esc(r.colour.primary)};--c2:${esc(r.colour.secondary || '#fff')}">
           <div class="rp">${portrait(r, 108)}</div>
           <div class="who"><div class="nick">${esc(r.nickname)}</div><span class="lane">LANE ${r.lane}</span></div>
@@ -275,7 +307,9 @@ function renderBetting() {
         <div class="body">
           <div class="tagl">${esc(r.tagline || '')}</div>
           <div class="clue-box"><span class="k">📺 PUBLIC CLUE${r.publicClue?.label ? ` · ${esc(r.publicClue.label.toUpperCase())}` : ''}</span>${esc(r.publicClue?.text || '')}</div>
-          ${pc ? `<div class="clue-box secret"><span class="k">🤫 ONLY YOU CAN SEE THIS${pc.label ? ` · ${esc(pc.label.toUpperCase())}` : ''}</span>${esc(pc.text)}</div>` : ''}
+          ${pcs.map((pc) => (pc.tier === 'hot'
+    ? `<div class="clue-box hot"><span class="k">🔥 HOT TIP · ONLY YOU CAN SEE THIS</span>${esc(pc.text)}</div>`
+    : `<div class="clue-box secret"><span class="k">🤫 GOSSIP · ONLY YOU CAN SEE THIS${pc.label ? ` · ${esc(pc.label.toUpperCase())}` : ''}</span>${esc(pc.text)}</div>`)).join('')}
           <div class="actions"><button class="btn" data-win="${r.id}">Back to WIN</button></div>
         </div></div>`;
     }).join('')}</div>
@@ -288,6 +322,9 @@ function renderBetting() {
         <span class="vs">VS</span>
         <button class="pick" data-mid="${m.id}" data-pick="${b.id}"><span class="rp">${portrait(b, 44)}</span>${esc(runnerShort(b))}<span class="x">${esc(m.odds.displayB || `×${m.odds.b}`)}</span></button></div></div>`;
     }).join('')}</div>` : ''}
+    ${(round.props || []).length ? `<div class="section-title">Side bets 🎡 <small>yes or no?</small></div><div class="mus">${round.props.map((pr) => `<div class="mu prop" data-prop="${pr.id}"><div class="ptext">${esc(pr.text)}</div><div class="row yn">
+        <button class="pick yes" data-prop="${pr.id}" data-yn="yes">YES<span class="x">${esc(pr.odds?.displayYes || `×${pr.odds?.yes}`)}</span></button>
+        <button class="pick no" data-prop="${pr.id}" data-yn="no">NO<span class="x">${esc(pr.odds?.displayNo || `×${pr.odds?.no}`)}</span></button></div></div>`).join('')}</div>` : ''}
     <div class="section-title">Your bet slip <small id="slipcount"></small></div>
     <div class="slip" id="slip"></div>
     <div style="height:30px"></div>
@@ -301,7 +338,9 @@ function renderBetting() {
   app.onclick = (e) => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.win) return toggleWin(b.dataset.win);
+    if (b.dataset.yn) return pickProp(b.dataset.prop, b.dataset.yn);
     if (b.dataset.pick) return pickH2h(b.dataset.mid, b.dataset.pick);
+    if (b.dataset.jump) { const i = runners.findIndex((r) => r.id === b.dataset.jump); const c = $('#car'); const w = c.firstElementChild.getBoundingClientRect().width + 12; c.scrollTo({ left: i * w, behavior: 'smooth' }); c.scrollIntoView({ behavior: 'smooth', block: 'center' }); return undefined; }
     if (b.dataset.chip) return chip(Number(b.dataset.i), b.dataset.chip);
     if (b.dataset.rm) { slip.splice(Number(b.dataset.rm), 1); vibrate(10); return slipChanged(); }
     return undefined;
@@ -326,7 +365,10 @@ function markCards() {
     btn.classList.toggle('on', on);
     btn.textContent = on ? `✓ Backing to WIN (${money(findWin(c.dataset.rid).stake)})` : 'Back to WIN';
   }
-  for (const p of $$('.pick')) { const ex = findH2h(p.dataset.mid); p.classList.toggle('on', !!ex && ex.pick === p.dataset.pick); }
+  for (const p of $$('.pick')) {
+    if (p.dataset.yn) { const ex = findProp(p.dataset.prop); p.classList.toggle('on', !!ex && ex.pick === p.dataset.yn); continue; }
+    const ex = findH2h(p.dataset.mid); p.classList.toggle('on', !!ex && ex.pick === p.dataset.pick);
+  }
 }
 function renderSlip() {
   const el = $('#slip'); if (!el) return;
@@ -335,9 +377,9 @@ function renderSlip() {
   if (!slip.length) { el.innerHTML = '<div class="empty">Nothing yet. Tap <b>Back to WIN</b> on a runner, or pick a head-to-head. 👆</div>'; return; }
   const room = left();
   el.innerHTML = slip.map((b, i) => {
-    const r = runnerById(S.round, b.type === 'win' ? b.runnerId : b.pick);
+    const r = runnerById(S.round, betRunnerId(b));
     const odds = betOdds(S.round, b);
-    return `<div class="sbet"><div class="r1"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${b.type === 'win' ? `WIN · ${esc(r?.odds?.display || '')}` : `HEAD-TO-HEAD · ${esc((() => { const m = S.round.matchups?.find((x) => x.id === b.matchupId); return (b.pick === m?.a ? m?.odds?.displayA : m?.odds?.displayB) || `×${odds}`; })())}`}</small></div><button class="x" data-rm="${i}" aria-label="Remove bet">✕</button></div>
+    return `<div class="sbet"><div class="r1"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${b.type === 'prop' ? `SIDE BET · ${esc((() => { const pr = S.round.props?.find((x) => x.id === b.propId); return (b.pick === 'yes' ? pr?.odds?.displayYes : pr?.odds?.displayNo) || `×${odds}`; })())}` : b.type === 'win' ? `WIN · ${esc(r?.odds?.display || '')}` : `HEAD-TO-HEAD · ${esc((() => { const m = S.round.matchups?.find((x) => x.id === b.matchupId); return (b.pick === m?.a ? m?.odds?.displayA : m?.odds?.displayB) || `×${odds}`; })())}`}</small></div><button class="x" data-rm="${i}" aria-label="Remove bet">✕</button></div>
       <div class="r2"><span class="stake num">${money(b.stake)}</span><span class="pays">returns<b>${money(b.stake * odds)}</b></span></div>
       <div class="chips"><button class="chip minus" data-i="${i}" data-chip="minus">−10</button><button class="chip" data-i="${i}" data-chip="10" ${room < 1 ? 'disabled' : ''}>+10</button><button class="chip" data-i="${i}" data-chip="50" ${room < 1 ? 'disabled' : ''}>+50</button><button class="chip" data-i="${i}" data-chip="100" ${room < 1 ? 'disabled' : ''}>+100</button><button class="chip allin" data-i="${i}" data-chip="all" ${room < 1 ? 'disabled' : ''}>ALL IN</button></div></div>`;
   }).join('') + `<div class="slip-meta"><span>Staked ${money(staked())}</span><span>Left ${money(room)}</span></div>`;
@@ -370,9 +412,9 @@ function myBetsHtml(bets, results) {
   const res = results ? new Map((results.payouts?.[me.id]?.bets || []).map((b, i) => [i, b])) : null;
   if (!bets.length) return '<p>No bets this round. Just vibes. 🧘</p>';
   return `<div class="mybets">${bets.map((b, i) => {
-    const r = runnerById(S.round, b.type === 'win' ? b.runnerId : b.pick);
+    const r = runnerById(S.round, betRunnerId(b));
     const rr = res?.get(i);
-    return `<div class="mybet ${rr ? (rr.won ? 'won' : 'lost') : ''}"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${b.type === 'win' ? 'WIN' : 'HEAD-TO-HEAD'} · returns ${money(b.stake * betOdds(S.round, b))}</small></div><span class="s">${rr ? (rr.won ? `+${money(rr.returned)}` : `−${money(b.stake)}`) : money(b.stake)}</span></div>`;
+    return `<div class="mybet ${rr ? (rr.won ? 'won' : 'lost') : ''}"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${betKind(b)} · returns ${money(b.stake * betOdds(S.round, b))}</small></div><span class="s">${rr ? (rr.won ? `+${money(rr.returned)}` : `−${money(b.stake)}`) : money(b.stake)}</span></div>`;
   }).join('')}</div>`;
 }
 function waitList() {
@@ -384,7 +426,7 @@ function renderLocked() {
     app.innerHTML = `${topbar()}<div class="hero-title outlined">BETS REVEALED!</div>
       <div class="card center"><div class="big-emoji">👀</div><h2>Look at the telly!</h2><p>Everyone's bets are up on the TV.</p></div>
       <div class="card"><h2 style="font-size:22px">Your bets</h2>${myBetsHtml(me.bets || [])}</div>
-      ${others.map((p) => `<div class="card"><h2 style="font-size:22px">${esc(p.avatar.emoji)} ${esc(p.name)}'s bets</h2>${(S.bets?.[p.id] || []).length ? `<div class="mybets">${S.bets[p.id].map((b) => `<div class="mybet"><span class="rp">${portrait(runnerById(S.round, b.type === 'win' ? b.runnerId : b.pick), 40)}</span><div class="lb">${esc(betLabel(S.round, b))}</div><span class="s">${money(b.stake)}</span></div>`).join('')}</div>` : '<p>No bets!</p>'}</div>`).join('')}`;
+      ${others.map((p) => `<div class="card"><h2 style="font-size:22px">${esc(p.avatar.emoji)} ${esc(p.name)}'s bets</h2>${(S.bets?.[p.id] || []).length ? `<div class="mybets">${S.bets[p.id].map((b) => `<div class="mybet"><span class="rp">${(runnerById(S.round, betRunnerId(b)) ? portrait(runnerById(S.round, betRunnerId(b)), 40) : '<span class="propicon">🎡</span>')}</span><div class="lb">${esc(betLabel(S.round, b))}</div><span class="s">${money(b.stake)}</span></div>`).join('')}</div>` : '<p>No bets!</p>'}</div>`).join('')}`;
     return;
   }
   app.innerHTML = `${topbar()}<div class="hero-title outlined">LOCKED IN!</div>
@@ -397,11 +439,14 @@ function renderLocked() {
 
 // ---------------------------------------------------------------------------------------------------
 // RACE
+let lastLeader = null;
+let marketStake = 50;
 function renderRace() {
+  lastLeader = null;
   app.innerHTML = `${topbar()}<div class="hero-title outlined">EYES ON THE TELLY!</div>
-    <div class="card center" style="padding:12px"><div class="big-emoji">📺</div><p style="margin:2px 0">Shout at the TV. Or tap below — it shows up on screen!</p></div>
+    <div class="card live" id="live"><p>📺 Waiting for the start…</p></div>
     <div class="react-grid">${(S.reactions || []).map((e) => `<button data-react="${e}">${e}</button>`).join('')}</div>
-    <div class="card"><h2 style="font-size:22px">Your bets</h2>${myBetsHtml(me.bets || [])}</div>`;
+    <div class="card"><h2 style="font-size:22px">Your bets</h2><div id="racebets">${myBetsHtml(me.bets || [])}</div></div>`;
   let last = 0;
   app.onclick = (e) => {
     const b = e.target.closest('[data-react]'); if (!b) return;
@@ -409,7 +454,58 @@ function renderRace() {
     send({ t: 'react', emoji: b.dataset.react });
     vibrate(12);
   };
+  renderLive(); renderMarket();
 }
+function ordWord(n) { return `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) || n % 10 > 3 ? 0 : n % 10]}`; }
+function renderLive() {
+  const box = $('#live'); if (!box) return;
+  const L = me.live;
+  const rb = $('#racebets'); if (rb) rb.innerHTML = myBetsHtml(me.bets || []);
+  if (!L) return;
+  const stakeOn = (rid) => (me.bets || []).filter((b) => betRunnerId(b) === rid).reduce((a, b) => a + b.stake, 0);
+  const rows = (L.mine || []).map((x) => {
+    const r = runnerById(S.round, x.runnerId);
+    const status = x.place === 1 ? (x.finished ? 'WON IT!' : 'LEADING!') : `${ordWord(x.place)}, +${Number(x.gapS).toFixed(1)}s`;
+    return `<div class="lv ${x.place === 1 ? 'lead' : ''}"><span class="rp">${r ? portrait(r, 46) : ''}</span><div class="lb">Your ${money(stakeOn(x.runnerId))} runner<small>${esc(r?.nickname || '')}</small></div><span class="ls">${status}</span></div>`;
+  }).join('');
+  box.innerHTML = rows || '<p>No runners to cheer — just enjoy the chaos. 🍿</p>';
+  // buzz when the lead changes and it involves one of my runners
+  const mine = new Set((L.mine || []).map((x) => x.runnerId));
+  if (lastLeader && L.leaderId && L.leaderId !== lastLeader && (mine.has(L.leaderId) || mine.has(lastLeader))) {
+    vibrate(mine.has(L.leaderId) ? [60, 40, 60, 40, 160] : [300]);
+    toast(mine.has(L.leaderId) ? `🔥 ${runnerById(S.round, L.leaderId)?.nickname} takes the lead!` : `😱 ${runnerById(S.round, lastLeader)?.nickname} has lost the lead!`, mine.has(L.leaderId) ? '' : 'red');
+  }
+  lastLeader = L.leaderId || lastLeader;
+}
+function renderMarket() {
+  const m = S.market;
+  const placed = (me.bets || []).find((b) => b.type === 'inplay');
+  if (!m || (!m.open && !placed)) { if (modal.dataset.kind === 'market') { modal.innerHTML = ''; modal.dataset.kind = ''; } return; }
+  if (!m.open) { if (modal.dataset.kind === 'market') { modal.innerHTML = ''; modal.dataset.kind = ''; } return; }
+  const free = me.bankroll - (me.bets || []).reduce((a, b) => a + b.stake, 0);
+  const minStake = S.round?.rules?.minStake ?? 10;
+  marketStake = Math.max(minStake, Math.min(marketStake, free));
+  const secs = Math.max(0, Math.ceil((m.closesAt - net.serverNow()) / 1000));
+  const rows = (m.standings || []).map((x) => {
+    const r = runnerById(S.round, x.runnerId);
+    const o = m.odds?.[x.runnerId];
+    return `<button class="mkr" data-ip="${x.runnerId}" ${placed || free < minStake ? 'disabled' : ''}>${ordinalHtml(x.place)}<span class="rp">${r ? portrait(r, 40) : ''}</span><span class="n">${esc(runnerShort(r) || x.runnerId)}<small>${x.place === 1 ? 'leads' : `+${Number(x.gapS).toFixed(1)}s`}</small></span><span class="o">${esc(o?.display || '')}</span></button>`;
+  }).join('');
+  const stakes = [minStake, 50, 100, 250].filter((v, i, a) => v <= free && a.indexOf(v) === i);
+  modal.dataset.kind = 'market';
+  modal.innerHTML = `<div class="sheet market"><h3>⏱ HALFWAY MARKET <span class="secs">${secs}s</span></h3>
+    ${placed ? `<p class="done">✓ You're on <b>${esc(runnerById(S.round, placed.runnerId)?.nickname || '')}</b> — ${money(placed.stake)} @ ${esc(placed.display || `×${placed.odds}`)}</p>`
+    : free < minStake ? '<p>No money left for a halfway bet. Just watch! 🍿</p>' : `<p>One bet. Pick a stake, then tap a runner.</p>
+    <div class="mkst">${stakes.map((v) => `<button class="chip ${v === marketStake ? 'sel' : ''}" data-ms="${v}">${money(v)}</button>`).join('')}<button class="chip allin ${marketStake === free ? 'sel' : ''}" data-ms="${free}">ALL IN</button></div>`}
+    <div class="mkrows">${rows}</div></div>`;
+  modal.onclick = (e) => {
+    const st = e.target.closest('[data-ms]');
+    if (st) { marketStake = Number(st.dataset.ms); vibrate(8); renderMarket(); return; }
+    const b = e.target.closest('[data-ip]');
+    if (b && !b.disabled) { send({ t: 'inplay', runnerId: b.dataset.ip, stake: marketStake }); vibrate([30, 30, 80]); }
+  };
+}
+setInterval(() => { if (S?.phase === 'RACE' && S.market?.open) { const el2 = $('#modal .secs'); if (el2) el2.textContent = `${Math.max(0, Math.ceil((S.market.closesAt - net.serverNow()) / 1000))}s`; } }, 250);
 
 // ---------------------------------------------------------------------------------------------------
 // RESULTS
@@ -417,11 +513,25 @@ function renderResults() {
   const res = S.results;
   if (!res) { app.innerHTML = `${topbar()}<div class="card center"><div class="big-emoji">⏳</div><h2>Results coming…</h2></div>`; return; }
   const order = `<div class="order-mini">${res.finishOrder.map((f) => { const r = runnerById(S.round, f.runnerId); return `<div class="om">${ordinalHtml(f.place)}<span class="dot" style="background:${esc(r?.colour?.primary)}"></span>${esc(r?.nickname || f.runnerId)}<span class="t">${esc(f.timeText || '')}</span></div>`; }).join('')}</div>`;
+  if (S.resultsStage >= 1 && S.resultsStage < 3) {
+    const rv = new Map((res.reveal || []).map((x) => [x.runnerId, x]));
+    app.innerHTML = `${topbar()}<div class="hero-title outlined">THE DETAILS</div>
+      <div class="card center"><p>📺 The TV is revealing who they really were. Here's the small print:</p></div>
+      ${res.finishOrder.map((f) => { const r = runnerById(S.round, f.runnerId); const x = rv.get(f.runnerId) || {};
+        const meta = [x.eventNumber ? `Event #${x.eventNumber}` : '', x.overallPosition ? `${ordWord(x.overallPosition)} overall` : '', x.ageGrade ? `${x.ageGrade}% age grade` : '', x.finsburyNumber ? `Finsbury run #${x.finsburyNumber}` : ''].filter(Boolean).join(' · ');
+        return `<div class="card det"><div class="dh">${ordinalHtml(f.place)}<span class="rp">${r ? portrait(r, 44) : ''}</span><b>${esc(r?.nickname || '')}</b><span class="t">${esc(f.timeText || '')}</span></div>
+          <div class="dd">${esc(x.dateText || '')}${x.stravaTitle ? ` · “${esc(x.stravaTitle)}”` : ''}</div>${meta ? `<div class="dm">${esc(meta)}</div>` : ''}
+          ${(x.funFacts || []).length ? `<ul>${x.funFacts.map((ff) => `<li>${esc(ff)}</li>`).join('')}</ul>` : ''}</div>`; }).join('')}
+      <div class="bottom-bar" id="bb"></div>`;
+    renderBottomReady('RESULTS');
+    return;
+  }
   if (S.resultsStage < 3) {
     app.innerHTML = `${topbar()}<div class="hero-title outlined">WHAT A RACE!</div>
       <div class="card center"><div class="big-emoji">📺</div><h2>Payouts coming up on the TV…</h2></div>
       <div class="card"><h2 style="font-size:22px">Finishing order</h2>${order}</div>
       <div class="card"><h2 style="font-size:22px">Your bets</h2>${myBetsHtml(me.bets || [], res)}</div><div class="bottom-bar" id="bb"></div>`;
+    renderBottomReady('RESULTS');
     return;
   }
   const pay = res.payouts?.[me.id] || { net: 0, bankroll: me.bankroll, bets: [] };

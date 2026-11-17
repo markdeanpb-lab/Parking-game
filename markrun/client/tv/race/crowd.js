@@ -114,7 +114,7 @@ export function buildCrowd(scene, members) {
 }
 
 // Fill crowd zones defined along the course.
-export function crowdMembersFromZones(C, zones, seed = 5, onPath = null) {
+export function crowdMembersFromZones(C, zones, seed = 5, onPath = null, blocked = null) {
   const R = mulberry(seed);
   const out = [];
   for (const [zi, z] of zones.entries()) {
@@ -127,6 +127,7 @@ export function crowdMembersFromZones(C, zones, seed = 5, onPath = null) {
         const along = (R() - 0.5) * 0.6;
         const x = s.x + s.rx * off * z.side + s.tx * along, zz = s.z + s.rz * off * z.side + s.tz * along;
         if (onPath && onPath(x, zz, 1.4)) continue;
+        if (blocked && blocked(x, zz, 0.6)) continue;
         out.push({ zone: zi, x, y: C.heightAt(x, zz), z: zz, yaw: Math.atan2(-s.rx * z.side, -s.rz * z.side) + (R() - 0.5) * 0.5 });
       }
     }

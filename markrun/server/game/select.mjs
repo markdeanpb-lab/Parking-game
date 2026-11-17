@@ -1,5 +1,6 @@
 // Field selection: banded fields of 5 from the main pool, classified by race archetype, picked for a varied session.
 import { analyse } from './raceplan.mjs';
+import { BANDS } from './themes.mjs';
 
 export const ARCHETYPES = {
   photo_finish: { label: 'Photo Finish', blurbs: [
@@ -84,42 +85,90 @@ function chooseTarget(rng, mem) {
 
 const asField = (perfs) => perfs.map((p, i) => ({ id: `x${i}`, progress: p.progress, officialS: p.officialS, perf: p }));
 
+export const isPBDay = (p) => p.facts?.was_finsbury_pb === true || p.result?.pbFlag === 'PB';
+
 // Returns { perfs, archetype, target, analysis, wildcard }
-// formGap(perfs) -> seconds between the best and worst "form guide" estimate (training-load features only, no outcomes).
-export function selectField({ data, rng, mem, weights, settings = {}, roundNumber = 1, size = 5, tries = 140, formGap = null, formRank = null }) {
+// theme: from themes.mjs (band / data predicate / funfair / wildcard).
+// formGap(perfs): spread of the public form guide (training-load features only, no outcomes).
+// formRank(perfs): agreement between the form guide and the real order (curation; odds never see it).
+export function selectField({ data, rng, mem, weights, settings = {}, roundNumber = 1, size = 5, tries = 140, formGap = null, formRank = null, theme = null }) {
   const band = settings.bandS ?? 45;
-  const wildRate = settings.wildcardRate ?? 0.08;
-  const wildcard = roundNumber > 1 && (mem?.wildcards ?? 0) < 1 && data.novelty.length > 0 && rng.chance(wildRate);
+  const wildcard = !!theme?.wildcard;
   const target = wildcard ? 'mismatch' : chooseTarget(rng, mem);
   const W = (p) => weights.get(p.date) ?? 1;
-  const main = data.main.filter((p) => W(p) > 0);
-  const divCap = (mem?.diverted ?? 0) >= 2 ? 0 : 1;
-  const mainSize = wildcard ? size - 1 : size;
-  let best = null;
-  for (let i = 0; i < tries; i++) {
-    const anchor = rng.weighted(main, W);
-    const lo = anchor.officialS - band * 2 * rng.next(), hi = lo + band * 2; // a 2*band window containing the anchor
-    const inWin = main.filter((p) => p !== anchor && p.officialS >= lo && p.officialS <= hi);
-    if (inWin.length < mainSize - 1) continue;
-    const pick = [anchor, ...rng.sampleWeighted(inWin, mainSize - 1, W)];
-    if (pick.filter((p) => p.diversions?.length).length > divCap) continue;
-    if (wildcard) {
-      const nov = rng.weighted(data.novelty, (p) => (W(p)) * (p.officialS <= 2100 ? 1 : 0.35));
-      pick.push(nov);
-    }
-    const a = analyse(asField(pick));
-    const arch = classify(a, wildcard);
-    let score = (arch === target ? 4 : 0) + pick.reduce((s, p) => s + 0.6 * Math.log(W(p)), 0) + Math.min(a.leadChanges, 4) * 0.12 + rng.next() * 0.5;
+  let main = data.main.filter((p) => W(p) > 0);
+  if (roundNumber === 1) main = main.filter((p) => p.officialS >= BANDS.fast.hi); // never open with the fastest band
+  const recent = mem?.archetypes || [];
+  const scoreField = (pick, a, arch) => {
+    let score = (arch === target ? 4 : 0) + pick.reduce((s, p) => s + 0.6 * Math.log(Math.max(1e-3, W(p))), 0) + Math.min(a.leadChanges, 4) * 0.12 + rng.next() * 0.5;
     if (formGap) score += (settings.formGapBonus ?? 0) * Math.min(1, formGap(pick) / (settings.formGapScale ?? 60));
     // curation: prefer fields where the training-load form guide broadly holds, so clues are genuinely useful
     // more often than not (upsets still come from in-race archetypes and from fields where it doesn't hold).
     if (formRank) score += (settings.formHoldsBonus ?? 0) * formRank(pick);
-    const recent = mem?.archetypes || [];
     if (!wildcard && recent.at(-1) === arch) score -= 2.5;
     if (!wildcard && recent.slice(-4).includes(arch)) score -= 0.8;
-    if (!best || score > best.score) best = { score, perfs: pick, archetype: arch, analysis: a };
-    if (arch === target && i > 30 && best.archetype === target) break;
+    return score;
+  };
+
+  if (theme?.funfair) { // built around the diversion runs (any band)
+    let best = null;
+    const div = main.filter((p) => p.diversions?.length);
+    for (let i = 0; i < 25; i++) {
+      const pick = rng.sampleWeighted(div, Math.min(size, div.length), W);
+      if (pick.length < size) {
+        const mid = pick.map((p) => p.officialS).sort((a, b) => a - b)[Math.floor(pick.length / 2)];
+        const rest = main.filter((p) => !pick.includes(p) && !p.diversions?.length && Math.abs(p.officialS - mid) <= 120 && !(isPBDay(p) && pick.some(isPBDay)));
+        pick.push(...rng.sampleWeighted(rest, size - pick.length, W));
+      }
+      if (pick.length < size) continue;
+      const a = analyse(asField(pick));
+      const arch = classify(a, false);
+      const score = scoreField(pick, a, arch);
+      if (!best || score > best.score) best = { score, perfs: pick, archetype: arch, analysis: a };
+    }
+    if (best) return { perfs: best.perfs, archetype: best.archetype, target, analysis: best.analysis, wildcard: false };
+  }
+
+  let pool = theme?.pred ? main.filter((p) => theme.pred(p.facts)) : main;
+  let anchors = theme?.band ? pool.filter((p) => p.officialS >= BANDS[theme.band].lo && p.officialS < BANDS[theme.band].hi) : pool;
+  if (!anchors.length) anchors = pool;
+  const divCap = (mem?.diverted ?? 0) >= 1 ? 0 : 1; // keep most diversion runs for the Funfair Stakes
+  const mainSize = wildcard ? size - 1 : size;
+  let best = null;
+  const cands = [];
+  for (const widen of (theme?.pred ? [1, 1.5] : [1, 1.5, 2.2, 4])) {
+    const win = (theme?.windowS ?? band * 2) * widen;
+    for (let i = 0; i < tries; i++) {
+      const anchor = rng.weighted(anchors, W);
+      const lo = anchor.officialS - win * rng.next(), hi = lo + win; // a window containing the anchor
+      const inWin = pool.filter((p) => p !== anchor && p.officialS >= lo && p.officialS <= hi && !(isPBDay(p) && isPBDay(anchor)));
+      if (inWin.length < mainSize - 1) continue;
+      const pick = [anchor];
+      for (const p of rng.shuffle(inWin)) { // weighted-ish fill honouring the one-PB-day cap
+        if (pick.length >= mainSize) break;
+        if (isPBDay(p) && pick.some(isPBDay)) continue;
+        if (rng.next() > Math.min(1, W(p))) continue;
+        pick.push(p);
+      }
+      if (pick.length < mainSize) continue;
+      if (pick.filter((p) => p.diversions?.length).length > divCap) continue;
+      if (wildcard) pick.push(rng.weighted(data.novelty, (p) => Math.max(1e-3, W(p)) * (p.officialS <= 2100 ? 1 : 0.35)));
+      const a = analyse(asField(pick));
+      const arch = classify(a, wildcard);
+      const score = scoreField(pick, a, arch);
+      const c = { score, perfs: pick, archetype: arch, analysis: a };
+      cands.push(c);
+      if (!best || score > best.score) best = c;
+      if (arch === target && i > 45 && best.archetype === target) break;
+    }
+    if (best) break;
   }
   if (!best) throw new Error('selectField: no candidate field found');
-  return { perfs: best.perfs, archetype: best.archetype, target, analysis: best.analysis, wildcard };
+  // near-best alternatives (distinct fields) so round.mjs can pick the one with the clearest public market
+  const seen = new Set();
+  const alternatives = cands.filter((c) => c.score >= best.score - (settings.altSlack ?? 1.5)).sort((x, y) => y.score - x.score)
+    .filter((c) => { const k = c.perfs.map((p) => p.date).sort().join(); if (seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, settings.alternatives ?? 6)
+    .map((c) => ({ perfs: c.perfs, archetype: c.archetype, analysis: c.analysis }));
+  return { perfs: best.perfs, archetype: best.archetype, target, analysis: best.analysis, wildcard, alternatives };
 }

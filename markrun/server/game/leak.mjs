@@ -35,7 +35,10 @@ const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace
 export function checkText(text, ctx = {}, opts = {}) {
   const out = [];
   if (typeof text !== 'string') return out;
-  for (const [re, why] of STATIC_RULES) if (re.test(text)) out.push(`${why}: "${text.match(re)[0]}"`);
+  for (const [re, why] of STATIC_RULES) {
+    if (opts.allowFunfair && why === 'diversion hint') continue;
+    if (re.test(text)) out.push(`${why}: "${text.match(re)[0]}"`);
+  }
   for (const t of ctx.times || []) {
     const m = Math.floor(t / 60), s = t % 60, ss = String(s).padStart(2, '0');
     const pats = [`\\b${m}[:.,'’ ]${ss}\\b`, `\\b${m}${ss}\\b`, `\\b${t}\\b`, `\\b${m}\\s*m(in(ute)?s?)?\\s*${s}\\b`];
@@ -62,7 +65,9 @@ export function checkPayload(obj, ctx, path = '') {
   const out = [];
   if (obj == null) return out;
   if (typeof obj === 'string' && /^#[0-9a-f]{3,8}$/i.test(obj)) return out;
-  if (typeof obj === 'string') return checkText(obj, ctx, { clue: /clue|text/i.test(path) && /clue|private/i.test(path) }).map((p) => `${path}: ${p}`);
+  // the funfair prop and an announced Funfair Stakes theme name the funfair on purpose (same every round / announced theme)
+  const allowFunfair = /^public\.(props|theme|introLines)/.test(path);
+  if (typeof obj === 'string') return checkText(obj, ctx, { clue: /clue|text/i.test(path) && /clue|private/i.test(path), allowFunfair }).map((p) => `${path}: ${p}`);
   if (Array.isArray(obj)) { obj.forEach((v, i) => out.push(...checkPayload(v, ctx, `${path}[${i}]`))); return out; }
   if (typeof obj === 'object') {
     for (const [k, v] of Object.entries(obj)) {

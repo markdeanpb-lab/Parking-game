@@ -25,6 +25,7 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
   }
   const broadcast = () => { for (const c of clients) push(c); };
   game.on('change', broadcast);
+  game.on('live', broadcast);
   game.on('kicked', (pid) => {
     for (const c of clients) if (c.playerId === pid) { send(c, { t: 'kicked' }); c.playerId = null; }
   });
@@ -113,6 +114,9 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
       case 'lock': await game.lock(pid, m.bets); return send(c, { t: 'locked' });
       case 'unlock': return game.unlock(pid);
       case 'ready': return game.ready(pid, m.value !== false);
+      case 'inplay': await game.placeInPlay(pid, { runnerId: m.runnerId, stake: m.stake }); return send(c, { t: 'inplayOk' });
+      case 'next': return game.phoneNext(pid);
+      case 'iAmMark': return game.setRunnerPlayer(pid, m.value !== false);
       case 'profile': return game.updateProfile(pid, { name: m.name, avatar: m.avatar });
       case 'react': {
         if (!REACTIONS.includes(m.emoji)) return undefined;
@@ -144,6 +148,8 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
       case 'kick': return game.kick(m.playerId);
       case 'newGame': return game.newGame();
       case 'forceLock': return game.forceLock();
+      case 'marketOpen': return game.openMarket(m.roundId);
+      case 'raceTime': return game.raceTime(m.roundId, m.b);
       case 'refresh': {
         const toTvs = (msg) => { const s = JSON.stringify(msg); for (const o of clients) if (o.role === 'tv') send(o, s); };
         toTvs({ t: 'refresh', step: 'start', msg: 'Starting refresh (this uses the internet)…' });

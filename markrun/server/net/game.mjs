@@ -4,6 +4,7 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { validateBets } from './bets.mjs';
+import { broadcastToRace, distanceAt, timeAtDistance } from '../game/raceplan.mjs';
 
 export const PHASES = ['LOBBY', 'INTRO', 'BETTING', 'RACE', 'RESULTS', 'SCOREBOARD', 'FINALE'];
 export const RESULT_STAGES = ['order', 'reveal', 'clues', 'payouts', 'awards'];
@@ -14,19 +15,21 @@ export const AVATAR_COLOURS = ['#ff4d5a', '#ffb000', '#2ec27e', '#2f8cff', '#9b5
 
 export const DEFAULT_SETTINGS = Object.freeze({
   startingBankroll: 1000,
-  roundsPerGame: 5,
+  roundsPerGame: 6,
   drinkingMode: false,
   voice: true,
   music: true,
   volume: 0.8,
   betTimer: 0, // seconds; 0 = no betting countdown
+  runnerPlayerId: null, // "I'm Mark": the other player gets an extra hot tip
 });
 const SETTING_LIMITS = {
   startingBankroll: [100, 10000], roundsPerGame: [1, 12], volume: [0, 1], betTimer: [0, 600],
 };
 
 const T = { // default timeouts (ms) - safety nets; the TV normally drives these phases
-  INTRO: 180_000, REVEAL_BASE: 8_000, REVEAL_PER_BET: 2_500, RACE_EXTRA: 60_000, STAGE: 45_000,
+  INTRO: 180_000, REVEAL_BASE: 8_000, REVEAL_PER_BET: 4_000, RACE_EXTRA: 60_000, STAGE: 45_000,
+  MARKET: Number(process.env.MARKRUN_MARKET_MS) || 12_000,
   SCOREBOARD_ALL_READY: 12_000, SCOREBOARD_READY_NOW: 3_500,
 };
 
@@ -67,6 +70,7 @@ export class Game extends EventEmitter {
     this.connected = new Map(); // playerId -> socket count
     this.busy = false;
     this.rearm(true);
+    if (this.s.market?.open) { this.s.market.closesAt = Math.max(this.s.market.closesAt, this.now() + 3000); this.armMarket(); }
   }
 
   // ---- helpers ------------------------------------------------------------------------------------
@@ -179,6 +183,7 @@ export class Game extends EventEmitter {
       const s = this.s.settings;
       for (const [k, v] of Object.entries(patch)) {
         if (!(k in DEFAULT_SETTINGS)) continue;
+        if (k === 'runnerPlayerId') { s[k] = this.player(v) ? v : null; continue; }
         if (typeof DEFAULT_SETTINGS[k] === 'boolean') s[k] = !!v;
         else {
           const n = Number(v);
@@ -234,6 +239,7 @@ export class Game extends EventEmitter {
       this.s.resultsStage = 0;
       this.s.bailouts = bailouts;
       this.s.carryReady = false;
+      this.s.market = null; this.s.marketUsed = false; this.s.live = null; this.s.revealSeq = null;
       this.clearReady();
       this.setDeadline(T.INTRO);
       this.changed();
@@ -298,7 +304,13 @@ export class Game extends EventEmitter {
   reveal() {
     this.s.revealed = true;
     this.s.betLines = [];
-    try { this.s.betLines = this.rounds.betReactionLines?.(this.s.round, this.s.bets, this.s.players.map((p) => ({ id: p.id, name: p.name }))) || []; } catch (e) { console.warn('[markrun] betReactionLines failed:', e.message); }
+    const players = this.s.players.map((p) => ({ id: p.id, name: p.name }));
+    const bankrolls = Object.fromEntries(this.s.players.map((p) => [p.id, p.bankroll]));
+    const seq = this.rounds.betRevealOrder?.(this.s.round, this.s.bets, bankrolls, players);
+    this.s.revealSeq = Array.isArray(seq) && seq.length ? seq : null;
+    if (!this.s.revealSeq) {
+      try { this.s.betLines = this.rounds.betReactionLines?.(this.s.round, this.s.bets, players) || []; } catch (e) { console.warn('[markrun] betReactionLines failed:', e.message); }
+    }
     const n = Object.values(this.s.bets).reduce((a, b) => a + b.length, 0);
     this.setDeadline(Math.min(40_000, T.REVEAL_BASE + n * T.REVEAL_PER_BET));
   }
@@ -310,10 +322,7 @@ export class Game extends EventEmitter {
   }
   async toRace() {
     const r = this.s.round;
-    const betsByPlayer = {};
-    const bankrolls = {};
-    for (const p of this.s.players) { betsByPlayer[p.id] = this.s.bets[p.id] || []; bankrolls[p.id] = p.bankroll; }
-    this.s.results = await this.rounds.settleRound(r, betsByPlayer, bankrolls);
+    this.s.results = null; // settled at the finish: in-play bets can still be added at halfway
     this.s.phase = 'RACE';
     this.s.raceStartedAt = this.now();
     this.clearReady();
@@ -323,11 +332,17 @@ export class Game extends EventEmitter {
   raceDone(roundId) {
     return this.run(() => {
       if (this.s.phase !== 'RACE' || (roundId && roundId !== this.s.round.public.roundId)) return;
-      this.toResults();
+      return this.toResults();
     });
   }
-  toResults() {
+  async toResults() {
+    this.closeMarket(false);
+    const betsByPlayer = {};
+    const bankrolls = {};
+    for (const p of this.s.players) { betsByPlayer[p.id] = this.s.bets[p.id] || []; bankrolls[p.id] = p.bankroll; }
+    this.s.results = await this.rounds.settleRound(this.s.round, betsByPlayer, bankrolls);
     const res = this.s.results;
+    this.s.live = null;
     for (const p of this.s.players) {
       const pay = res?.payouts?.[p.id];
       if (pay && Number.isFinite(pay.bankroll)) p.bankroll = Math.max(0, Math.round(pay.bankroll));
@@ -340,6 +355,8 @@ export class Game extends EventEmitter {
       nets: Object.fromEntries(this.s.players.map((p) => [p.id, res?.payouts?.[p.id]?.net ?? 0])),
       awards: (res?.awards || []).map((a) => ({ playerId: a.playerId, title: a.title })),
     });
+    // full log for the finale superlatives reel (game module's sessionSuperlatives)
+    (this.s.roundLog ||= []).push({ number: this.s.roundNumber, round: { public: pub, hidden: this.s.round.hidden }, bets: betsByPlayer, results: res, bankrolls: { ...this.s.history.at(-1).bankrolls } });
     this.s.phase = 'RESULTS';
     this.s.resultsStage = 0;
     this.clearReady();
@@ -365,6 +382,8 @@ export class Game extends EventEmitter {
     this.changed();
   }
   toFinale() {
+    const sup = this.rounds.sessionSuperlatives?.(this.s.roundLog || [], this.s.players.map((p) => ({ id: p.id, name: p.name, bankroll: p.bankroll })));
+    this.s.superlatives = Array.isArray(sup) ? sup : [];
     this.s.phase = 'FINALE';
     this.clearReady();
     this.setDeadline(null);
@@ -390,7 +409,7 @@ export class Game extends EventEmitter {
     });
   }
   newGameInner() {
-    this.s.phase = 'LOBBY'; this.s.roundNumber = 0; this.s.round = null; this.s.results = null; this.s.history = [];
+    this.s.phase = 'LOBBY'; this.s.roundNumber = 0; this.s.round = null; this.s.results = null; this.s.history = []; this.s.roundLog = []; this.s.superlatives = [];
     this.s.bets = {}; this.s.drafts = {}; this.s.locked = {}; this.s.revealed = false;
     this.s.gameNumber = (this.s.gameNumber || 1) + 1;
     this.s.gameSessionId = crypto.randomBytes(6).toString('hex');
@@ -414,6 +433,88 @@ export class Game extends EventEmitter {
       }
     });
   }
+  // ---- iteration 2: in-play "halfway market", live standings for phones, phone-driven results ----------
+  marketAvailable() { return !!this.rounds.inPlayAvailable?.(this.s.round); }
+  openMarket(roundId) {
+    return this.run(() => {
+      if (this.s.phase !== 'RACE' || this.s.marketUsed || (roundId && roundId !== this.s.round.public.roundId)) return;
+      const m = this.rounds.inPlayMarket?.(this.s.round);
+      this.s.marketUsed = true;
+      if (!m || !m.odds) { this.changed(); return; }
+      this.s.market = { open: true, atM: m.atM ?? 2500, standings: m.standings || [], odds: m.odds, closesAt: this.now() + T.MARKET };
+      this.armMarket();
+      this.changed();
+    });
+  }
+  armMarket() {
+    clearTimeout(this.marketTimer);
+    if (!this.s.market?.open) return;
+    const wait = Math.max(0, this.s.market.closesAt - this.now());
+    this.marketTimer = setTimeout(() => this.run(() => this.closeMarket(true)), wait);
+    this.marketTimer.unref?.();
+  }
+  closeMarket(emit = true) {
+    clearTimeout(this.marketTimer);
+    if (!this.s.market?.open) return;
+    this.s.market.open = false;
+    if (emit) this.changed();
+  }
+  placeInPlay(playerId, { runnerId, stake }) {
+    return this.run(() => {
+      const m = this.s.market;
+      if (this.s.phase !== 'RACE' || !m?.open) throw new GameError('The halfway market is closed.');
+      const p = this.player(playerId);
+      if (!p) throw new GameError('Unknown player.');
+      const bets = this.s.bets[playerId] || [];
+      if (bets.some((b) => b.type === 'inplay')) throw new GameError('One halfway bet each!');
+      const o = m.odds[runnerId];
+      if (!o) throw new GameError('Unknown runner.');
+      const minStake = this.s.round.public.rules?.minStake ?? 10;
+      const free = p.bankroll - bets.reduce((a, b) => a + b.stake, 0);
+      const st = Math.floor(Number(stake));
+      if (!Number.isFinite(st) || st < minStake) throw new GameError(`Minimum stake is ${minStake}.`);
+      if (st > free) throw new GameError(`You only have ${free} left.`);
+      this.s.bets[playerId] = [...bets, { type: 'inplay', runnerId, stake: st, odds: o.win, display: o.display }];
+      this.changed();
+    });
+  }
+  // TV reports its broadcast clock; phones get standings of their own runners (never the plan itself)
+  raceTime(roundId, b) {
+    if (this.s.phase !== 'RACE' || !this.s.round || (roundId && roundId !== this.s.round.public.roundId)) return;
+    const bb = Number(b);
+    if (!Number.isFinite(bb)) return;
+    this.s.live = { b: bb, at: this.now() };
+    this.emit('live'); // re-broadcast only; not worth a disk write every second
+  }
+  liveStandings() {
+    const plan = this.s.round?.racePlan;
+    if (!plan || !this.s.live) return null;
+    const raceS = broadcastToRace(plan.timeMap, Math.max(0, this.s.live.b));
+    const rows = plan.runners.map((r) => ({ id: r.id, d: distanceAt(r.progress, raceS), f: r.officialS, done: raceS >= r.officialS }))
+      .sort((x, y) => (x.done && y.done ? x.f - y.f : (y.d - x.d) || (x.f - y.f)));
+    const leader = plan.runners.find((r) => r.id === rows[0].id);
+    return rows.map((r, i) => {
+      const run = plan.runners.find((x) => x.id === r.id);
+      const gapS = i === 0 ? 0 : r.done ? r.f - leader.officialS : Math.max(0, raceS - timeAtDistance(leader.progress, r.d));
+      return { runnerId: r.id, place: i + 1, gapS: Math.round(gapS * 10) / 10, finished: r.done && !!run };
+    });
+  }
+  phoneNext(playerId) { // either phone can move the results on, so nobody has to get up
+    return this.run(() => {
+      if (!this.player(playerId)) return;
+      if (this.s.phase === 'RESULTS') return this.nextStage(this.s.resultsStage);
+      return undefined;
+    });
+  }
+  setRunnerPlayer(playerId, value) {
+    return this.run(() => {
+      if (this.s.phase !== 'LOBBY' && this.s.phase !== 'SCOREBOARD') throw new GameError('Change this in the lobby.');
+      if (value) this.s.settings.runnerPlayerId = playerId;
+      else if (this.s.settings.runnerPlayerId === playerId) this.s.settings.runnerPlayerId = null;
+      this.changed();
+    });
+  }
+
   // "Refresh Historical Data" (TV lobby only). The ONLY path that may touch the internet; never called by gameplay.
   refreshData(onProgress) {
     if (this.s.phase !== 'LOBBY') return Promise.reject(new GameError('Refreshing is only allowed in the lobby.'));
@@ -442,7 +543,8 @@ export class Game extends EventEmitter {
     if (!pub) return out;
     for (const p of this.s.players) {
       for (const b of this.s.bets[p.id] || []) {
-        const rid = b.type === 'win' ? b.runnerId : b.pick;
+        if (b.type === 'prop') continue;
+        const rid = b.runnerId || b.pick;
         (out[rid] ||= []);
         if (!out[rid].includes(p.name)) out[rid].push(p.name);
       }
@@ -476,9 +578,12 @@ export class Game extends EventEmitter {
       round: showRound ? s.round.public : null,
       roundSource: s.round?.source || null,
       revealed: !!s.revealed,
-      bets: s.revealed ? Object.fromEntries(s.players.map((p) => [p.id, s.bets[p.id] || []])) : null,
+      bets: s.revealed || ['RACE', 'RESULTS', 'SCOREBOARD'].includes(s.phase) ? Object.fromEntries(s.players.map((p) => [p.id, s.bets[p.id] || []])) : null,
       betLines: s.revealed && s.phase === 'BETTING' ? (s.betLines || []) : [],
       refreshing: !!s.refreshing,
+      revealSeq: s.revealed && s.phase === 'BETTING' ? s.revealSeq : null,
+      market: s.phase === 'RACE' && s.market ? { open: s.market.open, atM: s.market.atM, standings: s.market.standings, odds: s.market.odds, closesAt: s.market.closesAt } : null,
+      superlatives: s.phase === 'FINALE' ? (s.superlatives || []) : [],
       results: showResults ? s.results : null,
       clues: showResults ? this.allClues() : null, // after the race every clue (incl. private ones) can be reviewed
       resultsStage: s.phase === 'RESULTS' ? s.resultsStage : RESULT_STAGES.length,
@@ -499,6 +604,7 @@ export class Game extends EventEmitter {
       v.raceStartedAt = this.s.raceStartedAt;
     }
     v.backedBy = this.s.revealed || ['RACE', 'RESULTS'].includes(this.s.phase) ? this.backedBy() : {};
+    v.marketAvailable = this.s.phase === 'RACE' && this.marketAvailable() && !this.s.marketUsed;
     return { ...v, role: 'tv', ...extra };
   }
 
@@ -512,6 +618,11 @@ export class Game extends EventEmitter {
       privateClues: this.s.round && this.s.phase !== 'LOBBY' ? (this.s.round.private?.[p.id] || []) : [],
       bets: this.s.locked[p.id] ? (this.s.bets[p.id] || []) : (this.s.drafts[p.id] || []),
     };
+    if (this.s.phase === 'RACE' && this.s.live) {
+      const st = this.liveStandings() || [];
+      const mine = new Set((this.s.bets[p.id] || []).map((b) => b.runnerId || b.pick).filter((x) => x && x !== 'yes' && x !== 'no'));
+      v.me.live = { b: this.s.live.b, leaderId: st[0]?.runnerId || null, mine: st.filter((r) => mine.has(r.runnerId)).map(({ runnerId, place, gapS, finished }) => ({ runnerId, place, gapS, finished })) };
+    }
     return { ...v, role: 'phone' };
   }
 }

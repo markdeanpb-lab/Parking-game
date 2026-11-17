@@ -359,30 +359,106 @@ export const CATEGORY_LABEL = {
 
 export const skeleton = (t) => t.replace(/-?\d+(\.\d+)?/g, '#').replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/gi, '#');
 
-// One candidate per category; re-rolls the template a few times to avoid wording already used this session.
+// One candidate per category, carrying several wordings of the SAME fact (re-rolled templates) for the style pass.
 export function candidatesFor(p, field, rng, mem) {
   const ctx = { p, f: p.facts, field, rng };
   const byCat = {};
   for (const [cat, gen] of Object.entries(G)) {
-    let pickC = null;
-    for (let k = 0; k < 4; k++) {
+    let primary = null;
+    const variants = new Map();
+    for (let k = 0; k < 7; k++) {
       let list = [];
       try { list = gen(ctx) || []; } catch { list = []; }
       if (!list.length) break;
       const c = rng.pick(list);
-      c.skel = skeleton(c.text);
-      if (!pickC || !mem?.clueSkel?.has(c.skel)) pickC = c;
-      if (!mem?.clueSkel?.has(c.skel)) break;
+      if (!primary) primary = c;
+      if (c.said !== primary.said || c.features.join() !== primary.features.join()) continue;
+      variants.set(c.text, { text: c.text, skel: skeleton(c.text), style: /\?\s*$/.test(c.text) ? 'hedge' : 'fact' });
     }
-    if (pickC) byCat[cat] = pickC;
+    if (primary) {
+      primary.skel = skeleton(primary.text);
+      primary.variants = [...variants.values()];
+      primary.factSentence = splitFact(primary.text).fact;
+      byCat[cat] = primary;
+    }
   }
   return byCat;
+}
+export const splitFact = (t) => { const m = t.match(/^(.+?[.!?])\s+(.+)$/); return m ? { fact: m[1], tail: m[2] } : { fact: t, tail: '' }; };
+
+// ---------- clue styles: hedged "…or …?", plain fact + punchline, or a confident tipster opinion from Jeff or Pam ----------
+const GROUP = { week_km: 'training', week_rel: 'training', month_km: 'training', consistency: 'training', long_run: 'training', hard_session: 'training',
+  form: 'form', warmup: 'prep', day_before: 'prep', rest: 'prep', temp: 'weather', wind: 'weather', damp: 'weather',
+  race_soon: 'diary', race_recent: 'diary', block: 'diary', cross: 'cross' };
+const OPINIONS = {
+  training: {
+    pos: ['All those miles. He\'ll fly round.', 'Engine like a diesel lorry. Lump on.', 'That\'s a man in form. Easy money.', 'Proper graft in the bank. He\'s the one.', 'Fit as a flea. Back him.', 'The work is done. Now he collects.'],
+    neg: ['Overcooked. He\'ll be walking the Hill.', 'Legs like lead. Lay him.', 'Not enough in the tank. Swerve.', 'Tired as a Monday. No chance.', 'Undercooked. Pass.', 'Wrong side of the training plan. Avoid.'] },
+  form: {
+    pos: ['Form is temporary, class is permanent. Back him.', 'On a roll. Don\'t fight it.', 'He\'s the one they all have to beat.', 'Momentum is everything. He\'s got it.'],
+    neg: ['Form says no. I say no.', 'Off the boil. Avoid.', 'The wheels are wobbling. Steer clear.', 'Bad form sticks. Like chewing gum.'] },
+  prep: {
+    pos: ['Perfect preparation. He\'s ready.', 'Fresh as a daisy. He\'ll go well.', 'Smart prep. Clever lad.', 'Rested and raring. Lump on.'],
+    neg: ['Shocking preparation. Rusty as a gate.', 'Wrong prep. He\'ll pay for it on the Hill.', 'Did the wrong thing beforehand. Dead legs.', 'Amateur hour. No thanks.'] },
+  weather: {
+    pos: ['Loves these conditions. Born for it.', 'Perfect weather for him. Mark my words.', 'He thrives on a morning like this.', 'Weather\'s no excuse. He\'ll go.'],
+    neg: ['Hates these conditions. Swerve.', 'Not a day for him. Trust me.', 'That weather will find him out.', 'Wrong weather, wrong runner.'] },
+  diary: {
+    pos: ['Race sharp. Peaking nicely. Back him.', 'Peaking at the right time.', 'Taper legs. Lethal.', 'Big-race fitness. Watch out.'],
+    neg: ['Saving himself for the big one. Ignore.', 'Legs still in the last race. Avoid.', 'Mind\'s elsewhere. On the big race.', 'He\'ll be jogging it. Trust me.'] },
+  cross: {
+    pos: ['Cross-training! Strong as an ox.', 'All-round athlete. Dangerous.', 'The bike gives him an engine.'],
+    neg: ['Should\'ve been running, not pedalling.', 'Jack of all trades. Master of none.', 'Wrong sport, mate.'] },
+};
+const VOICE = {
+  jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker of the day:', 'Jeff is all over this one:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff has gone off him:'] },
+  pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam has a sneaky fancy:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:'] },
+};
+
+// Give every assigned clue a style, balancing roughly thirds across the round, never repeating a wording in the
+// round, and keeping a session cooldown on wordings used in the last few rounds.
+export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
+  const counts = { hedge: 0, fact: 0, tipster: 0 };
+  const slotCounts = {};
+  const usedRound = new Set();
+  const last = mem?.clueSkelRound || {};
+  const cooling = (sk) => last[sk] != null && roundNumber - last[sk] <= 3;
+  const all = rng.shuffle(Object.values(assigned).flat());
+  for (const x of all) {
+    const c = x.clue;
+    const opts = [];
+    for (const v of c.variants || [{ text: c.text, skel: c.skel, style: /\?\s*$/.test(c.text) ? 'hedge' : 'fact' }]) {
+      if (usedRound.has(v.skel)) continue;
+      opts.push({ ...v, cool: cooling(v.skel) });
+    }
+    const tipSkel = `${skeleton(c.factSentence || splitFact(c.text).fact)}|tip`;
+    if (GROUP[c.cat] && !usedRound.has(tipSkel)) opts.push({ style: 'tipster', skel: tipSkel, cool: false });
+    if (!opts.length) { usedRound.add(c.skel); continue; }
+    const sc = (slotCounts[x.slot] ||= { hedge: 0, fact: 0, tipster: 0 });
+    const score = (o) => counts[o.style] + 1.2 * sc[o.style] + (o.cool ? 2.5 : 0) + rng.next() * 0.9;
+    const o = opts.reduce((a, b) => (score(b) < score(a) ? b : a));
+    counts[o.style]++; sc[o.style]++;
+    usedRound.add(o.skel);
+    if (mem) { mem.clueSkelRound ||= {}; mem.clueSkelRound[o.skel] = roundNumber; }
+    let text = o.text;
+    if (o.style === 'tipster') {
+      const natural = c.signal < -1.5 ? 'pos' : c.signal > 1.5 ? 'neg' : rng.chance(0.5) ? 'pos' : 'neg';
+      const lean = rng.chance(0.68) ? natural : natural === 'pos' ? 'neg' : 'pos';
+      const voice = rng.chance(0.55) ? 'jeff' : 'pam';
+      const intro = rng.pick(VOICE[voice][lean]);
+      const op = pickOpinion(`op_${GROUP[c.cat]}_${lean}`, OPINIONS[GROUP[c.cat]][lean]);
+      text = `${c.factSentence || splitFact(c.text).fact} ${intro} "${op}"`;
+      x.clue = { ...c, text, style: 'tipster', voice, lean: lean === 'pos' ? 1 : -1 };
+    } else {
+      x.clue = { ...c, text, style: o.style };
+    }
+  }
+  return counts;
 }
 
 // Assign clues to slots: slots[0] = 'public', then one per player. Returns { [runnerId]: [{slot, clue}] }.
 const PRICED = (model, c) => c.family === 'fitness' && c.features.some((k) => model.features.includes(k));
-export function assignClues(entries, slots, rng, model, { boost, mem } = {}) {
-  const memSkel = mem?.clueSkel;
+export function assignClues(entries, slots, rng, model, { boost, publicPricedBonus } = {}) {
   // entries: [{ runnerId, perf, cands: {cat: clue} }]
   const nSlots = slots.length;
   let best = null;
@@ -404,7 +480,7 @@ export function assignClues(entries, slots, rng, model, { boost, mem } = {}) {
         // same-family pairs (week_km + week_rel + month_km) are redundant on one runner
         opts = opts.filter((c) => !(['week_km', 'week_rel', 'month_km'].includes(c.cat) && chosen.some((x) => ['week_km', 'week_rel', 'month_km'].includes(x.clue.cat))) || opts.length <= 1);
         if (!opts.length) { ok = false; break; }
-        const sc = (c) => c.interest + rng.next() * 0.7 - (memSkel?.has(c.skel) ? 0.6 : 0) + (boost?.(e, c) ?? 0) + (s === 0 && PRICED(model, c) ? 0.45 : 0)
+        const sc = (c) => c.interest + rng.next() * 0.7 + (boost?.(e, c) ?? 0) + (s === 0 && PRICED(model, c) ? (publicPricedBonus ?? 0.45) : 0)
           - 1.3 * (usedSlotCat[s].get(c.cat) || 0)
           - 0.45 * (catCount.get(c.cat) || 0)
           - (famSlot[s][c.family] >= 3 ? 0.8 : 0)
@@ -430,7 +506,6 @@ export function assignClues(entries, slots, rng, model, { boost, mem } = {}) {
     x.clue = { ...x.clue };
     x.clue.priced = Math.round(contribution(model, e.perf.date, x.clue.features) * 10) / 10;
     x.clue.signal = Math.round((x.clue.priced + (x.clue.hint || 0)) * 10) / 10;
-    memSkel?.add(x.clue.skel);
   }
   return best.res;
 }

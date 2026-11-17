@@ -6,13 +6,14 @@ import * as THREE from 'three';
 const PRIO = { finish: 10, photo: 11, distracted: 9, hill: 7, lapboard: 6, lead_change: 6, final: 5, backed: 4, overtake: 3, filler: 1 };
 
 export function buildShotList({ plan, sim, backedIds = [], hasDiversion }) {
-  const ev = plan.events;
+  const ev = plan.events || [];
   const endB = sim.lastFinishB + 3.5;
   const windows = [];
   const W = (type, a, b, prio, extra = {}) => { if (b - a >= 1.2) windows.push({ type, a, b, prio, ...extra }); };
   const firstFinish = sim.firstFinishB;
   // finish sequence: finish cam for the winner, then intercut chasers
-  const fin = ev.filter((e) => e.type === 'finish').sort((a, b) => a.broadcastS - b.broadcastS);
+  // finishes come from the sim (works even for plans without events)
+  const fin = sim.finishOrder.map((id) => ({ who: id, broadcastS: sim.byId[id].finishB }));
   let cursor = firstFinish - 5.5;
   fin.forEach((f, i) => {
     const prev = fin[i - 1];
@@ -44,7 +45,7 @@ export function buildShotList({ plan, sim, backedIds = [], hasDiversion }) {
   }
   // diversions: only the first one gets a dedicated cut
   const div = ev.filter((e) => e.type === 'diversion').sort((a, b) => a.broadcastS - b.broadcastS);
-  if (div[0]) W('distracted', div[0].broadcastS + 0.6, Math.min(div[0].endBroadcastS - 0.4, div[0].broadcastS + 6), 9, { ids: [div[0].who], banner: true });
+  if (div[0]) W('distracted', div[0].broadcastS - 0.4, Math.max(div[0].broadcastS + 6.5, Math.min((div[0].endBroadcastS ?? div[0].broadcastS + 8) + 1.2, div[0].broadcastS + 9)), 9, { ids: [div[0].who], banner: true });
   for (const h of ev.filter((e) => e.type === 'hill')) { const rate = sim.rateAt(h.broadcastS); const dur = Math.max(2.6, Math.min(6, 140 / Math.max(1, rate * 3.4))); W('hill', h.broadcastS - 1.4, h.broadcastS + dur, 7, { lap: h.lap }); }
   const lap = ev.find((e) => e.type === 'lap'); if (lap) W('lapboard', lap.broadcastS - 2.6, lap.broadcastS + 2.0, 6);
   for (const e of ev.filter((x) => x.type === 'lead_change')) W('battle', e.broadcastS - 1.6, e.broadcastS + 2.8, 6, { ids: [e.to, e.from], tag: 'lead' });
@@ -247,7 +248,17 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         // the fairground sits between the GPS diversion and the usual course
         const q = world.anchors.nearestOnRibbon(f.p.x, f.p.z);
         const side = Math.sign((q[0] - f.p.x) * r.x + (q[1] - f.p.z) * r.z) || 1; const toFair = r.clone().multiplyScalar(side);
-        if (u < 0.55) {
+        const el = b - s.a;
+        if (el < 2.6 && funfair) {
+          // FUNFAIR CAM: crane over the fairground, big wheel turning, our hero veering in from the course
+          const wheel = funfair.anchors.rides[0].pos;
+          const k = el / 2.6;
+          const fromCourse = new THREE.Vector3(wheel.x - f.p.x, 0, wheel.z - f.p.z).normalize();
+          // high behind the runner (never outside the park fence), drifting down as they swerve towards the rides
+          pos = f.p.clone().addScaledVector(f.h, -18 + k * 2).addScaledVector(fromCourse, -4).add(up.clone().multiplyScalar(13 - k * 2));
+          look = new THREE.Vector3(wheel.x, f.p.y + 8, wheel.z).lerp(f.p.clone().add(up), 0.45 + k * 0.2);
+          fov = 54; damp = false;
+        } else if (u < 0.62) {
           // where the runner is gawping: camera on that line so we get the heart eyes + pop
           const dir = f.h.clone().multiplyScalar(0.55).addScaledVector(toFair, 0.85).normalize();
           pos = f.p.clone().addScaledVector(dir, 5.2).add(up.clone().multiplyScalar(2.0));
@@ -272,7 +283,7 @@ export function createDirector({ camera, C, sim, world, funfair }) {
   let phase = 0;
   function update(b, dt, shots) {
     const s = shots.find((x) => b >= x.a && b < x.b) || shots.at(-1);
-    const ph = s.type === 'distracted' && (b - s.a) / (s.b - s.a) >= 0.55 ? 1 : 0;
+    const ph = s.type === 'distracted' ? ((b - s.a) < 2.6 ? 0 : (b - s.a) / (s.b - s.a) < 0.62 ? 1 : 2) : 0;
     const cut = s !== shot || ph !== phase; phase = ph;
     shot = s;
     const r = evaluate(s, b, dt);

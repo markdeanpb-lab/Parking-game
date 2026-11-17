@@ -43,42 +43,42 @@ export function buildFunfair(scene, C, world, diversion) {
   {
     const p = S.slice(1, 6).sort((a, b) => b.gap - a.gap)[0];
     const g = new THREE.Group();
-    const Rr = Math.min(12, p.gap * 0.42);
+    const Rr = 17; // big and readable from the hill and drone cams; the wheel plane runs along the strip
     const hubY = Rr + 2.6;
     const legG = new THREE.CylinderGeometry(0.35, 0.5, hubY / Math.cos(0.32) + 1, 8);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const l = M(legG, toon('#ffffff')); l.position.set(sx * 1.3, hubY / 2, sz * Math.tan(0.32) * hubY / 2); l.rotation.x = -sz * 0.32; g.add(l); }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const l = M(legG, toon('#ffffff')); l.position.set(sx * 1.8, hubY / 2, sz * Math.tan(0.32) * hubY / 2); l.rotation.x = -sz * 0.32; g.add(l); }
     const base = M(new RoundedBoxGeometry(6, 1, 8, 2, 0.3), toon('#2e9bff')); base.position.y = 0.5; g.add(base);
     const wheel = new THREE.Group(); wheel.position.y = hubY; g.add(wheel);
-    const rim = M(new THREE.TorusGeometry(Rr, 0.32, 8, 48), toon('#ff3d8b')); rim.rotation.y = Math.PI / 2; rim.position.x = 0.9; wheel.add(rim);
-    const rim2 = M(new THREE.TorusGeometry(Rr, 0.32, 8, 48), toon('#ff3d8b')); rim2.rotation.y = Math.PI / 2; rim2.position.x = -0.9; wheel.add(rim2);
-    const hub = M(new THREE.CylinderGeometry(1.0, 1.0, 2.6, 16).rotateZ(Math.PI / 2), toon('#ffd23f')); wheel.add(hub);
-    const n = 10; const cars = [];
+    const rim = M(new THREE.TorusGeometry(Rr, 0.45, 8, 64), toon('#ff3d8b')); rim.rotation.y = Math.PI / 2; rim.position.x = 1.2; wheel.add(rim);
+    const rim2 = M(new THREE.TorusGeometry(Rr, 0.45, 8, 64), toon('#ff3d8b')); rim2.rotation.y = Math.PI / 2; rim2.position.x = -1.2; wheel.add(rim2);
+    const hub = M(new THREE.CylinderGeometry(1.3, 1.3, 3.2, 16).rotateZ(Math.PI / 2), toon('#ffd23f')); wheel.add(hub);
+    const n = 16; const cars = [];
     const lightPos = [];
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
-      const sp = M(new THREE.BoxGeometry(0.18, Rr, 0.18).translate(0, Rr / 2, 0), toon('#ffffff'), 2); sp.rotation.x = a; sp.position.x = 0.9; wheel.add(sp);
-      const sp2 = sp.clone(); sp2.position.x = -0.9; wheel.add(sp2);
+      const sp = M(new THREE.BoxGeometry(0.18, Rr, 0.18).translate(0, Rr / 2, 0), toon('#ffffff'), 2); sp.rotation.x = a; sp.position.x = 1.2; wheel.add(sp);
+      const sp2 = sp.clone(); sp2.position.x = -1.2; wheel.add(sp2);
       const pivot = new THREE.Group(); pivot.position.set(0, Math.cos(a) * Rr, Math.sin(a) * Rr); wheel.add(pivot);
       const car = new THREE.Group(); pivot.add(car);
       const col = ['#ffd23f', '#3ddc84', '#2e9bff', '#ff8a3d', '#b07bff'][i % 5];
       const tub = M(new RoundedBoxGeometry(1.7, 1.3, 1.5, 2, 0.35), toon(col)); tub.position.y = -1.3; car.add(tub);
       const roof = M(new THREE.ConeGeometry(1.2, 0.7, 4).rotateY(Math.PI / 4), toon('#ffffff'), 2); roof.position.y = -0.1; car.add(roof);
       cars.push(pivot);
-      for (let k = 0; k < 3; k++) { const b = a + (k / 3) * (Math.PI * 2 / n); lightPos.push([0.9, Math.cos(b) * Rr, Math.sin(b) * Rr], [-0.9, Math.cos(b) * Rr, Math.sin(b) * Rr]); }
+      for (let k = 0; k < 3; k++) { const b = a + (k / 3) * (Math.PI * 2 / n); lightPos.push([1.2, Math.cos(b) * Rr, Math.sin(b) * Rr], [-1.2, Math.cos(b) * Rr, Math.sin(b) * Rr]); }
     }
-    const lights = new THREE.InstancedMesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), lightPos.length);
+    const lights = new THREE.InstancedMesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), lightPos.length);
     const d = new THREE.Object3D();
     lightPos.forEach((q, i) => { d.position.set(...q); d.updateMatrix(); lights.setMatrixAt(i, d.matrix); lights.setColorAt(i, new THREE.Color(['#fff27a', '#ff7ac8', '#7affff'][i % 3])); });
     wheel.add(lights);
-    place(g, p, Math.PI / 2);
-    spinners.push((t) => { wheel.rotation.x = t * 0.25; for (const c of cars) c.rotation.x = -t * 0.25; });
+    place(g, p, 0);
+    spinners.push((t) => { wheel.rotation.x = t * 0.18; for (const c of cars) c.rotation.x = -t * 0.18; });
     anchors.rides.push({ kind: 'wheel', obj: g, pos: new THREE.Vector3(p.x, p.y + hubY, p.z), r: Rr });
     p.used = true;
   }
   // 2) Carousel
   {
     const p = S.filter((s) => !s.used).sort((a, b) => b.gap - a.gap)[0]; p.used = true;
-    const g = new THREE.Group(); const Rr = Math.min(6.5, p.gap * 0.28);
+    const g = new THREE.Group(); const Rr = Math.min(6.5, p.gap * 0.28); g.scale.setScalar(1.45);
     const st = stripes('#ffffff', '#ff4f6d', 16); disposables.push(st);
     const base = M(new THREE.CylinderGeometry(Rr, Rr + 0.3, 0.9, 32), toon('#ffffff', { map: st })); base.position.y = 0.45; g.add(base);
     const rot = new THREE.Group(); g.add(rot);
@@ -105,12 +105,12 @@ export function buildFunfair(scene, C, world, diversion) {
     }
     place(g, p);
     spinners.push((t) => { rot.rotation.y = t * 0.6; for (const h of horses) h.horse.position.y = 2.0 + Math.sin(t * 2.2 + h.ph) * 0.35; });
-    anchors.rides.push({ kind: 'carousel', obj: g, pos: new THREE.Vector3(p.x, p.y + 4, p.z), r: Rr });
+    anchors.rides.push({ kind: 'carousel', obj: g, pos: new THREE.Vector3(p.x, p.y + 6, p.z), r: Rr * 1.45 });
   }
   // 3) Helter-skelter
   {
     const p = S.filter((s) => !s.used).sort((a, b) => b.gap - a.gap)[0]; p.used = true;
-    const g = new THREE.Group(); const H = 15;
+    const g = new THREE.Group(); const H = 15; g.scale.setScalar(1.5);
     const st = stripes('#ff3d3d', '#ffffff', 10, false); disposables.push(st);
     const tower = M(new THREE.CylinderGeometry(1.6, 2.6, H, 16), toon('#ffffff', { map: st })); tower.position.y = H / 2; g.add(tower);
     const roof = M(new THREE.ConeGeometry(2.6, 3.4, 16), toon('#2e9bff')); roof.position.y = H + 1.7; g.add(roof);
@@ -123,7 +123,7 @@ export function buildFunfair(scene, C, world, diversion) {
     const mat = M(new RoundedBoxGeometry(3, 0.3, 2, 2, 0.1), toon('#3ddc84'), 2); mat.position.set(pts.at(-1).x + 1, 0.15, pts.at(-1).z); g.add(mat);
     place(g, p);
     spinners.push((t) => { flag.rotation.y = Math.sin(t * 3) * 0.4; });
-    anchors.rides.push({ kind: 'helter', obj: g, pos: new THREE.Vector3(p.x, p.y + 8, p.z), r: 4 });
+    anchors.rides.push({ kind: 'helter', obj: g, pos: new THREE.Vector3(p.x, p.y + 12, p.z), r: 6 });
   }
   // 4) Stalls in the remaining slots and between rides
   const stallNames = [['CANDYFLOSS', '#ff9bd2'], ['HOOK-A-DUCK', '#57c7ff'], ['DOUGHNUTS', '#ffb347'], ['COCONUT SHY', '#8ee86b'], ['TOFFEE APPLES', '#ff5d5d'], ['HOOK-A-DUCK', '#57c7ff']];

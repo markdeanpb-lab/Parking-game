@@ -14,7 +14,7 @@ export function createFallbackRaceView(container, { course, round, plan, speed =
   let raf = 0, paused = false, disposed = false;
   let b = 0; // broadcast seconds
   let mode = 'idle';
-  let lastT = 0, lastDraw = 0;
+  let lastT = 0, lastDraw = 0, lastB = -1;
   let onEventCb = null, onDoneCb = null;
   let queue = [];
   let podium = null;
@@ -25,7 +25,7 @@ export function createFallbackRaceView(container, { course, round, plan, speed =
 
   function resize() {
     // fallback view: cap the backing store (it's CSS-scaled) so slow GPUs never fall behind
-    const k = Math.min(1, 1280 / Math.max(1, container.clientWidth));
+    const k = Math.min(1, 1100 / Math.max(1, container.clientWidth));
     canvas.width = Math.round(container.clientWidth * k);
     canvas.height = Math.round(container.clientHeight * k);
   }
@@ -125,7 +125,7 @@ export function createFallbackRaceView(container, { course, round, plan, speed =
         cb?.();
       }
     }
-    if (t - lastDraw > 30) { lastDraw = t; draw(); } // ~30 fps is plenty for dots on a map
+    if (t - lastDraw > 45 && (b !== lastB || !bg)) { lastDraw = t; lastB = b; draw(); } // ~20 fps, and only when the clock moved
     raf = requestAnimationFrame(frame);
   }
   raf = requestAnimationFrame(frame);
@@ -140,6 +140,7 @@ export function createFallbackRaceView(container, { course, round, plan, speed =
     },
     showPodium(results) { podium = results; void podium; },
     setPaused(p) { paused = !!p; },
+    get broadcastTime() { return mode === 'race' || mode === 'done' ? b : -1; },
     dispose() { disposed = true; cancelAnimationFrame(raf); ro.disconnect(); canvas.remove(); },
   };
 }

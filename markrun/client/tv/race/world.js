@@ -85,20 +85,34 @@ export function buildWorld(scene, C, opts) {
       const b = bbox(f.pts); for (let x = b[0]; x < b[2]; x += 8) { g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(X(x), Z(b[1]), 4 * PX, (b[3] - b[1]) * PX); }
       g.restore(); poly(f.pts); g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.stroke();
     }
-    fillK('playground', '#ffa25a', '#e07a35');
-    for (const f of park.features) if (f.kind === 'playground' && f.closed) { const b = bbox(f.pts); for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(X(b[0] + rnd() * (b[2] - b[0])), Z(b[1] + rnd() * (b[3] - b[1])), 3 * PX, 0, 7); g.fillStyle = ['#ffd93b', '#57c7ff', '#ff6f91'][i % 3]; g.fill(); } }
-    // athletics track: red band + white lanes, green infield
-    for (const f of park.features) if (f.kind === 'track' && f.closed) {
+    // playgrounds: pale sand/bark surface with a picket edge (3D toys are added below)
+    for (const f of park.features) if (f.kind === 'playground' && f.closed) {
+      // soft rubber safety surface (teal) with hopscotch-style dots, white kerb
+      poly(f.pts); g.fillStyle = '#7fcfb4'; g.fill();
+      g.save(); poly(f.pts); g.clip(); const b = bbox(f.pts);
+      for (let i = 0; i < 260; i++) { g.fillStyle = rnd() < 0.5 ? 'rgba(20,80,70,0.18)' : 'rgba(255,255,255,0.22)'; g.fillRect(X(b[0] + rnd() * (b[2] - b[0])), Z(b[1] + rnd() * (b[3] - b[1])), 3, 3); }
+      for (let i = 0; i < (b[2] - b[0]) * (b[3] - b[1]) / 400; i++) { g.beginPath(); g.arc(X(b[0] + rnd() * (b[2] - b[0])), Z(b[1] + rnd() * (b[3] - b[1])), 1.6 * PX, 0, 7); g.fillStyle = ['#ffd93b', '#57c7ff', '#ff6f91'][i % 3]; g.fill(); }
+      g.restore();
+      poly(f.pts); g.strokeStyle = '#ffffff'; g.lineWidth = 0.8 * PX; g.stroke();
+    }
+    // athletics: the big oval is a proper track (red band, white lanes, green infield); small bits are jump pits etc.
+    const trackArea = (f) => { let a = 0; for (let i = 0, j = f.pts.length - 1; i < f.pts.length; j = i++) a += (f.pts[j][0] + f.pts[i][0]) * (f.pts[j][1] - f.pts[i][1]); return Math.abs(a / 2); };
+    for (const f of park.features) if (f.kind === 'track' && f.closed && trackArea(f) > 5000) {
       g.save(); poly(f.pts); g.clip();
-      g.fillStyle = '#5ccc3f'; g.fill();
-      const band = 11 * PX;
-      for (let i = 6; i >= 0; i--) {
-        const d = (i / 6) * band;
-        poly(f.pts); g.lineJoin = 'round';
-        g.strokeStyle = '#ffffff'; g.lineWidth = 2 * d + 2.4; g.stroke();
-        g.strokeStyle = '#e2523a'; g.lineWidth = Math.max(0, 2 * d - 2.4); if (i > 0) g.stroke();
-      }
+      g.fillStyle = '#e2523a'; g.fill();
+      const band = 9 * PX;
+      // infield: inset copy of the oval
+      const c = centroid(f.pts); const b = bbox(f.pts); const w = (b[2] - b[0]), h = (b[3] - b[1]);
+      const inset = (k) => f.pts.map((p) => [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k]);
+      const k = 1 - (2 * 9) / Math.min(w, h);
+      for (let i = 1; i <= 5; i++) { poly(inset(1 - (1 - k) * (i / 6))); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1.6; g.stroke(); }
+      poly(inset(k)); g.fillStyle = '#5ccc3f'; g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.stroke();
       g.restore(); poly(f.pts); g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.stroke();
+      void band;
+    }
+    for (const f of park.features) if (f.kind === 'track' && f.closed && trackArea(f) <= 5000) {
+      const sand = f.tags?.surface === 'sand'; if (!f.tags?.surface) continue;
+      poly(f.pts); g.fillStyle = sand ? '#f2d58f' : '#e2523a'; g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
     }
     // tennis courts
     for (const f of park.features) if (f.kind === 'tennis' && f.closed) {
@@ -546,6 +560,10 @@ ${THREE.ShaderChunk.fog_fragment}
   zone(1940, 2010, 1, 4, 0.7); zone(1960, 2010, -1, 3, 0.6); // top of the hill
   zone(hillM - 10, hillM + 40, -1, 3, 0.55);
   zone(2440, 2490, -1, 3, 0.7); // lap board
+  zone(hillM - 70, hillM + 10, 1, 3, 0.5); // foot of the climb (hill-cam background)
+  zone(hillM - 70, hillM - 20, -1, 3, 0.45);
+  zone(2080, 2160, 1, 4, 0.75); zone(2080, 2160, -1, 4, 0.75); // by the boating lake
+  zone(800, 860, 1, 3, 0.6); zone(1250, 1310, -1, 3, 0.6); // tree avenue + far end
   anchors.crowdZones = crowdZones;
 
   // benches + cafe kiosks
@@ -576,7 +594,7 @@ ${THREE.ShaderChunk.fog_fragment}
     }
   }
   function nearestOnRibbon(x, z) { let best = null, bd = 1e9; for (const s of ribbonSamples) { const d = (s[0] - x) ** 2 + (s[1] - z) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
-  anchors.nearestOnRibbon = nearestOnRibbon;
+  anchors.nearestOnRibbon = nearestOnRibbon; anchors.ribbonSamples = ribbonSamples;
   const ribHash = new Map();
   for (const q of ribbonSamples) { const k = `${Math.floor(q[0] / 10)},${Math.floor(q[1] / 10)}`; let a = ribHash.get(k); if (!a) ribHash.set(k, (a = [])); a.push(q); }
   const onPath = (x, z, margin = 1) => {

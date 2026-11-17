@@ -23,13 +23,30 @@ const CSS = `
 .mr-row .mr-card{flex:1;height:calc(var(--u)*3.4);display:flex;align-items:center;padding:0 calc(var(--u)*.8) 0 0;background:rgba(20,22,48,.82);border:calc(var(--u)*.25) solid var(--ink);border-radius:calc(var(--u)*.6);transform:skewX(-10deg);overflow:hidden}
 .mr-row .mr-card>*{transform:skewX(10deg)}
 .mr-row .mr-chip{width:calc(var(--u)*1.6);align-self:stretch;margin-right:calc(var(--u)*.8)}
-.mr-row .mr-name{flex:1;font-size:calc(var(--u)*1.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mr-row .mr-name{flex:1;min-width:0;font-size:calc(var(--u)*1.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mr-row .mr-gap{font-family:Nunito,"Arial Rounded MT Bold",sans-serif;font-weight:900;font-size:calc(var(--u)*1.2);color:#cfe0ff;margin-left:calc(var(--u)*.5)}
 .mr-row.lead .mr-card{background:linear-gradient(90deg,rgba(255,210,63,.95),rgba(255,160,40,.92));color:var(--ink)}
 .mr-row.lead .mr-gap{color:var(--ink)}
 .mr-row.fin .mr-gap{color:#7dff9a}
 .mr-row.lead.fin .mr-gap{color:var(--ink)}
-.mr-badge{display:inline-block;background:#fff;color:var(--ink);border:2px solid var(--ink);border-radius:99px;font-size:calc(var(--u)*.95);padding:0 calc(var(--u)*.45);margin-left:calc(var(--u)*.35);transform:skewX(10deg);line-height:1.35}
+.mr-badge{display:inline-flex;align-items:center;gap:.2em;background:var(--bc,#fff);color:var(--ink);border:calc(var(--u)*.18) solid var(--ink);border-radius:99px;font-size:calc(var(--u)*1.05);padding:.05em .55em;margin-left:calc(var(--u)*.35);line-height:1.2;box-shadow:0 calc(var(--u)*.15) 0 rgba(0,0,0,.35);white-space:nowrap}
+.mr-row .mr-badges{position:absolute;left:100%;top:50%;transform:translateY(-50%);display:flex;gap:calc(var(--u)*.25);margin-left:calc(var(--u)*.6)}
+.mr-row .mr-badges .mr-badge{margin:0;font-size:calc(var(--u)*1.25)}
+.mr-row.backed .mr-card{box-shadow:0 0 0 calc(var(--u)*.22) var(--bc,#ffd23f),0 0 calc(var(--u)*1.2) var(--bc,#ffd23f)}
+.mr-tag .mr-tb{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);display:flex;gap:calc(var(--u)*.2);margin-bottom:calc(var(--u)*.3)}
+.mr-tag .mr-tb .mr-badge{margin:0;font-size:calc(var(--u)*1.15)}
+.mr-title{position:absolute;left:50%;top:9%;width:max-content;max-width:92%;transform:translate(-50%,-30%) scale(.8);opacity:0;text-align:center;transition:all .6s cubic-bezier(.3,1.5,.5,1)}
+.mr-title.on{opacity:1;transform:translate(-50%,0) scale(1)}
+.mr-title .mr-t0{display:inline-block;font-size:calc(var(--u)*1.7);background:var(--pink);padding:.1em .9em;border:calc(var(--u)*.3) solid var(--ink);border-radius:calc(var(--u)*.8);transform:skewX(-10deg)}
+.mr-title .mr-t1{display:block;white-space:nowrap;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*6);line-height:1;color:#fff;-webkit-text-stroke:calc(var(--u)*.45) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
+.mr-title .mr-t2{display:inline-block;margin-top:calc(var(--u)*.8);font-size:calc(var(--u)*2.1);color:var(--ink);background:var(--yellow);padding:.1em .9em;border:calc(var(--u)*.3) solid var(--ink);border-radius:calc(var(--u)*.8);transform:skewX(-10deg)}
+.mr-pcap{position:absolute;left:50%;bottom:19%;transform:translateX(-50%) skewX(-10deg);background:var(--ink);color:#fff;border:calc(var(--u)*.3) solid #fff;padding:calc(var(--u)*.4) calc(var(--u)*2);font-size:calc(var(--u)*2.2);white-space:nowrap}
+.mr-market{position:absolute;inset:0;opacity:0;transition:opacity .5s;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(20,10,40,.55) 100%)}
+.mr-market.on{opacity:1}
+.mr-market .mr-m1{position:absolute;left:50%;top:17%;transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg);background:linear-gradient(180deg,#3ddc84,#1f9d5a);border:calc(var(--u)*.45) solid var(--ink);border-radius:calc(var(--u)*1.2);padding:calc(var(--u)*.5) calc(var(--u)*3);font-size:calc(var(--u)*5.6);white-space:nowrap;color:#fff;-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill;box-shadow:0 calc(var(--u)*.7) 0 rgba(0,0,0,.35);animation:mrpulse 1.6s ease-in-out infinite}
+@keyframes mrpulse{50%{transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg) scale(1.04)}}
+.mr-market .mr-m2{position:absolute;left:50%;top:27%;transform:translateX(-50%);font-size:calc(var(--u)*2.3);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill;white-space:nowrap}
+.mr-market .mr-mt{position:absolute;right:calc(var(--u)*3);top:calc(var(--u)*25);font-size:calc(var(--u)*1.6);background:var(--ink);padding:.2em .8em;border-radius:calc(var(--u)*.6)}
 .mr-map{position:absolute;right:calc(var(--u)*2.2);top:calc(var(--u)*1.8);width:calc(var(--u)*17);height:calc(var(--u)*21);padding:calc(var(--u)*.5)}
 .mr-map canvas{position:relative;width:100%;height:100%;display:block}
 .mr-mapwrap{position:absolute;inset:0;background:rgba(255,255,255,.88);border:calc(var(--u)*.32) solid var(--ink);border-radius:calc(var(--u)*1.2);box-shadow:0 calc(var(--u)*.45) 0 rgba(0,0,0,.3)}
@@ -67,7 +84,7 @@ const CSS = `
 .mr-results .mr-rr>*{transform:skewX(10deg)}
 .mr-results .mr-rr .mr-num{font-size:calc(var(--u)*2.6);width:calc(var(--u)*4.2)}
 .mr-results .mr-rr .mr-t{margin-left:auto;font-family:Nunito,sans-serif;font-weight:900}
-.mr-dim .mr-tower,.mr-dim .mr-top,.mr-dim .mr-map{opacity:0}
+.mr-dim .mr-tower,.mr-dim .mr-top,.mr-dim .mr-map,.mr-dimtop .mr-tower,.mr-dimtop .mr-top{opacity:0}
 .mr-tower,.mr-top,.mr-map{transition:opacity .4s}
 `;
 
@@ -93,7 +110,9 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     <div class="mr-banner"><div class="mr-b1"><span></span></div><span class="mr-b2"></span></div>
     <div class="mr-card3"><div class="mr-lane mr-num"><span></span></div><div class="mr-panel mr-info"><div class="mr-unskew"><div class="mr-nick"></div><div class="mr-tagl"></div></div></div></div>
     <div class="mr-count mr-num"></div>
-    <div class="mr-photo"><div class="mr-flash"></div><div class="mr-line"></div><div class="mr-pf">PHOTO FINISH!</div></div>
+    <div class="mr-photo"><div class="mr-flash"></div><div class="mr-line"></div><div class="mr-pf">PHOTO FINISH!</div><div class="mr-pcap"></div></div>
+    <div class="mr-market"><div class="mr-m1">MARKET OPEN</div><div class="mr-m2"></div></div>
+    <div class="mr-title"><div class="mr-t0"></div><span class="mr-t1"></span><div class="mr-t2"></div></div>
     <div class="mr-results"></div>`;
   container.appendChild(root);
   const q = (s) => root.querySelector(s);
@@ -103,11 +122,13 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
   const tags = {};
   for (const r of runners) {
     const row = document.createElement('div'); row.className = 'mr-row';
-    const backers = (backedBy[r.id] || []).map((n) => `<span class="mr-badge">${esc(String(n)).slice(0, 10)}</span>`).join('');
-    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(r.nickname)}${backers}</div><div class="mr-gap"></div></div>`;
+    const bl = backedBy[r.id] || [];
+    const backers = bl.map((n) => `<span class="mr-badge" style="--bc:${backerColour(n)}">${isEmoji(n) ? '' : '★'}${esc(String(n)).slice(0, 10)}</span>`).join('');
+    if (bl.length) { row.classList.add('backed'); row.style.setProperty('--bc', backerColour(bl[0])); }
+    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(shortOf(r))}</div><div class="mr-gap"></div></div><span class="mr-badges">${backers}</span>`;
     tower.appendChild(row); rows[r.id] = { el: row, pos: row.querySelector('.mr-pos'), gap: row.querySelector('.mr-gap'), last: '' };
     const tag = document.createElement('div'); tag.className = 'mr-tag';
-    tag.innerHTML = `<span class="mr-tp mr-num"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(r.nickname)}</span>`;
+    tag.innerHTML = `<span class="mr-tb">${backers}</span><span class="mr-tp mr-num"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(shortOf(r))}</span>`;
     tag.style.opacity = '0';
     q('.mr-tags').appendChild(tag); tags[r.id] = { el: tag, pos: tag.querySelector('.mr-tp'), x: 0, y: 0, vis: false };
   }
@@ -190,6 +211,8 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     }
   }
   function setDim(b) { root.classList.toggle('mr-dim', !!b); }
+  function setDimTop(b) { root.classList.toggle('mr-dimtop', !!b); }
+  function clearBanner() { bannerT = 0; banner.classList.remove('on'); }
   function introCard(r) {
     const c = q('.mr-card3');
     if (!r) { c.classList.remove('on'); return; }
@@ -201,7 +224,13 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     c.classList.remove('on'); void c.offsetWidth; c.classList.add('on');
   }
   function countdown(text) { const c = q('.mr-count'); c.textContent = text; c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop'); }
-  function photo(on) { q('.mr-photo').classList.toggle('on', !!on); }
+  function photo(on, caption = '') { q('.mr-photo').classList.toggle('on', !!on); q('.mr-pcap').textContent = caption; q('.mr-pcap').style.display = caption ? '' : 'none'; }
+  function market(on, sub = 'Place your halfway bets!') { q('.mr-market').classList.toggle('on', !!on); q('.mr-market .mr-m2').textContent = sub; }
+  function titleCard(on, { title = '', kicker = '', theme = '' } = {}) {
+    const el = q('.mr-title');
+    if (on) { el.querySelector('.mr-t0').textContent = kicker; el.querySelector('.mr-t1').textContent = title; const t2 = el.querySelector('.mr-t2'); t2.textContent = theme; t2.style.display = theme ? '' : 'none'; el.querySelector('.mr-t0').style.display = kicker ? '' : 'none'; }
+    el.classList.toggle('on', !!on);
+  }
   function photoLine(a, c) {
     // extend the projected finish line well past both path edges
     const dx = c[0] - a[0], dy = c[1] - a[1]; const L = Math.hypot(dx, dy) || 1; const ux = dx / L, uy = dy / L;
@@ -215,9 +244,22 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     requestAnimationFrame(() => el.classList.add('on'));
   }
   function dispose() { root.remove(); }
-  return { root, update, showBanner, setDim, introCard, countdown, photo, photoLine, results, dispose };
+  return { root, update, showBanner, clearBanner, setDim, setDimTop, introCard, countdown, photo, photoLine, results, market, titleCard, dispose };
 }
 
+// shortName from the game module, else an abbreviated nickname that fits the tower
+export function shortOf(r) {
+  if (r.shortName) return r.shortName;
+  const n = String(r.nickname || r.id).replace(/^the\s+/i, '');
+  if (n.length <= 14) return n;
+  const w = n.split(/\s+/);
+  const two = w.slice(-2).join(' ');
+  return two.length <= 14 ? two : w.at(-1).slice(0, 14);
+}
+const BACKER_COLS = ['#ffd23f', '#ff8fc8', '#7fe0ff', '#9dff8a', '#ffb067', '#c7a6ff'];
+const backerIdx = new Map();
+export function backerColour(name) { if (!backerIdx.has(name)) backerIdx.set(name, backerIdx.size); return BACKER_COLS[backerIdx.get(name) % BACKER_COLS.length]; }
+const isEmoji = (s) => /\p{Extended_Pictographic}/u.test(String(s));
 function shade(hex, k) {
   const c = parseInt(hex.slice(1), 16); let r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
   const f = (v) => Math.max(0, Math.min(255, Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k)));

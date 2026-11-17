@@ -71,6 +71,8 @@ export function runnerById(round, id) { return round?.runners?.find((r) => r.id 
 export function betLabel(round, b) {
   if (!round || !b) return '';
   if (b.type === 'win') return `${runnerById(round, b.runnerId)?.nickname || b.runnerId} to WIN`;
+  if (b.type === 'inplay') return `${runnerById(round, b.runnerId)?.nickname || b.runnerId} to WIN (halfway)`;
+  if (b.type === 'prop') { const pr = round.props?.find((x) => x.id === b.propId); return `${pr?.text || 'Side bet'} — ${String(b.pick).toUpperCase()}`; }
   // head-to-heads use short names so the line fits a phone
   const m = round.matchups?.find((x) => x.id === b.matchupId);
   if (!m) return 'Head-to-head';
@@ -80,15 +82,17 @@ export function betLabel(round, b) {
 }
 export function betOdds(round, b) {
   if (b.type === 'win') return runnerById(round, b.runnerId)?.odds?.win ?? 0;
+  if (b.type === 'inplay') return Number(b.odds) || 0;
+  if (b.type === 'prop') { const pr = round?.props?.find((x) => x.id === b.propId); return (b.pick === 'yes' ? pr?.odds?.yes : pr?.odds?.no) ?? 0; }
   const m = round?.matchups?.find((x) => x.id === b.matchupId);
   if (!m) return 0;
   return b.pick === m.a ? m.odds.a : m.odds.b;
 }
 
 // Confetti burst (DOM, no canvas). Removes itself.
-export function confetti(container = document.body, { count = 120, colours = ['#ffd23f', '#ff4d5a', '#2ec27e', '#2f8cff', '#ff6fb5', '#7b4dff'], duration = 3200 } = {}) {
+export function confetti(container = document.body, { count = 120, colours = ['#ffd23f', '#ff4d5a', '#2ec27e', '#2f8cff', '#ff6fb5', '#7b4dff'], duration = 3200, zIndex = 9000, contained = false } = {}) {
   const layer = document.createElement('div');
-  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9000';
+  layer.style.cssText = `position:${contained ? 'absolute' : 'fixed'};inset:0;pointer-events:none;overflow:hidden;z-index:${zIndex}`;
   for (let i = 0; i < count; i++) {
     const p = document.createElement('i');
     const size = 8 + Math.random() * 12;
@@ -109,3 +113,6 @@ export function confetti(container = document.body, { count = 120, colours = ['#
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export function betRunnerId(b) { return b?.type === 'prop' ? null : (b?.runnerId || b?.pick || null); }
+export function betKind(b) { return { win: 'WIN', h2h: 'HEAD-TO-HEAD', prop: 'SIDE BET', inplay: 'HALFWAY' }[b?.type] || ''; }

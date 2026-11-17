@@ -126,6 +126,10 @@ export function createAudio() {
       SFX.cymbal(t + dur, 0.2);
       osc('sine', 70, t + dur, 0.05, { gain: 0.5, a: 0.003, rel: 0.4 });
     },
+    sting(t) { // dramatic brass stab for a stamped verdict
+      for (const m of [48, 55, 60, 63]) for (const det of [-8, 8]) osc('sawtooth', mtof(m), t, 0.16, { gain: 0.05, a: 0.01, rel: 0.5, filter: { freq: 1800 }, detune: det });
+      SFX.cymbal(t, 0.1);
+    },
     pop(t) { const o = osc('sine', 520, t, 0.02, { gain: 0.18, a: 0.003, rel: 0.12 }); o.frequency.exponentialRampToValueAtTime(1100, t + 0.08); },
     tick(t) { osc('square', 1600, t, 0.005, { gain: 0.04, a: 0.001, rel: 0.03, filter: { freq: 3000 } }); },
     lock(t) { osc('sine', 140, t, 0.04, { gain: 0.4, a: 0.002, rel: 0.2 }); noise(t, 0.02, { gain: 0.2, a: 0.002, rel: 0.05, freq: 2500, q: 1 }); osc('triangle', 660, t + 0.06, 0.05, { gain: 0.08, a: 0.005, rel: 0.2 }); osc('triangle', 990, t + 0.14, 0.08, { gain: 0.08, a: 0.005, rel: 0.3 }); },

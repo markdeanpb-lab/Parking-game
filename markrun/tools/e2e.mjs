@@ -54,6 +54,7 @@ async function waitPhase(phase, timeout = 120000) {
 const browser = await chromium.launch({ headless: !arg('headed'), args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
 const external = [];
 const errors = [];
+const pages = [];
 async function ctx(opts, label) {
   const c = await browser.newContext(opts);
   await c.route('**/*', (route) => {
@@ -63,14 +64,16 @@ async function ctx(opts, label) {
     return route.abort();
   });
   const page = await c.newPage();
+  pages.push([label, page]);
   page.on('pageerror', (e) => errors.push(`${label} pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${label} console: ${m.text()}`); });
   return page;
 }
-const shot = async (page, name) => { await page.screenshot({ path: path.join(OUT, `${name}.png`) }); console.log('  shot', name); };
+const shot = async (page, name) => { try { await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); console.log('  shot', name); } catch (e) { console.log('  shot FAILED (slow headless GPU?)', name, e.message.split('\n')[0]); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let ok = false;
+let inplayPlaced = 0;
 try {
   const tv = await ctx({ viewport: { width: 1920, height: 1080 } }, 'tv');
   const phoneOpts = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
@@ -112,6 +115,10 @@ try {
   await pb.click('[data-colour="#ff6fb5"]');
   await pb.click('#joinbtn');
   await pb.waitForSelector('.hero-title');
+  // "I'm Mark (the runner)" on phone A: phone B gets an extra hot tip
+  await pa.waitForSelector('#markbtn');
+  await pa.click('#markbtn');
+  await tv.waitForFunction(() => document.body.innerText.includes('THE REAL MARK'), null, { timeout: 5000 });
   await sleep(500);
   await shot(pa, '03-phoneA-lobby');
   await shot(tv, '04-tv-lobby-players');
@@ -127,7 +134,7 @@ try {
   console.log('round source:', h.source);
   await sleep(300);
   await shot(tv, '05-tv-intro-title');
-  await tv.waitForSelector('.rcard', { timeout: 30000 });
+  await tv.waitForSelector('.intro .rcard, .betting', { timeout: 30000 });
   await sleep(500);
   await shot(tv, '06-tv-intro-runner');
   await pa.waitForSelector('.rcard');
@@ -143,8 +150,11 @@ try {
     // phone A: back runner 1 to win, +50, and a head-to-head pick
     await pa.click('.rcard[data-rid] [data-win]');
     await pa.click('.sbet [data-chip="50"]');
-    const pick = await pa.$('.pick');
+    const pick = await pa.$('.pick[data-mid]');
     if (pick) await pick.click();
+    // a side bet (prop), if the round has any
+    const prop = await pa.$('.pick[data-yn="yes"]');
+    if (prop) { await prop.click(); if (round === 1) console.log('  prop bet placed'); }
     await sleep(300);
     if (round === 1) {
       await shot(pa, '09-phoneA-slip-top');
@@ -179,7 +189,7 @@ try {
     await pb.click('#lockbtn');
     await pb.click('#yep');
     // reveal
-    await tv.waitForSelector('.reveal .betline.show', { timeout: 20000 });
+    await tv.waitForSelector('.reveal .spot .sc', { timeout: 20000 });
     await sleep(Math.max(400, 3000 / SPEED));
     if (round === 1) { await shot(tv, '15-tv-reveal'); await shot(pb, '16-phoneB-revealed'); }
     await waitPhase('RACE', 60000);
@@ -193,6 +203,29 @@ try {
       await shot(tv, '18-tv-race');
       await sleep(Math.max(1500, 40000 / SPEED));
       await shot(tv, '19-tv-race-later');
+    }
+    // HALFWAY MARKET: both phones get the sheet; A bets on the leader, B on the 2nd
+    {
+      const t0 = Date.now();
+      let opened = false;
+      while (Date.now() - t0 < 300000) {
+        if ((await health()).phase !== 'RACE') break;
+        if (await pa.$('#modal .mkr:not([disabled])')) { opened = true; break; }
+        await sleep(200);
+      }
+      if (opened) {
+        if (round === 1) { await sleep(400); await shot(pa, '19b-phoneA-market'); await shot(tv, '19c-tv-market'); }
+        await pa.click('[data-ms="100"]').catch(() => {});
+        await pa.click('#modal .mkr:not([disabled])');
+        const pbRow = await pb.$$('#modal .mkr:not([disabled])');
+        if (pbRow[1]) await pbRow[1].click();
+        await pa.waitForFunction(() => document.querySelector('#modal .done'), null, { timeout: 8000 });
+        if (round === 1) { await shot(pa, '19d-phoneA-market-placed'); await sleep(300); await shot(tv, '19e-tv-market-bets'); }
+        console.log(`  round ${round}: halfway (inplay) bets placed`);
+        inplayPlaced++;
+        await sleep(1500);
+        if (round === 1) await shot(pa, '19f-phoneA-live');
+      } else console.log(`  round ${round}: no halfway market (game module has no inPlayMarket yet?)`);
     }
     await waitPhase('RESULTS', 400000);
     const stages = ['order', 'reveal', 'clues', 'payouts', 'awards'];
@@ -241,12 +274,16 @@ try {
   await waitPhase('FINALE', 30000);
   await sleep(2500);
   await shot(tv, '25-tv-finale');
+  await sleep(Math.max(1500, 9000 / SPEED));
+  await shot(tv, '25b-tv-finale-reel');
   await shot(pa, '26-phoneA-finale');
 
   // restart-resume: host restarts during FINALE, TV/phones reconnect
   ok = true;
 } catch (e) {
   console.error('E2E FAILED:', e.stack || e.message);
+  try { await Promise.all(pages.map(([n, pg]) => pg.screenshot({ path: path.join(OUT, `FAIL-${n}.png`) }))); } catch { /* */ }
+  console.error('page errors so far:', errors.slice(0, 10).join('\n'));
   console.error('--- server output ---\n' + srvOut.slice(-4000));
 } finally {
   await browser.close();

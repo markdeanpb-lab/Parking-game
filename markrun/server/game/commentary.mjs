@@ -45,6 +45,23 @@ const B = {
     'I\'ve done my research. It didn\'t help.',
     'Thrilling. Truly. Let\'s get on with it.',
   ],
+  theme_intro: [
+    'This week\'s theme: {theme}! {blurb}',
+    'Tonight\'s card is {theme}. {blurb}',
+    'It\'s a themed race, Pam! {theme}! {blurb}',
+    'Our theme this round: {theme}. {blurb}',
+  ],
+  finale_intro: [
+    'It\'s the FINALE! Double payouts on everything! Every bet counts twice!',
+    'Final round! DOUBLE PAYOUTS! This is where fortunes are made and marriages tested!',
+    'Last race of the night, and the winnings are doubled! Go big or go home!',
+  ],
+  hot_callback: [
+    'Somebody\'s hot tip said {s} {tip}. And look at that!',
+    'There it is! A little insider info said {s} {tip}. Someone on the sofa is smiling.',
+    'One of you was told {s} {tip}. Well, well, well.',
+    'Hot tip alert! {s} {tip}, just as somebody was promised.',
+  ],
   wildcard_intro: [
     'Word from the paddock: one of these five was NOT trying very hard that day. Read your clues carefully!',
     'Wildcard round! One runner turned up for a gentle jog. Which one? That\'s your job.',
@@ -657,51 +674,12 @@ export function line(rng, mem, group, lead, vars) {
 export const speechSeconds = (text) => countWords(text) * 0.38 + 0.7;
 
 // ---------- pre-race ----------
-export function introLines(rng, mem, { title, wildcard }) {
-  const out = [...line(rng, mem, 'intro_jeff', 'jeff', { title }), ...line(rng, mem, 'intro_pam', 'pam', {})];
+export function introLines(rng, mem, { title, wildcard, theme, finale }) {
+  const out = [...line(rng, mem, 'intro_jeff', 'jeff', { title })];
+  if (finale) out.push(...line(rng, mem, 'finale_intro', 'jeff', {}));
+  if (theme && !theme.key.startsWith('band_') && theme.key !== 'wildcard') out.push(...line(rng, mem, 'theme_intro', 'jeff', { theme: theme.label, blurb: theme.blurb }));
+  out.push(...line(rng, mem, 'intro_pam', 'pam', {}));
   if (wildcard) out.push(...line(rng, mem, 'wildcard_intro', 'jeff', {}));
-  return out;
-}
-
-export function betReactions(rng, mem, round, betsByPlayer, players) {
-  const pub = round.public;
-  const R = new Map(pub.runners.map((r) => [r.id, r]));
-  const fav = [...pub.runners].sort((a, b) => a.odds.win - b.odds.win)[0];
-  const out = [];
-  const winBacked = {};
-  for (const p of players) {
-    const bets = betsByPlayer?.[p.id] || [];
-    const wins = bets.filter((b) => b.type === 'win');
-    for (const b of wins) (winBacked[b.runnerId] ??= []).push(p.name);
-  }
-  // shared backing first
-  const shared = Object.entries(winBacked).find(([, names]) => names.length >= 2 && players.length >= 2);
-  if (shared) out.push(...line(rng, mem, 'bet_same', 'jeff', { a: R.get(shared[0]).nickname }));
-  for (const p of players) {
-    const bets = betsByPlayer?.[p.id] || [];
-    const name = p.name;
-    if (!bets.length) { out.push(...line(rng, mem, 'bet_none', 'jeff', { name })); continue; }
-    const wins = bets.filter((b) => b.type === 'win').sort((a, b) => b.stake - a.stake);
-    const h2h = bets.filter((b) => b.type === 'h2h');
-    const top = wins[0];
-    if (top && !(shared && shared[0] === top.runnerId && wins.length === 1)) {
-      const r = R.get(top.runnerId);
-      const vars = { name, a: r.nickname, stake: top.stake, odds: spokenOdds(r.odds.display) };
-      const total = bets.reduce((s, b) => s + b.stake, 0);
-      if (wins.length >= 3) out.push(...line(rng, mem, 'bet_split', 'jeff', vars));
-      else if (r.odds.win >= 7) out.push(...line(rng, mem, 'bet_longshot', 'jeff', vars));
-      else if (top.stake >= 250 || top.stake >= 0.5 * total && top.stake >= 150) out.push(...line(rng, mem, 'bet_big', 'jeff', vars));
-      else if (r.id === fav.id) out.push(...line(rng, mem, 'bet_fav', 'jeff', vars));
-      else out.push(...line(rng, mem, 'bet_big', 'jeff', vars));
-    } else if (h2h.length) {
-      const m = pub.matchups.find((x) => x.id === h2h[0].matchupId);
-      if (m) {
-        const pick = R.get(h2h[0].pick), other = R.get(h2h[0].pick === m.a ? m.b : m.a);
-        out.push(...line(rng, mem, 'bet_h2h', 'jeff', { name, a: pick.nickname, b: other.nickname }));
-      }
-    }
-  }
-  out.push(...line(rng, mem, 'bet_closed', 'jeff', {}));
   return out;
 }
 
@@ -816,6 +794,19 @@ export function raceCommentary(ctx) {
   // private-clue callback once, mid-race, about a runner doing well
   const priv = privateCallback(ctx);
   if (priv) add(dur * 0.55, priv, 3, null, 10);
+  // hot-tip callbacks: when the tipped thing actually happens on screen
+  const hotT = { hill1_first: ev.find((e) => e.type === 'hill' && e.lap === 1)?.broadcastS, hill2_fastest: ev.find((e) => e.type === 'hill' && e.lap === 2)?.broadcastS,
+    hill2_slowest: ev.find((e) => e.type === 'hill' && e.lap === 2)?.broadcastS, open_fastest: dur * 0.12, dead_last_1k: dur * 0.12, top3_2k: dur * 0.28,
+    last_km_fastest: ev.find((e) => e.type === 'final_stretch')?.broadcastS, last_km_slowest: ev.find((e) => e.type === 'final_stretch')?.broadcastS,
+    even_pacer: ev.find((e) => e.type === 'lap')?.broadcastS, big_fade: ev.find((e) => e.type === 'lap')?.broadcastS, overtaker: dur * 0.6 };
+  let hotSaid = 0;
+  for (const r of ctx.runners) {
+    for (const c of ctx.clues?.[r.id]?.private || []) {
+      if (c.tier !== 'hot' || hotSaid >= 2 || !HOT_SAID[c.tipType] || hotT[c.tipType] == null) continue;
+      add(hotT[c.tipType] + 5, line(rng, mem, 'hot_callback', 'pam', { s: r.shortName, tip: HOT_SAID[c.tipType] }), 2, null, 6);
+      hotSaid++;
+    }
+  }
 
   let out = schedule(cand, dur, mem);
   // second pass: if the broadcast has a long silence (e.g. a straggler miles behind), drop in a light filler
@@ -835,6 +826,12 @@ export function raceCommentary(ctx) {
   return out;
 }
 
+const HOT_SAID = {
+  hill1_first: 'would be first over the Hill on lap one', hill2_fastest: 'would fly up the Hill on lap two', hill2_slowest: 'would struggle up the Hill on lap two',
+  open_fastest: 'would set off like a rocket', dead_last_1k: 'would start at the back', top3_2k: 'would be up there at two kilometres',
+  last_km_fastest: 'had the strongest finish', last_km_slowest: 'would run out of puff at the end', even_pacer: 'would pace it like a metronome',
+  big_fade: 'would fade on lap two', overtaker: 'would pass plenty of people',
+};
 function clueFor(ctx, id) { return ctx.clues?.[id]; }
 // a callback line for a runner going up (taking the lead) or down (losing it), using the PUBLIC clue
 function callback(ctx, id, dir) {

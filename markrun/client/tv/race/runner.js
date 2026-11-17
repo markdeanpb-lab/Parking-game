@@ -209,6 +209,19 @@ export function createRunner(info, opts = {}) {
     legs.push({ hp, kn, an });
   }
   buildAccessory(look.accessory);
+  // props held in the hand (candyfloss souvenir after a funfair detour)
+  const floss = new THREE.Group(); floss.visible = false;
+  {
+    const stick = mesh(G('flossStick', () => new THREE.CylinderGeometry(0.025, 0.025, 0.6, 5).rotateX(Math.PI / 2).translate(0, 0, 0.3)), toon('#e8d0a0'), { cast: false });
+    const fluff = mesh(G('flossFluff', () => { const r2 = mulberry(5); return mergeGeometries(Array.from({ length: 7 }, () => new THREE.IcosahedronGeometry(0.16 + r2() * 0.06, 1).translate((r2() - 0.5) * 0.22, (r2() - 0.5) * 0.22, 0.72 + (r2() - 0.5) * 0.2))); }), toon('#ff9bd2'), { ol: 2.5, olRef: 9 });
+    floss.add(stick, fluff); floss.userData.fluff = fluff;
+    floss.position.y = -B.arm / 2 - B.hand * 0.4; arms[0].el.add(floss);
+  }
+  function setProp(kind, v) {
+    if (kind !== 'floss') return;
+    floss.visible = v > 0;
+    if (v > 0) floss.userData.fluff.scale.setScalar(Math.max(0.15, v));
+  }
 
   // distraction / emote pop
   const pops = {};
@@ -440,5 +453,5 @@ export function createRunner(info, opts = {}) {
   }
 
   function dispose() { for (const d of disposables) d.dispose?.(); pop.material.dispose(); }
-  return { id: info.id, info, root, update, set, setPop, setExpr, dispose, height: topY, hipH, get state() { return state; }, get variant() { return variant; } };
+  return { id: info.id, info, root, update, set, setPop, setExpr, setProp, dispose, height: topY, hipH, get state() { return state; }, get variant() { return variant; } };
 }

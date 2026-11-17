@@ -12,14 +12,16 @@ const [course, park, round] = await Promise.all([
   j(fx ? `/client/tv/race/fixtures/${fx}.json` : '/data/fixtures/round.json'),
 ]);
 if (qs.get('shot')) document.body.classList.add('shot');
-const backed = (qs.get('backed') ?? 'r2').split(',').filter(Boolean);
-const backedBy = {}; backed.forEach((id, i) => (backedBy[id] = [i % 2 ? 'Mrs M' : 'Mark']));
+// default: Mark backs r2, Mrs M backs r4, both back r1 (as the shell would pass it)
+const backedBy = {};
+if (qs.get('backed') != null) qs.get('backed').split(',').filter(Boolean).forEach((id, i) => (backedBy[id] = [i % 2 ? 'Mrs M' : 'Mark']));
+else Object.assign(backedBy, { r2: ['Mark'], r4: ['Mrs M'], r1: ['Mark', 'Mrs M'] });
 const sub = document.getElementById('sub');
 const view = createRaceView(document.getElementById('stage'), {
-  course, park, round: round.public, plan: round.racePlan, backedBy, preserveDrawingBuffer: !!qs.get('shot'), manualLoop: !!qs.get('shot'),
+  course, park, round: round.public, plan: round.racePlan, backedBy, speed: Number(qs.get('speed')) || 1, preserveDrawingBuffer: !!qs.get('shot'), manualLoop: !!qs.get('shot'),
   onIntroRunner: (id) => { const r = round.public.runners.find((x) => x.id === id); sub.textContent = `${r.nickname} - ${r.tagline}`; },
 });
-window.view = view;
+window.view = view; window.__create = createRaceView; window.__data = { course, park, round };
 const onEvent = (e) => { if (e.kind === 'commentary') sub.textContent = e.text; if (e.kind === 'countdown') sub.textContent = e.text; };
 const actions = {
   intro: () => view.playIntro(() => { sub.textContent = '(betting would happen here)'; if (qs.get('auto') !== '0') setTimeout(actions.race, 1500); }),

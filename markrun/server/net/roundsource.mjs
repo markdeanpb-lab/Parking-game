@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ROOT, historyDb, sessionDb } from '../db.mjs';
 import { fallbackSettle, fmtTime } from './bets.mjs';
+import { decorateFixture, fixtureInPlayMarket, fixtureBetRevealOrder, fixtureSuperlatives } from './fixturefx.mjs';
 
 const FIXTURE = path.join(ROOT, 'data', 'fixtures', 'round.json');
 let game; // module or null
@@ -30,7 +31,7 @@ async function loadGame() {
 export function sourceName() { return game ? 'game' : 'fixture'; }
 loadGame(); // eager: report the real source from the start (and fail loudly in logs at boot, not mid-game)
 
-function fixtureRound(players, roundNumber) {
+function fixtureRound(players, roundNumber, settings) {
   const r = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
   const id = `fixture-${Date.now().toString(36)}-${roundNumber}`;
   r.id = id; r.number = roundNumber;
@@ -43,7 +44,7 @@ function fixtureRound(players, roundNumber) {
   r.private = priv;
   r.hidden = { fixture: true };
   r.source = 'fixture';
-  return r;
+  return decorateFixture(r, { players, roundNumber, settings });
 }
 
 export async function createRound({ players, roundNumber, settings }) {
@@ -58,7 +59,23 @@ export async function createRound({ players, roundNumber, settings }) {
       console.error('[markrun] createRound failed - using the fixture round:', e.stack || e.message);
     }
   }
-  return fixtureRound(players, roundNumber);
+  return fixtureRound(players, roundNumber, settings);
+}
+
+// Iteration 2 (feature-detected: absent exports => the shell falls back gracefully)
+const FIXTURE_FX = { betRevealOrder: fixtureBetRevealOrder, inPlayMarket: fixtureInPlayMarket };
+const call = (name, round, ...args) => {
+  if (round?.source === 'fixture') return FIXTURE_FX[name]?.(round, ...args);
+  if (!game || (round && round.source !== 'game') || typeof game[name] !== 'function') return undefined;
+  try { return game[name](round, ...args); } catch (e) { console.warn(`[markrun] ${name} failed:`, e.message); return undefined; }
+};
+export function hasExport(name) { return !!game && typeof game[name] === 'function'; }
+export function inPlayAvailable(round) { return round?.source === 'fixture' || (round?.source === 'game' && hasExport('inPlayMarket')); }
+export function betRevealOrder(round, betsByPlayer, bankrolls, players) { return call('betRevealOrder', round, betsByPlayer, bankrolls, players); }
+export function inPlayMarket(round) { return call('inPlayMarket', round); }
+export function sessionSuperlatives(history, players) {
+  if (!hasExport('sessionSuperlatives')) return history.some((h) => h.round?.hidden?.fixture) ? fixtureSuperlatives(history, players) : undefined;
+  try { return game.sessionSuperlatives(history, players); } catch (e) { console.warn('[markrun] sessionSuperlatives failed:', e.message); return undefined; }
 }
 
 export function betReactionLines(round, betsByPlayer, players) {

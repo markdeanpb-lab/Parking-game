@@ -3,7 +3,7 @@
 // "press any key" overlay), ?mute.
 import { connect } from '../shared/net.js';
 import { createAudio } from '../shared/sfx.js';
-import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, confetti, fmtTime } from '../shared/ui.js';
+import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, confetti, fmtTime } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
@@ -188,10 +188,10 @@ function renderHud(st) {
     let status = '';
     if (!p.connected) status = '<span class="pp-status off">📵 Offline</span>';
     else if (st.phase === 'BETTING') status = p.locked ? '<span class="pp-status locked">🔒 LOCKED IN</span>' : '<span class="pp-status think">🤔 Thinking…</span>';
-    const dots = (backs[p.id] || []).map((b) => runnerById(st.round, b.type === 'win' ? b.runnerId : b.pick)).filter(Boolean)
+    const dots = (backs[p.id] || []).map((b) => runnerById(st.round, betRunnerId(b))).filter(Boolean)
       .map((r) => `<i title="${esc(r.nickname)}" style="background:${esc(r.colour.primary)}"></i>`).join('');
     return `<div class="pp ${p.connected ? '' : 'disconnected'}" data-pid="${p.id}">
-      ${ordinalHtml(rank.get(p.id), 'pp-ord')}
+      ${st.history?.length ? ordinalHtml(rank.get(p.id), 'pp-ord') : ''}
       ${avatarHtml(p.avatar, 70)}
       <div><div class="pp-name">${esc(p.name)}</div><div class="pp-bank"><span class="coin"></span> ${money(p.bankroll)}</div>${dots ? `<div class="pp-backs">${dots}</div>` : ''}</div>
       ${status}
@@ -301,7 +301,7 @@ function lobbyScreen(st) {
       if (p) {
         const badge = !p.connected ? '<span class="tag" style="background:var(--tomato);color:#fff">📵 offline</span>'
           : p.ready ? '<span class="tag" style="background:var(--grass);color:#fff">✓ READY</span>' : '<span class="tag">joined</span>';
-        slots.push(`<div class="slot panel slant ${prevLobby.has(p.id) ? '' : 'joined'}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:24px;width:100%">${avatarHtml(p.avatar, 92)}<div><div class="sname">${esc(p.name)}</div><div class="ssub">${money(p.bankroll)} to gamble</div></div><span class="slot-badge">${badge}</span><button class="btn small white kick" data-kick="${p.id}" title="Remove player">✕</button></div></div>`);
+        slots.push(`<div class="slot panel slant ${prevLobby.has(p.id) ? '' : 'joined'}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:24px;width:100%">${avatarHtml(p.avatar, 92)}<div><div class="sname">${esc(p.name)}${s.settings.runnerPlayerId === p.id ? ' <span class="tag markt">🏃 THE REAL MARK</span>' : ''}</div><div class="ssub">${money(p.bankroll)} to gamble${s.settings.runnerPlayerId && s.settings.runnerPlayerId !== p.id ? ' · gets an extra 🔥 hot tip' : ''}</div></div><span class="slot-badge">${badge}</span><button class="btn small white kick" data-kick="${p.id}" title="Remove player">✕</button></div></div>`);
       } else {
         slots.push(`<div class="slot panel slant empty"><div class="unslant" style="display:flex;align-items:center;gap:24px"><div class="ghost-av">?</div><div><div class="sname">Player ${i + 1}</div><div class="ssub">Scan the code to take this seat</div></div></div></div>`);
       }
@@ -435,7 +435,7 @@ function introScreen(st) {
   const box = $('.stagebox', root);
   const bail = (st.bailouts || []).map((b) => `${esc(st.players.find((p) => p.id === b.playerId)?.name || '')} got a ${money(b.amount)} bailout from the Bank of Mum &amp; Dad`).join('<br>');
 
-  const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${round.notice ? `<div class="bail panel grape" style="color:#fff">🃏 ${esc(round.notice)}</div><br>` : ''}${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
+  const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${round.theme?.label ? `<div class="theme-badge panel slant grape"><div class="unslant"><span class="tk">THEME</span>${esc(round.theme.label)}</div></div>${round.theme.blurb ? `<div class="tblurb">${esc(round.theme.blurb)}</div>` : ''}` : ''}${Number(round.payoutMultiplier) >= 2 ? '<div class="double-badge outlined">DOUBLE PAYOUT FINALE ×2</div>' : ''}${round.notice ? `<div class="bail panel grape" style="color:#fff">🃏 ${esc(round.notice)}</div><br>` : ''}${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
   const cardHtml = (r) => `<div class="rcard-wrap anim-left"><div class="rcard panel slant" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 300)}</div><div class="unslant">
         <div class="nick outlined">${esc(r.nickname)}</div>
         <div class="tagl">${esc(r.tagline || '')}</div>
@@ -522,19 +522,29 @@ function matchupsHtml(round) {
   }).join('');
 }
 
+function themeBadge(round) {
+  const t = round?.theme;
+  const dbl = Number(round?.payoutMultiplier) >= 2;
+  return `${t?.label ? `<div class="theme-badge panel slant grape"><div class="unslant"><span class="tk">THEME</span>${esc(t.label)}</div></div>` : ''}${dbl ? '<div class="double-badge outlined">DOUBLE PAYOUT FINALE ×2</div>' : ''}`;
+}
+function propsHtml(round) {
+  return (round.props || []).map((p) => `<div class="mu prop panel slant"><div class="unslant" style="display:flex;align-items:center;gap:16px"><span class="lbl">🎡 SIDE BET</span><span class="ptxt">${esc(p.text)}</span>
+    <span class="od yes">YES ${esc(p.odds?.displayYes || `×${p.odds?.yes}`)}</span><span class="od no">NO ${esc(p.odds?.displayNo || `×${p.odds?.no}`)}</span></div></div>`).join('');
+}
+
 function bettingScreen(st) {
   const round = st.round;
   const runners = [...round.runners].sort((a, b) => a.lane - b.lane);
   const root = el(`<div class="betting">
-    <div class="bet-head"><div class="h outlined">PLACE YOUR BETS!</div><div class="rt">Round ${round.number}/${st.roundsPerGame} · ${esc(round.title)}</div><div class="timer num hidden"></div></div>
+    <div class="bet-head"><div class="h outlined">PLACE YOUR BETS!</div><div class="rt">Round ${round.number}/${st.roundsPerGame} · ${esc(round.title)}</div>${themeBadge(round)}<div class="timer num hidden"></div></div>
     <div class="runner-grid n${runners.length}">${runners.map((r) => runnerCardHtml(r)).join('')}</div>
     <div class="matchups">${matchupsHtml(round)}</div>
+    <div class="props-row">${propsHtml(round)}</div>
     ${round.notice ? `<div class="notice panel grape">🃏 ${esc(round.notice)}</div>` : ''}
   </div>`);
   screenEl.appendChild(root);
   $$('.rc', root).forEach((c, i) => { c.style.animation = `slide-up .5s ${i * 0.08}s cubic-bezier(.2,1.3,.4,1) both`; });
   const timerEl = $('.timer', root);
-  let iv = null;
   let lastSec = null;
   function tick() {
     if (!S?.deadline || S.phase !== 'BETTING' || S.revealed) { timerEl.classList.add('hidden'); return; }
@@ -544,57 +554,72 @@ function bettingScreen(st) {
     if (left <= 10 && left !== lastSec) audio.play('tick');
     lastSec = left;
   }
-  iv = setInterval(tick, 250); tick();
+  const iv = setInterval(tick, 250); tick();
   const tips = [
-    ['jeff', 'Remember: the odds are set on public information only. Your secret clue might know better.'],
+    ['jeff', 'Each of you has one red-hot insider tip on your phone. Find it. Use it.'],
     ['pam', 'Every one of these runners is Mark. The question is: which Mark turned up?'],
-    ['jeff', "Head-to-heads are a lovely way to lose money slowly."],
+    ['jeff', 'Head-to-heads are a lovely way to lose money slowly.'],
   ];
-  const tipTimer = setTimeout(() => { const t = tips[Math.floor(Math.random() * tips.length)]; say(t[1], t[0], 1); }, T(9000));
+  if (Number(round.payoutMultiplier) >= 2) say('Final round, and every payout is doubled! Fortunes will be made. Mostly lost.', 'jeff', 3);
+  else if (round.theme?.label) say(`Today's theme: ${round.theme.label}. ${round.theme.blurb || ''}`, 'pam', 2);
+  const tipTimer = setTimeout(() => { const t = tips[Math.floor(Math.random() * tips.length)]; say(t[1], t[0], 1); }, T(12000));
   return { destroy: () => { clearInterval(iv); clearTimeout(tipTimer); } };
 }
 
 // =====================================================================================================
-// REVEAL (all locked)
+// REVEAL (all locked): one bet at a time, smallest to largest (betRevealOrder), each with its line
 // =====================================================================================================
 function revealScreen(st) {
   const tok = makeToken();
   const round = st.round;
-  const root = el(`<div class="reveal"><div class="rh outlined">THE BETS ARE IN!</div><div class="cols"></div></div>`);
+  let seq = (st.revealSeq || []).filter((x) => x && x.bet);
+  if (!seq.length) { // fallback: interleave players, smallest first
+    const lines = (st.betLines || []).slice();
+    seq = st.players.flatMap((p) => (st.bets?.[p.id] || []).map((bet) => ({ playerId: p.id, bet }))).sort((a, b) => a.bet.stake - b.bet.stake)
+      .map((x) => ({ ...x, line: lines.shift() || null }));
+  }
+  const root = el(`<div class="reveal">
+    <div class="rh outlined">THE BETS ARE IN!</div>
+    <div class="spot"></div>
+    <div class="tally">${st.players.map((p) => `<div class="tcol panel slant" data-pid="${p.id}" style="background:${esc(p.avatar.colour)}"><div class="unslant"><div class="who">${avatarHtml(p.avatar, 64)}<span>${esc(p.name)}</span><span class="tot num" data-tot>0pp</span></div><div class="chips"></div></div></div>`).join('')}</div>
+  </div>`);
   screenEl.appendChild(root);
-  const cols = $('.cols', root);
-  cols.innerHTML = st.players.map((p) => {
-    const bets = st.bets?.[p.id] || [];
-    const lines = bets.map((b) => {
-      const rid = b.type === 'win' ? b.runnerId : b.pick;
-      const r = runnerById(round, rid);
-      const oddsTxt = b.type === 'win' ? (r?.odds?.display || '') : `×${betOdds(round, b)}`;
-      return `<div class="betline"><div class="rp">${r ? portrait(r, 76) : ''}</div><div class="bl">${esc(betLabel(round, b))}<div class="bt">${b.type === 'win' ? 'WIN' : 'HEAD-TO-HEAD'} · ${esc(oddsTxt)} · pays ${money(b.stake * betOdds(round, b))}</div></div><div class="st num">${money(b.stake)}</div></div>`;
-    }).join('');
-    return `<div class="col panel slant" style="background:${esc(p.avatar.colour)}"><div class="unslant"><div class="who">${avatarHtml(p.avatar, 80)}${esc(p.name)}</div>${lines || '<div class="nobets">Kept their wallet shut. 🙈</div>'}</div></div>`;
-  }).join('');
+  const spot = $('.spot', root);
+  const totals = {};
   (async () => {
-    audio.play('drumroll', { dur: 1.8 / SPEED + 0.2 });
-    const betLines = (st.betLines || []).slice();
-    if (!betLines.length) say("Right then. Let's see who's backed what!", 'jeff', 3);
-    await sleepT(2000, tok);
-    const lines = $$('.betline', root);
-    for (const l of lines) { if (tok.cancelled) return; l.classList.add('show'); audio.play('pop'); if (betLines.length) { const bl = betLines.shift(); say(bl.text, bl.speaker, 3); } await sleepT(1100, tok); }
-    for (const bl of betLines.splice(0, 3)) say(bl.text, bl.speaker, 2);
-    // same pick banter
-    const picks = st.players.map((p) => new Set((st.bets?.[p.id] || []).filter((b) => b.type === 'win').map((b) => b.runnerId)));
-    let shared = null;
-    if (picks.length >= 2) for (const r of picks[0]) if (picks.slice(1).every((s) => s.has(r))) shared = runnerById(round, r);
-    if (shared) {
-      root.appendChild(el(`<div class="same panel yellow anim-pop">Great minds… both backing ${esc(shared.nickname)}! 🤝</div>`));
-      say(`They've both gone for ${shared.nickname}. Either genius, or a shared delusion.`, 'pam', 3);
-    } else if (!(st.betLines || []).length) {
-      const total = st.players.reduce((a, p) => a + (st.bets?.[p.id] || []).reduce((x, b) => x + b.stake, 0), 0);
-      say(total ? `That's ${moneySay(total)} riding on this one. Pressure!` : 'Nobody has bet a penny. Cowards, the lot of them.', 'pam', 2);
+    audio.play('drumroll', { dur: 1.6 / SPEED + 0.2 });
+    say(seq.length ? "Right then. Let's see the damage, smallest first." : 'Nobody has bet a penny. Cowards, the lot of them.', 'jeff', 3);
+    await sleepT(1800, tok);
+    for (let i = 0; i < seq.length && !tok.cancelled; i++) {
+      const { playerId, bet, line } = seq[i];
+      const p = st.players.find((x) => x.id === playerId);
+      const r = runnerById(round, betRunnerId(bet));
+      const odds = betOdds(round, bet);
+      const oddsTxt = bet.type === 'win' ? (r?.odds?.display || '') : bet.type === 'h2h' ? (() => { const m = round.matchups?.find((x) => x.id === bet.matchupId); return (bet.pick === m?.a ? m?.odds?.displayA : m?.odds?.displayB) || `×${odds}`; })() : bet.type === 'prop' ? (() => { const pr = round.props?.find((x) => x.id === bet.propId); return (bet.pick === 'yes' ? pr?.odds?.displayYes : pr?.odds?.displayNo) || `×${odds}`; })() : `×${odds}`;
+      const big = i === seq.length - 1 && seq.length > 1;
+      spot.innerHTML = `<div class="spotcard"><div class="anim-pop"><div class="sc panel ${big ? 'yellow' : 'white'}">
+        <div class="scp">${avatarHtml(p?.avatar, 110)}<div class="scn">${esc(p?.name || '')}</div></div>
+        <div class="scr">${r ? portrait(r, 150) : '<span class="propicon big">🎡</span>'}</div>
+        <div class="scb"><div class="sck">${betKind(bet)}${big ? ' · THE BIG ONE' : ''}</div><div class="scl">${esc(betLabel(round, bet))}</div><div class="sco">${esc(oddsTxt)} · pays ${money(bet.stake * odds)}</div></div>
+        <div class="scs num">${money(bet.stake)}</div></div></div></div>`;
+      audio.play(big ? 'kaching' : 'pop');
+      if (line?.text) say(line.text, line.speaker || (i % 2 ? 'pam' : 'jeff'), 3);
+      totals[playerId] = (totals[playerId] || 0) + bet.stake;
+      const col = root.querySelector(`.tcol[data-pid="${playerId}"]`);
+      if (col) {
+        col.querySelector('.chips').appendChild(el(`<div class="tchip anim-pop">${r ? `<i style="background:${esc(r.colour.primary)}"></i>` : '🎡 '}<span>${esc(bet.type === 'prop' ? 'Side bet' : runnerShort(r))}</span><b>${money(bet.stake)}</b></div>`));
+        col.querySelector('[data-tot]').textContent = money(totals[playerId]);
+      }
+      await waitVoice(tok, 2600, 9000);
     }
-    await waitVoice(tok, 2600, 14000);
     if (tok.cancelled) return;
-    // 3-2-1 (the 3D broadcast has its own countdown on the start line)
+    if (!(st.revealSeq || []).length) { // clash banter when the game module didn't provide lines
+      const picks = st.players.map((p) => new Set((st.bets?.[p.id] || []).filter((b) => b.type === 'win').map((b) => b.runnerId)));
+      let shared = null;
+      if (picks.length >= 2) for (const r of picks[0]) if (picks.slice(1).every((s) => s.has(r))) shared = runnerById(round, r);
+      if (shared) { spot.innerHTML = `<div class="spotcard"><div class="same panel yellow anim-pop">Great minds… both backing ${esc(shared.nickname)}! 🤝</div></div>`; say(`They've both gone for ${shared.nickname}. Either genius, or a shared delusion.`, 'pam', 3); await waitVoice(tok, 2200, 7000); }
+    }
+    if (tok.cancelled) return;
     for (const n of (Race3D?.createRaceView && !FORCE_2D ? [] : ['3', '2', '1'])) {
       if (tok.cancelled) return;
       const c = el(`<div class="countdown outlined anim-pop">${n}</div>`);
@@ -607,39 +632,82 @@ function revealScreen(st) {
 }
 
 // =====================================================================================================
-// RACE
+// RACE (+ HALFWAY MARKET)
 // =====================================================================================================
+function marketHtml(s) {
+  const m = s.market;
+  const round = s.round;
+  if (!m) return '<div class="mk-wait outlined white thin">Opening the market…</div>';
+  const inBets = new Set(s.players.filter((p) => (s.bets?.[p.id] || []).some((b) => b.type === 'inplay')).map((p) => p.id));
+  const rows = (m.standings || []).map((x) => {
+    const r = runnerById(round, x.runnerId);
+    const o = m.odds?.[x.runnerId];
+    return `<div class="mkrow">${ordinalHtml(x.place)}<span class="rp">${r ? portrait(r, 64) : ''}</span><span class="nm">${esc(r?.nickname || x.runnerId)}</span><span class="gp">${x.place === 1 ? 'LEADS' : `+${Number(x.gapS).toFixed(1)}s`}</span><span class="od num">${esc(o?.display || '')}</span></div>`;
+  }).join('');
+  return `<div class="mk panel white"><div class="mkh"><span class="outlined">HALFWAY MARKET</span><span class="mkt num" data-mkt></span></div>
+    <div class="mks">One bet each, on your phone. Prices from the standings right now.</div>
+    <div class="mkrows">${rows}</div>
+    <div class="mkp">${s.players.map((p) => `<span class="mkpl ${inBets.has(p.id) ? 'in' : ''}">${avatarHtml(p.avatar, 44)}${esc(p.name)} ${inBets.has(p.id) ? '✓ IN' : '…'}</span>`).join('')}</div></div>`;
+}
+
 function raceScreen(st) {
   const tok = makeToken();
   const round = st.round;
-  const root = el(`<div class="race-ov"><div class="live panel slant red"><div class="unslant" style="display:flex;gap:14px;align-items:center"><span class="dot"></span>LIVE · ${esc(round.title)}</div></div></div>`);
+  const root = el(`<div class="race-ov"><div class="live panel slant red"><div class="unslant" style="display:flex;gap:14px;align-items:center"><span class="dot"></span>LIVE · ${esc(round.title)}</div></div><div class="market-layer"></div></div>`);
   screenEl.appendChild(root);
   document.body.classList.add('racing');
+  const mkLayer = $('.market-layer', root);
   let lastWhoosh = 0;
   let finished = 0;
+  let marketState = 'idle'; // idle | waiting | open | done
+  let marketResolve = null;
+  let clockIv = null, mkIv = null;
+  async function runMarket(v) {
+    marketState = 'waiting';
+    try { v.setPaused(true); } catch { /* */ }
+    audio.play('bell'); audio.play('crowd', { dur: 2, peak: 0.2 });
+    say('Halfway! The market is open. One bet each — quick!', 'jeff', 3);
+    send({ t: 'marketOpen', roundId: round.roundId });
+    mkLayer.innerHTML = marketHtml(S);
+    mkIv = setInterval(() => {
+      const t = mkLayer.querySelector('[data-mkt]');
+      if (t && S?.market?.closesAt) t.textContent = `${Math.max(0, Math.ceil((S.market.closesAt - net.serverNow()) / 1000))}s`;
+    }, 200);
+    await new Promise((res) => { marketResolve = res; setTimeout(res, 20000); tok.timers.push(setTimeout(() => { if (!S?.market) res(); }, 3500)); });
+    clearInterval(mkIv);
+    marketState = 'done';
+    mkLayer.innerHTML = '';
+    if (tok.cancelled) return;
+    say('Market closed! Back to the action!', 'pam', 2);
+    try { v.setPaused(false); } catch { /* */ }
+  }
   (async () => {
     const v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {} });
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }
     document.body.classList.add('racing');
     if (raceViewKind === '3d') root.querySelector('.live')?.remove(); // the 3D HUD has its own lap/distance chips
-    if (raceViewKind !== '3d') { // the 3D broadcast has its own pre-roll countdown (horn plays on GO)
+    if (raceViewKind !== '3d') {
       audio.play('horn');
       setTimeout(() => audio.play('crowd', { dur: 3, peak: 0.25 }), 300);
       say("And they're off!", 'jeff', 3);
     } else audio.play('crowd', { dur: 4, peak: 0.2 });
     log({ type: 'race-start', kind: raceViewKind });
+    // report the broadcast clock so phones can show their runners live (they never get the plan)
+    clockIv = setInterval(() => { const b = v.broadcastTime; if (Number.isFinite(b) && b >= 0) send({ t: 'raceTime', roundId: round.roundId, b }); }, 1000);
     v.playRace((e) => {
       if (tok.cancelled || !e) return;
       log({ type: 'race-event', e: e.type || 'line', text: e.text });
       if (e.kind === 'countdown') { audio.play(e.n === 0 ? 'go' : 'beep'); if (e.n === 0) { audio.play('horn'); audio.play('crowd', { dur: 3, peak: 0.28 }); } return; }
       if (e.kind === 'photo_finish') { audio.play('stamp'); say("It's a photo finish! Hold your breath!", 'pam', 3); return; }
-      if (e.text && (e.kind === 'commentary' || !e.type)) { voice.say(e.text, e.speaker || 'jeff', { priority: e.priority || 2 }); return; }
+      if (e.text && (e.kind === 'commentary' || !e.type)) { if (marketState !== 'waiting') voice.say(e.text, e.speaker || 'jeff', { priority: e.priority || 2 }); return; }
       switch (e.type) {
         case 'overtake': if (Date.now() - lastWhoosh > 1500) { lastWhoosh = Date.now(); audio.play('whoosh'); } break;
         case 'lead_change': audio.play('whoosh'); audio.play('crowd', { dur: 2, peak: 0.18 }); break;
         case 'breakaway': audio.play('crowd', { dur: 2.5, peak: 0.2 }); break;
-        case 'lap': audio.play('bell'); break;
+        case 'lap':
+          if (marketState === 'idle' && S?.marketAvailable) { log({ type: 'market' }); runMarket(v); } else audio.play('bell');
+          break;
         case 'final_stretch': audio.play('crowd', { dur: 6, peak: 0.4 }); break;
         case 'finish': finished++; if (finished === 1) { audio.play('fanfare'); audio.play('crowd', { dur: 4, peak: 0.45 }); } break;
         default: break;
@@ -651,7 +719,14 @@ function raceScreen(st) {
       if (!tok.cancelled) send({ t: 'raceDone', roundId: round.roundId });
     });
   })();
-  return { destroy: () => { cancelToken(tok); } };
+  return {
+    update(s) {
+      if (marketState !== 'waiting') return;
+      if (s.market && !s.market.open) { marketResolve?.(); return; }
+      mkLayer.innerHTML = marketHtml(s);
+    },
+    destroy: () => { cancelToken(tok); clearInterval(clockIv); clearInterval(mkIv); marketResolve?.(); },
+  };
 }
 
 // =====================================================================================================
@@ -666,7 +741,7 @@ function resultsScreen(st) {
   const res = st.results;
 
   function backersFor(rid, s) {
-    return s.players.filter((p) => (s.bets?.[p.id] || []).some((b) => (b.type === 'win' ? b.runnerId : b.pick) === rid)).map((p) => avatarHtml(p.avatar, 50));
+    return s.players.filter((p) => (s.bets?.[p.id] || []).some((b) => (betRunnerId(b)) === rid)).map((p) => avatarHtml(p.avatar, 50));
   }
   const head = (h, sh = '') => `<div class="res-head"><div class="h outlined">${h}</div>${sh ? `<div class="sh">${sh}</div>` : ''}</div>`;
   const done = (stage) => { if (!tok.cancelled) send({ t: 'stageDone', stage }); };
@@ -699,59 +774,59 @@ function resultsScreen(st) {
     const t = tok;
     const order = res.finishOrder.map((f) => f.runnerId);
     const rv = new Map((res.reveal || []).map((x) => [x.runnerId, x]));
-    root.innerHTML = head('WHO WERE THEY REALLY?', 'Every runner was a real Mark, on a real Saturday 🕵️') + `<div class="reveal-grid">${order.map((rid, i) => {
+    // sofa-readable: date, time, Strava title only (stats + fun facts go to the phones)
+    root.innerHTML = head('WHO WERE THEY REALLY?', 'Every runner was a real Mark, on a real Saturday 🕵️ — details on your phones') + `<div class="reveal-grid">${order.map((rid, i) => {
       const r = runnerById(round, rid); const x = rv.get(rid) || {};
       const f = res.finishOrder[i];
-      const facts = (x.funFacts || []).slice(0, 2).map((ff) => `<div>• ${esc(ff)}</div>`).join('');
-      const meta = [x.eventNumber ? `Event #${x.eventNumber}` : '', x.overallPosition ? `${x.overallPosition}${['th', 'st', 'nd', 'rd'][x.overallPosition % 10 > 3 || [11, 12, 13].includes(x.overallPosition % 100) ? 0 : x.overallPosition % 10]} overall` : '', x.ageGrade ? `${x.ageGrade}% AG` : ''].filter(Boolean).join(' · ');
       return `<div class="rv" data-i="${i}">
         <div class="face front" style="background:${esc(r?.colour?.primary)}"><div><div class="rp">${r ? portrait(r, 220) : ''}</div><div class="q outlined">?</div></div></div>
         <div class="face back"><div class="bh" style="background:${esc(r?.colour?.primary)}"><div class="rp">${r ? portrait(r, 74) : ''}</div><div class="n">${esc(r?.nickname || rid)}</div></div>
-          <div class="date">${esc(x.dateText || x.date || '')}</div>
+          <div class="date">${esc(x.dateText || x.date || x.headline || '')}</div>
           <div class="time num">${esc(f?.timeText || '')}</div>
-          <div class="meta">${esc(meta)}${x.finsburyNumber ? ` · Finsbury run #${x.finsburyNumber}` : ''}</div>
           ${x.stravaTitle ? `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>` : ''}
-          <div class="facts">${facts}</div>
           ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'COURSE PB!' : 'PB! 🏅'}</div>` : ''}
           <div class="place">${ordinalHtml(f?.place || i + 1)}</div>
         </div></div>`;
     }).join('')}</div>`;
     const cards = $$('.rv', root);
     await sleepT(900, t);
-    for (let i = 0; i < cards.length; i++) {
+    for (let i = cards.length - 1; i >= 0; i--) { // last place first, the winner last
       if (t.cancelled) return;
       cards[i].classList.add('flip');
-      audio.play('reveal');
       const x = rv.get(order[i]);
       const r = runnerById(round, order[i]);
-      if (i === 0 && x?.dateText) say(`The winner, ${r?.nickname}, was Mark on ${x.dateText}.`, 'jeff', 2);
-      await sleepT(1900, t);
+      audio.play(i === 0 ? 'fanfare' : 'reveal');
+      if (i === 0 || i === cards.length - 1) say(`${i === 0 ? 'The winner' : 'And in last place'}, ${r?.nickname}: ${x?.headline || x?.dateText || ''}`, i === 0 ? 'jeff' : 'pam', 2);
+      await sleepT(i === 0 ? 3200 : 2600, t);
     }
-    if (false) {
-      root.appendChild(el(`<div class="archetype"><div class="arch panel yellow anim-pop" style="padding:12px 30px"><span class="display" style="font-size:34px">${esc(res.archetype.label)}</span>${res.archetype.blurb ? ` <span style="font-size:24px">— ${esc(res.archetype.blurb)}</span>` : ''}</div></div>`));
-    }
-    await waitVoice(t, 9000, 15000);
+    await waitVoice(t, 6000, 12000);
     done(1);
   }
 
   async function stageClues(s) {
     const t = tok;
     const all = res.clueReview || [];
-    const items = [...all.filter((c) => c.verdict !== 'neutral'), ...all.filter((c) => c.verdict === 'neutral')].slice(0, 8);
+    let items = all.filter((c) => c.highlight).slice(0, 3);
+    if (!items.length) items = all.filter((c) => c.verdict !== 'neutral').slice(0, 3);
     if (!items.length) { root.innerHTML = ''; await sleepT(300, t); done(2); return; }
     const clueText = new Map((s.clues || []).map((c) => [c.id, c]));
-    root.innerHTML = head('CLUE POST-MORTEM', 'Useful… or a red herring? 🐟') + `<div class="clue-list">${items.map((c) => {
+    root.innerHTML = head('THE CLUES THAT MATTERED', 'Useful… or a red herring? 🐟') + `<div class="clue-list big">${items.map((c) => {
       const r = runnerById(round, c.runnerId);
       const ct = clueText.get(c.clueId);
-      const owner = c.owner === 'public' ? `PUBLIC CLUE${ct?.label ? ` · ${esc(ct.label.toUpperCase())}` : ''}` : `${esc(s.players.find((p) => p.id === c.owner)?.name || 'Secret')}'S SECRET CLUE 🤫`;
+      const p = s.players.find((x) => x.id === c.owner);
+      const owner = c.owner === 'public' ? `📺 PUBLIC CLUE${ct?.label ? ` · ${esc(ct.label.toUpperCase())}` : ''}` : `${ct?.tier === 'hot' ? '🔥' : '🤫'} ${esc(p?.name || 'Secret')}'S ${ct?.tier === 'hot' ? 'HOT TIP' : 'SECRET CLUE'}`;
       const verdict = { useful: 'USEFUL ✓', red_herring: 'RED HERRING 🐟', neutral: 'MEH' }[c.verdict] || esc(c.verdict);
-      return `<div class="cl panel"><div class="rp">${r ? portrait(r, 74) : ''}</div><div class="txt"><div class="own">${owner} · ${esc(r?.nickname || '')}</div>${esc(c.text || ct?.text || '')}${c.quip ? `<div class="quip">${esc(c.quip)}</div>` : ''}</div><div class="verdict ${esc(c.verdict)}">${verdict}</div></div>`;
+      return `<div class="cl panel"><div class="rp">${r ? portrait(r, 100) : ''}</div><div class="txt"><div class="own">${owner} · ${esc(r?.nickname || '')}</div>${esc(c.text || ct?.text || '')}${c.quip ? `<div class="quip">${esc(c.quip)}</div>` : ''}</div><div class="verdict ${esc(c.verdict)}">${verdict}</div></div>`;
     }).join('')}</div>`;
     const els = $$('.cl', root);
-    for (const e of els) { if (t.cancelled) return; e.classList.add('show'); setTimeout(() => audio.play('stamp'), T(250)); await sleepT(1300, t); }
-    const herring = items.find((c) => c.verdict === 'red_herring' && c.quip);
-    if (herring) say(herring.quip, 'pam', 2);
-    await waitVoice(t, 7000, 12000);
+    for (let i = 0; i < els.length; i++) {
+      if (t.cancelled) return;
+      els[i].classList.add('show');
+      setTimeout(() => { audio.play('sting'); audio.play('stamp'); }, T(250));
+      if (items[i].quip) say(items[i].quip, i % 2 ? 'jeff' : 'pam', 2);
+      await waitVoice(t, 2800, 8000);
+    }
+    await waitVoice(t, 3500, 9000);
     done(2);
   }
 
@@ -889,6 +964,18 @@ function chartSvg(s) {
   const labels = Array.from({ length: n }, (_, i) => `<text x="${xs(i)}" y="${H - 6}" text-anchor="middle" font-family="Lilita One" font-size="20" fill="#14183c">${i === 0 ? 'Start' : `R${i}`}</text>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="440">${grid}${base}${lines}${labels}</svg>`;
 }
+function recapHtml(s, narrow) {
+  const res = s.results;
+  if (!res?.finishOrder?.length) return '';
+  const w = runnerById(s.round, res.finishOrder[0].runnerId);
+  const rows = s.players.map((p) => {
+    const pay = res.payouts?.[p.id];
+    const best = (pay?.bets || []).filter((b) => b.won).sort((a, b) => b.returned - a.returned)[0];
+    return `<div class="rcp">${avatarHtml(p.avatar, 54)}<span class="rn">${esc(p.name)}</span><span class="rx">${best ? `✅ ${esc(betLabel(s.round, best))}` : (pay?.bets || []).length ? '❌ nothing came in' : '🙈 no bets'}</span><span class="rnet ${pay?.net > 0 ? 'up' : pay?.net < 0 ? 'down' : ''}">${signedMoney(pay?.net || 0)}</span></div>`;
+  }).join('');
+  const aw = (res.awards || []).slice(0, 2).map((a) => `<span class="raw">🏆 ${esc(a.title)}</span>`).join('');
+  return `<div class="recap panel white ${narrow ? 'narrow' : ''}"><div class="rch"><span class="rp">${w ? portrait(w, 64) : ''}</span><span>Last race: <b>${esc(w?.nickname || '')}</b> won${res.archetype?.label ? ` · ${esc(res.archetype.label)}` : ''}</span>${aw}</div>${rows}</div>`;
+}
 function scoreScreen(st) {
   const root = el('<div class="score"></div>');
   screenEl.appendChild(root);
@@ -896,9 +983,11 @@ function scoreScreen(st) {
   function render(s) {
     const last = s.roundNumber >= s.roundsPerGame;
     const upnext = last ? '🏁 That was the final round! Champion next…' : s.roundNumber === s.roundsPerGame - 1 ? `Up next: THE FINAL ROUND 😬` : `Up next: Round ${s.roundNumber + 1} of ${s.roundsPerGame}`;
+    const showChart = s.history.length >= 2;
     root.innerHTML = `<div class="res-head"><div class="h outlined">STANDINGS</div><div class="sh">After round ${s.roundNumber} of ${s.roundsPerGame}</div></div>
-      <div class="standings">${standingsHtml(s)}</div>
-      <div class="chart panel white"><div class="ct">The money, round by round</div>${chartSvg(s)}</div>
+      <div class="standings ${showChart ? '' : 'solo'}">${standingsHtml(s)}</div>
+      ${showChart ? `<div class="chart panel white"><div class="ct">The money, round by round</div>${chartSvg(s)}</div>` : ''}
+      ${recapHtml(s, showChart)}
       <div class="upnext panel yellow">${upnext}<span class="cd"></span></div>`;
   }
   render(st);
@@ -922,17 +1011,34 @@ function finaleScreen(st) {
   const sorted = [...st.players].sort((a, b) => b.bankroll - a.bankroll);
   const champ = sorted[0];
   const tie = sorted.length > 1 && sorted[1].bankroll === champ?.bankroll;
-  const root = el(`<div class="finale"><div class="rays"></div>
+  const awards = (st.history || []).flatMap((h) => (h.awards || []).map((a) => ({ title: a.title, text: `Round ${h.round}`, playerId: a.playerId })));
+  const reel = [...(st.superlatives || []), ...awards].filter((x) => x && x.title);
+  const root = el(`<div class="finale"><div class="rays"></div><div class="fconf"></div>
     <div class="champ">${champ ? `<div class="h outlined">${tie ? "IT'S A DRAW!" : 'CHAMPION!'}</div>
-      <div class="who"><div class="crown">👑</div>${avatarHtml(champ.avatar, 220)}<div class="nm outlined white">${esc(tie ? sorted.filter((p) => p.bankroll === champ.bankroll).map((p) => p.name).join(' & ') : champ.name)}</div><div class="bk num">${money(champ.bankroll)}</div></div>` : '<div class="h outlined">GAME OVER</div>'}
+      <div class="who"><div class="crown">👑</div>${avatarHtml(champ.avatar, 200)}<div class="nm outlined white">${esc(tie ? sorted.filter((p) => p.bankroll === champ.bankroll).map((p) => p.name).join(' & ') : champ.name)}</div><div class="bk num">${money(champ.bankroll)}</div></div>` : '<div class="h outlined">GAME OVER</div>'}
+      <div class="others">${sorted.slice(1).map((p, i) => `<div class="srow panel slant" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:20px">${ordinalHtml(i + 2)}${avatarHtml(p.avatar, 64)}<div class="nm">${esc(p.name)}</div><div class="bk num">${money(p.bankroll)}</div></div></div>`).join('')}</div>
     </div>
-    <div class="others">${sorted.slice(1).map((p, i) => `<div class="srow panel slant" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:20px">${ordinalHtml(i + 2)}${avatarHtml(p.avatar, 70)}<div class="nm">${esc(p.name)}</div><div class="bk num">${money(p.bankroll)}</div></div></div>`).join('')}</div>
+    <div class="reel">${reel.length ? '<div class="reel-h outlined white thin">THE NIGHT IN AWARDS</div><div class="reel-card"></div><div class="reel-dots"></div>' : ''}</div>
   </div>`);
   screenEl.appendChild(root);
+  const conf = $('.fconf', root);
   audio.play('drumroll', { dur: 1.6 });
-  setTimeout(() => { audio.play('fanfare'); audio.play('crowd', { dur: 5, peak: 0.45 }); confetti(document.body, { count: 200, duration: 4500 }); }, T(1700));
-  const again = setInterval(() => confetti(document.body, { count: 60, duration: 3500 }), T(6000));
+  setTimeout(() => { audio.play('fanfare'); audio.play('crowd', { dur: 5, peak: 0.45 }); confetti(conf, { count: 200, duration: 4500, contained: true, zIndex: 0 }); }, T(1700));
+  const again = setInterval(() => confetti(conf, { count: 50, duration: 3500, contained: true, zIndex: 0 }), T(7000));
   if (champ) say(tie ? 'We have a dead heat! Nobody wins, which is very British.' : `Ladies and gentlemen, your MARKRUN champion: ${champ.name}, with ${moneySay(champ.bankroll)}!`, 'jeff', 3);
-  setTimeout(() => say('Press space, or tap ready on your phones, to go again.', 'pam', 1), T(7000));
-  return { destroy: () => clearInterval(again) };
+  let k = 0, reelIv = null;
+  const card = $('.reel-card', root);
+  function showReel() {
+    if (!card || !reel.length) return;
+    const x = reel[k % reel.length];
+    const p = st.players.find((q) => q.id === x.playerId);
+    card.innerHTML = `<div class="rc2 panel ${p ? '' : 'yellow'} anim-pop" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="tro">🏆</div>${p ? avatarHtml(p.avatar, 84) : ''}<div class="t outlined ${p ? 'white' : ''} thin">${esc(x.title)}</div><div class="x">${esc(x.text || '')}</div></div>`;
+    $('.reel-dots', root).innerHTML = reel.map((_, i) => `<i class="${i === k % reel.length ? 'on' : ''}"></i>`).join('');
+    audio.play('reveal');
+    if (k < reel.length) say(`${x.title}! ${x.text || ''}`, k % 2 ? 'pam' : 'jeff', 2);
+    k++;
+  }
+  const startReel = setTimeout(() => { showReel(); reelIv = setInterval(showReel, T(6500)); }, T(6500));
+  setTimeout(() => say('Press space, or tap ready on your phones, to go again.', 'pam', 1), T(6500 * (reel.length + 1)));
+  return { destroy: () => { clearInterval(again); clearInterval(reelIv); clearTimeout(startReel); } };
 }
