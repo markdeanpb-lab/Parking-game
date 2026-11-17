@@ -69,7 +69,7 @@ export function checkPayload(obj, ctx, path = '') {
   if (typeof obj === 'string' && /^#[0-9a-f]{3,8}$/i.test(obj)) return out;
   // the funfair prop and an announced Funfair Stakes theme name the funfair on purpose (same every round / announced theme)
   const allowFunfair = /^public\.(props|theme|introLines)/.test(path);
-  if (typeof obj === 'string') return checkText(obj, ctx, { clue: /clue|text/i.test(path) && /clue|private/i.test(path), allowFunfair }).map((p) => `${path}: ${p}`);
+  if (typeof obj === 'string') return checkText(obj, ctx, { clue: /clue|text|headline|kicker/i.test(path) && /clue|private/i.test(path), allowFunfair }).map((p) => `${path}: ${p}`);
   if (Array.isArray(obj)) { obj.forEach((v, i) => out.push(...checkPayload(v, ctx, `${path}[${i}]`))); return out; }
   if (typeof obj === 'object') {
     for (const [k, v] of Object.entries(obj)) {

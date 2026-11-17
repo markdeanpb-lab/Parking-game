@@ -45,7 +45,6 @@ export function normalizeSettings(s = {}) {
   return o;
 }
 
-const SAFE_FALLBACK = ['Turned up, laced up, ready to go. That\'s all we know.', 'Arrived at the start line with a look of quiet determination. Or wind.'];
 
 const trimPerf = (p) => ({ date: p.date, officialS: p.officialS, pool: p.pool, pacingSource: p.pacingSource, hr: p.hr, splits: p.splits,
   features: p.features, diversions: p.diversions, result: p.result, facts: p.facts });
@@ -125,14 +124,15 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const leaks = [];
   const safe = (c, id) => {
     const probs = checkText(c.text, ctx, { clue: true });
-    if (probs.length) { leaks.push({ runnerId: id, text: c.text, probs }); Object.assign(c, { text: R.pick(SAFE_FALLBACK), features: [], signal: 0, said: null, category: 'misc', style: 'fact' }); }
+    const probs2 = [...probs, ...checkText(c.headline || '', ctx, { clue: true }), ...checkText(c.kicker || '', ctx, { clue: true })];
+    if (probs2.length) { leaks.push({ runnerId: id, text: c.text, probs: probs2 }); Object.assign(c, { text: 'Turned up, laced up. That\'s all we know.', headline: 'Turned up, laced up.', kicker: 'That\'s all we know.', features: [], signal: 0, said: null, category: 'misc', style: 'fact' }); }
     return c;
   };
   ids.forEach((id, i) => {
     const lane = i + 1;
     clues[id] = { public: null, private: {} };
     for (const { slot, clue } of assigned[id]) {
-      const c = safe({ id: `c${lane}${'abcdefgh'[slot]}`, text: clue.text, category: clue.cat, label: CATEGORY_LABEL[clue.cat] || 'Clue', tier: slot === 0 ? undefined : 'gossip',
+      const c = safe({ id: `c${lane}${'abcdefgh'[slot]}`, text: clue.text, headline: clue.headline, kicker: clue.kicker, category: clue.cat, label: CATEGORY_LABEL[clue.cat] || 'Clue', tier: slot === 0 ? undefined : 'gossip',
         style: clue.style || 'fact', voice: clue.voice, lean: clue.lean, family: clue.family, features: clue.features, signal: clue.signal, said: clue.said, factKeys: clue.factKeys }, id);
       if (slot === 0) clues[id].public = c; else clues[id].private[slots[slot]] = c;
     }
@@ -151,7 +151,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   for (const [pid, list] of Object.entries(tips)) {
     for (const t of list) {
       const old = clues[t.runnerId].private[pid];
-      clues[t.runnerId].private[pid] = safe({ id: old.id, text: t.text.replace('{other}', 'a rival'), category: 'hot', label: 'HOT TIP', tier: 'hot', style: 'hot', tipType: t.type, otherId: t.otherId,
+      clues[t.runnerId].private[pid] = safe({ id: old.id, text: t.text.replace('{o}', 'a rival'), headline: t.headline.replace('{o}', 'a rival'), kicker: t.kicker, category: 'hot', label: 'HOT TIP', tier: 'hot', style: 'hot', tipType: t.type, otherId: t.otherId,
         polarity: t.polarity, features: [], signal: t.polarity > 0 ? -6 : 6, said: null, factKeys: ['progress'] }, t.runnerId);
     }
   }
@@ -168,11 +168,11 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   // 6. characters
   const chars = makeCharacters(perfs.length, R, mem);
   const title = roundTitle(R, mem);
-  for (const list of Object.values(tips)) for (const t of list) {
+  for (const [pid, list] of Object.entries(tips)) for (const t of list) {
     if (!t.otherId) continue;
-    const other = chars[ids.indexOf(t.otherId)].nickname;
-    t.text = t.text.replace('{other}', other);
-    for (const [pid, l2] of Object.entries(tips)) if (l2.includes(t)) clues[t.runnerId].private[pid].text = t.text;
+    t.headline = t.headline.replace('{o}', chars[ids.indexOf(t.otherId)].shortName);
+    t.text = `${t.headline} ${t.kicker}`;
+    Object.assign(clues[t.runnerId].private[pid], { headline: t.headline, text: t.text });
   }
   const runners = ids.map((id, i) => ({
     id, lane: i + 1,

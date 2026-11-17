@@ -4,6 +4,7 @@
 // Each clue declares which odds-model features it reveals (`features`), so the house can only price what players see.
 import { fill, km, words, raceType, isRaceName, isIntervalName, aOrAn, aKm, cap } from './text.mjs';
 import { contribution } from './model.mjs';
+import { headlineFor, kickerFrom, wc, MAX_KICK } from './headlines.mjs';
 
 const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
 const sum = (a) => (a || []).reduce((s, x) => s + x, 0);
@@ -377,9 +378,20 @@ export function candidatesFor(p, field, rng, mem) {
       variants.set(c.text, { text: c.text, skel: skeleton(c.text), style: /\?\s*$/.test(c.text) ? 'hedge' : 'fact' });
     }
     if (primary) {
-      primary.skel = skeleton(primary.text);
-      primary.variants = [...variants.values()];
-      primary.factSentence = splitFact(primary.text).fact;
+      // declutter: headline rebuilt from the facts; each wording contributes only its joke (the kicker)
+      let head;
+      try { head = headlineFor(primary, p.facts); } catch { head = null; }
+      if (!head) continue;
+      const vs = [];
+      const seenK = new Set();
+      for (const v of variants.values()) {
+        const kicker = kickerFrom(v.text, cat, rng);
+        if (seenK.has(kicker)) continue;
+        seenK.add(kicker);
+        const text = `${head} ${kicker}`;
+        vs.push({ text, kicker, skel: skeleton(text), style: /\?\s*$/.test(kicker) ? 'hedge' : 'fact' });
+      }
+      Object.assign(primary, { headline: head, kicker: vs[0].kicker, text: vs[0].text, skel: vs[0].skel, variants: vs, factSentence: head });
       byCat[cat] = primary;
     }
   }
@@ -412,8 +424,8 @@ const OPINIONS = {
     neg: ['Should\'ve been running instead.', 'Jack of all trades. Master of none.', 'Wrong sport, mate.'] },
 };
 const VOICE = {
-  jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker of the day:', 'Jeff is all over this one:', 'Jeff can\'t see past him:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff has gone off him:', 'Jeff is waving him away:'] },
-  pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam has a sneaky fancy:', 'Pam, against her better judgement:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:', 'Pam, with a sigh:'] },
+  jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker:', 'Jeff loves him:', 'Jeff swears by him:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff has gone off him:', 'Jeff is waving him away:'] },
+  pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam has a sneaky fancy:', 'Pam, reluctantly:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:', 'Pam, with a sigh:'] },
 };
 
 // Give every assigned clue a style, balancing roughly thirds across the round, never repeating a wording in the
@@ -431,7 +443,7 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
     const c = x.clue;
     const opts = [];
     for (const v of c.variants || [{ text: c.text, skel: c.skel, style: /\?\s*$/.test(c.text) ? 'hedge' : 'fact' }]) {
-      if (usedRound.has(v.skel)) continue;
+      if (usedRound.has(v.skel) || (v.kicker && usedRound.has(`k:${v.kicker}`))) continue;
       opts.push({ ...v, cool: cooling(v.skel) });
     }
     const tipSkel = `${skeleton(c.factSentence || splitFact(c.text).fact)}|tip`;
@@ -442,6 +454,7 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
     const o = opts.reduce((a, b) => (score(b) < score(a) ? b : a));
     counts[o.style]++; sc[o.style]++;
     usedRound.add(o.skel);
+    if (o.kicker) usedRound.add(`k:${o.kicker}`);
     if (mem) { mem.clueSkelRound ||= {}; mem.clueSkelRound[o.skel] = roundNumber; }
     let text = o.text;
     if (o.style === 'tipster') {
@@ -455,11 +468,15 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
       if (!pool.length) pool = VOICE[voice][lean];
       const intro = rng.pick(pool);
       usedIntros.add(intro); rv.add(voice);
-      const op = pickOpinion(`op_${GROUP[c.cat]}_${lean}`, OPINIONS[GROUP[c.cat]][lean]);
-      text = `${c.factSentence || splitFact(c.text).fact} ${intro} "${op}"`;
-      x.clue = { ...c, text, style: 'tipster', voice, lean: lean === 'pos' ? 1 : -1 };
+      const bank = OPINIONS[GROUP[c.cat]][lean];
+      const fits = bank.filter((q) => wc(q) + wc(intro) <= MAX_KICK);
+      const op = pickOpinion(`op_${GROUP[c.cat]}_${lean}${fits.length < bank.length ? '_short' : ''}`, fits.length ? fits : bank);
+      const kicker = `${intro} "${op}"`;
+      const headline = c.headline || c.factSentence || splitFact(c.text).fact;
+      text = `${headline} ${kicker}`;
+      x.clue = { ...c, text, headline, kicker, style: 'tipster', voice, lean: lean === 'pos' ? 1 : -1 };
     } else {
-      x.clue = { ...c, text, style: o.style };
+      x.clue = { ...c, text, headline: c.headline, kicker: o.kicker ?? c.kicker, style: o.style };
     }
   }
   return counts;

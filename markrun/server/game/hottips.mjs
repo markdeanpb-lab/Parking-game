@@ -7,22 +7,22 @@ const HILL_TOP = [HILL_M[0] + 180, HILL_M[1] + 180];
 
 // polarity: +1 = sounds good for him, -1 = sounds bad. "Sensible" punters back +1 tips and avoid -1 tips.
 export const TIP_TYPES = {
-  hill1_first: { polarity: 1, texts: ['Insider: he was first to the top of the Hill on lap one.', 'A marshal on the Hill swears he led the field over it on lap one.', 'Word from the Hill: nobody crested it ahead of him first time round.'] },
-  hill2_fastest: { polarity: 1, texts: ['Insider: nobody in this field climbed the Hill quicker on lap two.', 'The Hill marshal\'s notes: quickest up it second time round, of this lot.', 'Strongest second climb of the Hill in this field. Legs of a mountain goat.'] },
-  open_fastest: { polarity: 1, texts: ['Insider: quickest opening kilometre of anyone in this field.', 'Off like a scalded cat: fastest first kilometre of these five.', 'No one in this field reached the 1 km marker before him.'] },
-  last_km_fastest: { polarity: 1, texts: ['Insider: strongest last kilometre in this lot.', 'The funnel volunteers say nobody here finished the final kilometre quicker.', 'Kept the best for last: quickest final kilometre of these five.'] },
-  top3_2k: { polarity: 1, texts: ['Insider: in the top three of this field at 2 km.', 'Clocked in the front three of this lot at the 2 km cone.'] },
-  even_pacer: { polarity: 1, texts: ['Insider: the most even two laps of anyone in this field.', 'Paced it like a metronome: smallest lap-two slowdown of these five.'] },
-  overtaker: { polarity: 1, texts: ['Insider: made more overtakes than anyone else in this field.', 'Spent the morning passing people: most overtakes in this lot.'] },
-  ahead_hill1: { polarity: 1, pair: true, texts: ['Insider: beat {other} to the top of the Hill on lap one.', 'A marshal saw him crest the Hill on lap one before {other}.'] },
-  ahead_2k: { polarity: 1, pair: true, texts: ['Insider: led {other} through 2 km.', 'At the 2 km cone he had {other} in his slipstream.'] },
-  ahead_4k: { polarity: 1, pair: true, texts: ['Insider: led {other} through 4 km.', 'With a kilometre to go he had {other} behind him.'] },
-  led_1k_over: { polarity: 1, pair: true, texts: ['Insider: led {other} through 1 km.', 'Away quicker than {other}: in front of him at the first kilometre.'] },
-  outclimbed_hill2: { polarity: 1, pair: true, texts: ['Insider: outclimbed {other} on the second time up the Hill.', 'Lap two, the Hill: he climbed it quicker than {other}.'] },
-  dead_last_1k: { polarity: -1, texts: ['Insider: dead last of this field at 1 km.', 'At the first kilometre he was at the back of these five. Dawdling, or plotting?'] },
-  hill2_slowest: { polarity: -1, texts: ['Insider: slowest up the Hill on lap two, of this field.', 'The Hill marshal says he was the slowest of these five on the second climb.'] },
-  big_fade: { polarity: -1, texts: ['Insider: the biggest lap-two slowdown of anyone in this field.', 'Lap two was not kind: he slowed more than any of the others.'] },
-  last_km_slowest: { polarity: -1, texts: ['Insider: the weakest final kilometre in this lot.', 'Final kilometre: slowest of these five. Running on fumes, apparently.'] },
+  hill1_first: { polarity: 1, head: 'Insider: first over the Hill, lap one', kicks: ['A marshal swears to it.', 'Word from the Hill marshals.', 'Led them up like a mountain goat.'] },
+  hill2_fastest: { polarity: 1, head: 'Insider: quickest up the Hill on lap two', kicks: ['Legs of a mountain goat.', 'The Hill marshal took notes.'] },
+  open_fastest: { polarity: 1, head: 'Insider: quickest first kilometre of the field', kicks: ['Off like a scalded cat.', 'First to the 1 km marker.'] },
+  last_km_fastest: { polarity: 1, head: 'Insider: strongest last kilometre of the field', kicks: ['Kept the best for last.', 'The funnel volunteers noticed.'] },
+  top3_2k: { polarity: 1, head: 'Insider: top three of the field at 2 km', kicks: ['Right in the mix.', 'Up there early.'] },
+  even_pacer: { polarity: 1, head: 'Insider: the most even two laps here', kicks: ['Paced it like a metronome.'] },
+  overtaker: { polarity: 1, head: 'Insider: more overtakes than anyone else', kicks: ['Spent the morning passing people.'] },
+  ahead_hill1: { polarity: 1, pair: true, head: 'Insider: over the Hill before {o}', kicks: ['Lap one, and the marshals saw it.', 'Handy if they meet head-to-head.'] },
+  ahead_2k: { polarity: 1, pair: true, head: 'Insider: led {o} through 2 km', kicks: ['Had him in his slipstream.', 'Handy for the head-to-head.'] },
+  ahead_4k: { polarity: 1, pair: true, head: 'Insider: led {o} through 4 km', kicks: ['With a kilometre to go.', 'Handy for the head-to-head.'] },
+  led_1k_over: { polarity: 1, pair: true, head: 'Insider: led {o} through 1 km', kicks: ['Away quicker, at least.', 'Early doors, mind.'] },
+  outclimbed_hill2: { polarity: 1, pair: true, head: 'Insider: outclimbed {o} on lap two', kicks: ['Second time up the Hill.', 'The Hill does not lie.'] },
+  dead_last_1k: { polarity: -1, head: 'Insider: dead last at 1 km', kicks: ['Dawdling, or plotting?', 'Slow starter, or just slow?'] },
+  hill2_slowest: { polarity: -1, head: 'Insider: slowest up the Hill, lap two', kicks: ['The Hill marshal winced.', 'Second climb: a struggle.'] },
+  big_fade: { polarity: -1, head: 'Insider: biggest slowdown on lap two', kicks: ['Lap two was not kind.'] },
+  last_km_slowest: { polarity: -1, head: 'Insider: weakest final kilometre here', kicks: ['Running on fumes, apparently.', 'The funnel felt a long way off.'] },
 };
 
 // All true tips for a field: [{ runnerId, type, polarity }]
@@ -95,10 +95,12 @@ export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiv
       };
       const t = rng.weighted(pool, w);
       used.add(t.runnerId); usedTypes.add(t.type);
-      let text = rng.pick(TIP_TYPES[t.type].texts).replace(/ Dawdling, or plotting\?$/, '');
-      let steer = null;
-      if (STEERED.has(t.type)) { steer = finishSteer(field.find((r) => r.id === t.runnerId)); text += rng.pick(STEER_TEXT[steer]); }
-      out[pid].push({ ...t, text, steer }); // {other} filled in once nicknames exist
+      const TT = TIP_TYPES[t.type];
+      let steer = null, kicker = rng.pick(TT.kicks);
+      if (STEERED.has(t.type)) { steer = finishSteer(field.find((r) => r.id === t.runnerId)); kicker = rng.pick(STEER_TEXT[steer]); }
+      const headline = TT.head; // {o} = the rival's short name, filled once nicknames exist
+      const text = `${headline} ${kicker}`;
+      out[pid].push({ ...t, headline, kicker, text, steer });
     }
   }
   return out;
@@ -112,9 +114,9 @@ export function finishSteer(r) {
   return 'steady';
 }
 const STEER_TEXT = {
-  strong: [' Strong finisher.', ' Finished like a train.', ' Kicked hard at the end.'],
-  faded: [' Faded late, mind.', ' Ran out of puff at the end.', ' Paid for it in the last kilometre.'],
-  steady: [' Steady to the line.', ' No dramatic kick, no collapse.'],
+  strong: ['Strong finisher.', 'Finished like a train.', 'Kicked hard at the end.'],
+  faded: ['Faded late, mind.', 'Ran out of puff at the end.', 'Paid for it in the last kilometre.'],
+  steady: ['Steady to the line.', 'No dramatic kick, no collapse.'],
 };
 const STEERED = new Set(['even_pacer', 'big_fade', 'overtaker', 'top3_2k']);
 

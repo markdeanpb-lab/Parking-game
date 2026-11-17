@@ -149,3 +149,21 @@ export function betOutcome(b) {
   if (b?.won) return { kind: 'won', net: returned - stake, text: signedMoney(returned - stake) };
   return { kind: 'lost', net: -stake, text: signedMoney(-stake) };
 }
+
+// Clue -> { headline (bold, short), kicker (small) }. Uses the game module's headline/kicker when present;
+// otherwise the first sentence (capped at maxWords) is the headline and the rest (incl. a tipster's quote) the kicker.
+export function clueParts(c, maxWords = 10) {
+  if (!c) return { headline: '', kicker: '' };
+  if (c.headline) return { headline: c.headline, kicker: c.kicker || '' };
+  let text = String(c.text || '').trim();
+  let quote = '';
+  const qi = text.indexOf('"');
+  if (qi > 0) { quote = text.slice(qi).replace(/"/g, '').trim(); text = text.slice(0, qi).trim(); }
+  const m = text.match(/^(.+?[.!?])(\s+|$)([\s\S]*)$/);
+  let head = m ? m[1] : text;
+  let rest = m ? m[3].trim() : '';
+  const words = head.split(/\s+/);
+  if (words.length > maxWords) { rest = `…${words.slice(maxWords - 1).join(' ')}${rest ? ` ${rest}` : ''}`; head = `${words.slice(0, maxWords - 1).join(' ')}…`; }
+  const kicker = [rest, quote ? `“${quote}”` : ''].filter(Boolean).join(' ');
+  return { headline: head, kicker };
+}
