@@ -6,3 +6,20 @@ server on http://127.0.0.1:39093
   shot 04-tv-lobby-players
 round source: game
   shot 05-tv-intro-title
+E2E FAILED: page.waitForSelector: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('.rcard') to be visible[22m
+
+    at /home/user/Parking-game/markrun/tools/e2e.mjs:130:12
+--- server output ---
+
+  ███ MARKRUN host is up ███
+  TV  (open on the computer driving the telly):  http://127.0.0.1:39093/tv
+  Phones join at:                                http://127.0.0.1:39093/phone   (or scan the QR on the TV)
+  Wrong network? Other addresses: 192.0.2.2 (eth0)  -> restart with --host <ip>
+  Session: new  ·  Ctrl+C to stop
+MARKRUN_READY port=39093
+
+network: no external requests attempted ✓
+E2E FAILED
+EXIT=1
