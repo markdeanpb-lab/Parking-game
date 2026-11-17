@@ -110,17 +110,23 @@ export function selectField({ data, rng, mem, weights, settings = {}, roundNumbe
     return score;
   };
 
-  if (theme?.funfair) { // built around the diversion runs (any band)
+  if (theme?.funfair) { // three diversion runs close in time + two ordinary mornings around them: a real contest
     let best = null;
     const div = main.filter((p) => p.diversions?.length);
-    for (let i = 0; i < 25; i++) {
-      const pick = rng.sampleWeighted(div, Math.min(size, div.length), W);
-      if (pick.length < size) {
-        const mid = pick.map((p) => p.officialS).sort((a, b) => a - b)[Math.floor(pick.length / 2)];
-        const rest = main.filter((p) => !pick.includes(p) && !p.diversions?.length && Math.abs(p.officialS - mid) <= 120 && !(isPBDay(p) && pick.some(isPBDay)));
-        pick.push(...rng.sampleWeighted(rest, size - pick.length, W));
+    const nDiv = Math.min(settings.funfairVisitors ?? 3, div.length);
+    for (let i = 0; i < 30 && div.length >= 2; i++) {
+      const anchor = rng.weighted(div, W);
+      const near = div.filter((p) => p !== anchor).sort((x, y) => Math.abs(x.officialS - anchor.officialS) - Math.abs(y.officialS - anchor.officialS));
+      const pick = [anchor, ...near.slice(0, nDiv - 1 + (rng.chance(0.3) ? 1 : 0)).slice(0, nDiv - 1)];
+      const ts = pick.map((p) => p.officialS);
+      const lo = Math.min(...ts) - 40, hi = Math.max(...ts) + 40;
+      const rest = main.filter((p) => !pick.includes(p) && !p.diversions?.length && p.officialS >= lo && p.officialS <= hi);
+      for (const p of rng.shuffle(rest)) {
+        if (pick.length >= size) break;
+        if (isPBDay(p) && pick.some(isPBDay)) continue;
+        pick.push(p);
       }
-      if (pick.length < size) continue;
+      if (pick.length < size || pick.filter(isPBDay).length > 1) continue;
       const a = analyse(asField(pick));
       const arch = classify(a, false);
       const score = scoreField(pick, a, arch);

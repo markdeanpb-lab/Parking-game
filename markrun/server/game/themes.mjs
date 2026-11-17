@@ -15,19 +15,19 @@ export const THEMES = {
   band_mid: T('band_mid', 'The Middle-Pack Muddle', ['Not the quickest, not the slowest. Absolutely anyone\'s race.', 'Five honest, mid-table mornings. Somebody has to win it.'], { band: 'mid' }),
   band_slow: T('band_slow', 'The Plodders\' Plate', ['Saturday-morning legs, Friday-night choices. Gloriously human.', 'The steadier end of the archive. Lovely scenery, plenty of it.'], { band: 'slow' }),
   // data themes
-  winter: T('winter', 'Winter Warriors', ['Every one of these runs started at 5°C or colder. Gloves compulsory, dignity optional.', 'Frost on the grass, steam off the runners. Five cold-weather mornings.'],
+  winter: T('winter', 'Winter Warriors', ['Every one of these started at 5°C or colder. Gloves compulsory, dignity optional.', 'Frost on the grass, steam off the runners. Five cold-weather mornings.'],
     { pred: (f) => f.weather?.temp_c != null && f.weather.temp_c <= 5, windowS: 120 }),
   heat: T('heat', 'The Heatwave Handicap', ['Every one of these started at 15°C or warmer. Sun cream before shoelaces.', 'Five warm mornings. Somebody bring the ice lollies.'],
-    { pred: (f) => f.weather?.temp_c != null && f.weather.temp_c >= 15, windowS: 120 }),
-  block: T('block', 'The Marathon Block Stakes', ['All five were in serious training: a big long run in the fortnight, or a race countdown on. Engine or exhaust?', 'Long-run season. Every runner here had done 18 km or more in the previous fortnight, or was counting down to a big race.'],
+    { pred: (f) => f.weather?.temp_c != null && f.weather.temp_c >= 15, windowS: 120, sigmaX: 1.3 }),
+  block: T('block', 'The Marathon Block Stakes', ['All five were in serious training: big long runs or a race countdown. Engine or exhaust?', 'Long-run season. Big miles in every pair of legs. Who has the engine?'],
     { pred: (f) => !!f.training_block || (f.longest_run_14d?.km ?? 0) >= 18, windowS: 90 }),
-  taper: T('taper', 'The Taper Trophy', ['Every runner here had a race within ten days. Saving the legs, or sharpening them?', 'Big race looming for all five. Who\'s holding back?'],
-    { pred: (f) => !!f.race_upcoming && f.race_upcoming.days_after <= 10, windowS: 140 }),
+  taper: T('taper', 'The Taper Trophy', ['Every runner here had a race within ten days. Saving legs, or sharpening them?', 'Big race looming for all five. Who\'s holding back?'],
+    { pred: (f) => !!f.race_upcoming && f.race_upcoming.days_after <= 10, windowS: 140, sigmaX: 1.4 }),
   windy: T('windy', 'The Windy Miller Cup', ['A proper blow on every one of these mornings. Lean into it.', 'Five breezy Saturdays. The Hill has a headwind. Somehow.'],
     { pred: (f) => (f.weather?.wind_kmh ?? 0) >= 20 || (f.weather?.gust_kmh ?? 0) >= 38, windowS: 120 }),
-  rusty: T('rusty', 'The Rusty Hinge Handicap', ['Every one of these came after a quiet patch: a week off, or barely a jog. Who\'s oiled the hinges?', 'Five comeback mornings. Fresh legs, or forgotten legs?'],
-    { pred: (f) => (f.days_since_last_run ?? 0) >= 7 || (f.km_7d ?? 99) <= 6, windowS: 140 }),
-  funfair: T('funfair', 'The Funfair Stakes', ['The fair is in town, and it is VERY distracting. Expect detours.', 'Bank-holiday chaos: the course goes round the fairground. Hold on to your candyfloss.'], { funfair: true }),
+  rusty: T('rusty', 'The Rusty Hinge Handicap', ['All five came after a quiet patch. Who has oiled the hinges?', 'Five comeback mornings. Fresh legs, or forgotten legs?'],
+    { pred: (f) => (f.days_since_last_run ?? 0) >= 7 || (f.km_7d ?? 99) <= 6, windowS: 140, sigmaX: 1.6 }),
+  funfair: T('funfair', 'The Funfair Stakes', ['The fair is in town. Three of these five will be taking a detour.', 'Bank-holiday chaos: three of our runners get lured round the fairground.'], { funfair: true, sigmaX: 1.5 }),
   wildcard: T('wildcard', 'The Wildcard Handicap', ['One of these five was not exactly trying that morning. Read the clues.', 'A passenger lurks in this field. Spot the Sunday jogger.'], { wildcard: true }),
 };
 
@@ -47,8 +47,9 @@ export function chooseTheme({ rng, mem, roundNumber, settings = {}, data, availa
   }
   // band theme: never the fast band in round 1; avoid repeating the previous band
   const bands = ['fast', 'mid', 'slow'].filter((b) => !(roundNumber === 1 && b === 'fast'));
-  const recent = mem?.bands || [];
-  const b = rng.weighted(bands, (x) => (x === lastBand ? 0.1 : recent.includes(x) ? 0.6 : 1.2) * (x === 'slow' ? 1.1 : 1));
+  const recentBandThemes = (mem?.themes || []).filter((k) => k.startsWith('band_'));
+  const lastBandTheme = recentBandThemes.at(-1)?.slice(5);
+  const b = rng.weighted(bands, (x) => (x === lastBandTheme || x === lastBand ? 0.08 : recentBandThemes.slice(-3).includes(`band_${x}`) ? 0.5 : 1.2));
   return THEMES[`band_${b}`];
 }
 

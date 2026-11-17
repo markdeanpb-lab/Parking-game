@@ -67,8 +67,8 @@ const STRENGTH = { ahead_hill1: 0.25, ahead_2k: 0.25, ahead_4k: 0.3, behind_1k: 
   overtaker: 0.35, dead_last_1k: 0.08, open_slowest: 0.08, hill2_slowest: 0.05, big_fade: 0.08, last_km_slowest: 0.06 };
 export const tipStrength = (type) => STRENGTH[type] ?? 0.3;
 // how often each type is chosen (decisive types are rare; tuned with tools/simulate.mjs for a modest hot-tip edge)
-export const TYPE_WEIGHT = { hill1_first: 0.15, hill2_fastest: 0.15, open_fastest: 0.2, last_km_fastest: 0.1, top3_2k: 0.6, even_pacer: 1, overtaker: 0.5,
-  ahead_hill1: 1.2, ahead_2k: 1.2, ahead_4k: 0.3, behind_1k: 1, behind_hill2: 1, dead_last_1k: 1, hill2_slowest: 1, big_fade: 1, last_km_slowest: 0.6 };
+export const TYPE_WEIGHT = { hill1_first: 0.1, hill2_fastest: 0.1, open_fastest: 0.25, last_km_fastest: 0.05, top3_2k: 0.3, even_pacer: 0.8, overtaker: 0.6,
+  ahead_hill1: 0.7, ahead_2k: 1.4, ahead_4k: 0.15, behind_1k: 1.3, behind_hill2: 0.8, dead_last_1k: 0.8, hill2_slowest: 0.7, big_fade: 1, last_km_slowest: 0.4 };
 
 // Choose `counts[playerId]` hot tips per player: different runners per player where possible, mixed polarities.
 // marketProb: { runnerId: implied win probability }. Good-sounding tips lean towards runners the market already likes,

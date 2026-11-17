@@ -7,7 +7,9 @@ import { makeRng } from './rng.mjs';
 
 // ---------- props ----------
 // Base rate of "a funfair visitor in the field" in non-funfair rounds, measured with tools/simulate.mjs (prop.yesRate).
-export const FUNFAIR_BASE_RATE = 0.11;
+export const FUNFAIR_BASE_RATE = 0.10;
+// P(a funfair-goer wins The Funfair Stakes), measured with tools/simulate.mjs (props.funfairStakesVisitorWins).
+export const FUNFAIR_STAKES_VISITOR_WIN = 0.41;
 
 export function makeProps({ theme, perfs, ids, plan, data, settings = {} }) {
   const margin = settings.margin ?? MODEL_DEFAULTS.margin;
@@ -17,20 +19,9 @@ export function makeProps({ theme, perfs, ids, plan, data, settings = {} }) {
   };
   let prop;
   if (theme?.funfair) {
-    // Everyone visits the funfair in The Funfair Stakes, so the prop becomes "clear by more than 20 seconds?",
-    // priced from the OTHER diversion fields (out-of-fold), never from this one.
-    const div = data.main.filter((p) => p.diversions?.length);
-    const mine = new Set(perfs.map((p) => p.date));
-    let hit = 0, n = 0;
-    const combos = (arr, k, start = 0, acc = []) => (acc.length === k ? [acc] : arr.slice(start).flatMap((x, i) => combos(arr, k, start + i + 1, [...acc, x])));
-    for (const c of combos(div, Math.min(5, div.length))) {
-      if (c.every((p) => mine.has(p.date))) continue;
-      const ts = c.map((p) => p.officialS).sort((x, y) => x - y);
-      n++; if (ts[1] - ts[0] > 20) hit++;
-    }
-    const p = Math.min(0.85, Math.max(0.15, n ? (hit + 1) / (n + 2) : 0.5));
-    const ts = plan.runners.map((r) => r.officialS).sort((x, y) => x - y);
-    prop = mk('funfair', 'Funfair Stakes special: will the winner be clear by more than 20 seconds?', p, ts[1] - ts[0] > 20 ? 'yes' : 'no');
+    // The Funfair Stakes: three funfair-goers and two ordinary mornings. Priced from the measured base rate.
+    const visitors = new Set(plan.runners.filter((r) => r.diversions?.length).map((r) => r.id));
+    prop = mk('funfair', 'Will one of the funfair-goers win?', FUNFAIR_STAKES_VISITOR_WIN, visitors.has(plan.finishOrder[0]) ? 'yes' : 'no');
   } else {
     const any = perfs.some((p) => p.diversions?.length);
     prop = mk('funfair', 'Will anyone visit the funfair?', FUNFAIR_BASE_RATE, any ? 'yes' : 'no');
@@ -63,7 +54,7 @@ export function inPlayMarket(round) {
   }).sort((a, b) => b.d - a.d);
   // projected finish = halfway time x (1 + typical lap-two ratio); the rest is lap-two uncertainty
   const mus = rows.map((x) => (tStar + x.gapS) * (1 + ratio));
-  const probs = winProbs(mus, sd);
+  const probs = winProbs(mus, sd * 1.15).map((q) => Math.max(q, 0.035)); // cap the drift at about 25/1
   const margin = round.hidden?.settings?.margin ?? MODEL_DEFAULTS.margin;
   const odds = {};
   rows.forEach((x, i) => { const o = oddsFromProb(probs[i], margin); odds[x.runnerId] = { win: o.win, display: o.display }; });
@@ -76,20 +67,20 @@ export function inPlayMarket(round) {
 
 // ---------- bet reveal ----------
 const RV = {
-  rv_tiny: ['{name}: {stake} on {a}. A cautious toe in the water.', '{name} has risked a modest {stake} on {a}. The bookie yawns.', '{stake} on {a} from {name}. Mild interest, no more.', '{name}, {stake} on {a}. Loose change from the sofa cushions.'],
-  rv_mid: ['{name} has {stake} on {a} at {odds}.', '{name} puts {stake} on {a}. A proper bet, that.', '{a} carries {stake} of {name}\'s parkpounds.', '{name} goes {stake} on {a}. Reasonable. Suspiciously reasonable.'],
-  rv_fav: ['{name} is with the favourite, {a}. {stake} parkpounds.', '{name} backs the jolly: {stake} on {a}.', '{stake} on the favourite {a}, from {name}. Safety first.'],
-  rv_longshot: ['{name} has {stake} on {a}, the {odds} outsider! Somebody knows something. Or nothing.', 'Look at this: {name} on {a} at {odds}! Dreamer!', '{name} wants the shock: {stake} on {a} at {odds}.'],
-  rv_allin: ['{name} has put {pct} percent of the bankroll on {a}! Brave doesn\'t cover it.', '{pct} percent of everything {name} owns, on {a}. Hold onto something.', '{name}: {stake} on {a}. That\'s {pct} percent of the lot.'],
-  rv_biggest: ['And the big one: {name}, {stake} on {a}!', 'Saving the biggest till last: {name} has {stake} on {a}!', 'Here it is. The serious money. {name}, {stake}, {a}!'],
+  rv_tiny: ['{name} dips a toe: {stake} on {a}.', 'A nervous {stake} from {name} on {a}. Pam approves of the restraint.', '{name}: {stake} on {a}. Pocket money.', '{name}: {stake} on {a}. A cautious toe in the water.', '{name} has risked a modest {stake} on {a}. The bookie yawns.', '{stake} on {a} from {name}. Mild interest, no more.', '{name}, {stake} on {a}. Loose change from the sofa cushions.'],
+  rv_mid: ['{name} likes {a}. {stake} parkpounds of like.', '{stake} on {a} for {name}. Middle of the road. Very Volvo.', '{name} has {a} onside: {stake} at {odds}.', '{name} has {stake} on {a} at {odds}.', '{name} puts {stake} on {a}. A proper bet, that.', '{a} carries {stake} of {name}\'s parkpounds.', '{name} goes {stake} on {a}. Reasonable. Suspiciously reasonable.'],
+  rv_fav: ['{name} goes with the crowd: {a}, {stake}.', 'Favourite backer {name}: {stake} on {a}. Nobody tell the romantics.', '{name} is with the favourite, {a}. {stake} parkpounds.', '{name} backs the jolly: {stake} on {a}.', '{stake} on the favourite {a}, from {name}. Safety first.'],
+  rv_longshot: ['{name} is chasing a fairy tale: {stake} on {a} at {odds}.', '{odds} about {a}, and {name} is having some!', '{name} has {stake} on {a}, the {odds} outsider! Somebody knows something. Or nothing.', 'Look at this: {name} on {a} at {odds}! Dreamer!', '{name} wants the shock: {stake} on {a} at {odds}.'],
+  rv_allin: ['{name} has gone all in, nearly: {pct} percent on {a}!', 'Gulp. {name}, {pct} percent of the bankroll, {a}.', '{name} has put {pct} percent of the bankroll on {a}! Brave doesn\'t cover it.', '{pct} percent of everything {name} owns, on {a}. Hold onto something.', '{name}: {stake} on {a}. That\'s {pct} percent of the lot.'],
+  rv_biggest: ['The headline bet: {name}, {stake} on {a}. Deep breaths.', 'And topping the bill: {stake} from {name} on {a}!', 'And the big one: {name}, {stake} on {a}!', 'Saving the biggest till last: {name} has {stake} on {a}!', 'Here it is. The serious money. {name}, {stake}, {a}!'],
   rv_clash: ['They\'ve BOTH backed {a}! {name} joins {other}. Shared joy, or shared blame.', '{name} is on {a} as well! Same runner as {other}. How romantic. How risky.', 'Snap! {name} has {a} too. {other} won\'t be pleased to share.'],
   rv_oppose: ['{name} has {a} to beat {b}. {other} has the opposite! Pistols at dawn.', 'Direct opposition! {name} backs {a} over {b}, against {other}.', 'Head to head, sofa to sofa: {name} says {a}, {other} says {b}.'],
   rv_oppose_win: ['{name} has {b} to beat {a}. That\'s {other}\'s runner. Petty. Delicious.', '{name} is betting against {other}\'s pick: {b} to beat {a}.'],
-  rv_h2h: ['{name} has {a} to beat {b}, {stake} on it.', 'Side bet from {name}: {a} over {b}.', '{name} reckons {a} has the beating of {b}.'],
-  rv_prop_yes: ['{name} says yes: {stake} on "{prop}"', '{name} fancies a funfair moment. {stake} on yes.'],
-  rv_prop_no: ['{name} says no to "{prop}" {stake} on it.', '{name} doesn\'t believe in the funfair. {stake} on no.'],
+  rv_h2h: ['{name} has {a} over {b} in the head-to-head.', 'Grudge match money from {name}: {a} to beat {b}.', '{name} has {a} to beat {b}, {stake} on it.', 'Side bet from {name}: {a} over {b}.', '{name} reckons {a} has the beating of {b}.'],
+  rv_prop_yes: ['{name} says yes: {stake} on "{prop}"', '{name} goes yes on the side bet. {stake} parkpounds.'],
+  rv_prop_no: ['{name} says no to "{prop}" {stake} on it.', '{name} says no on the side bet. {stake} parkpounds of scepticism.'],
   rv_hot: ['Hmm. {name} looks very sure about {a}. Very sure.', '{name} is on {a}. Has somebody had a word in their ear?'],
-  rv_none: ['{name} hasn\'t bet a single parkpound. Wise. Cowardly, but wise.', 'Nothing at all from {name}. Saving it for later, apparently.', '{name} sits this one out. Arms folded.'],
+  rv_none: ['{name} keeps the wallet shut. Not a penny.', 'Zero from {name}. A spectator. A coward. A genius?', '{name} hasn\'t bet a single parkpound. Wise. Cowardly, but wise.', 'Nothing at all from {name}. Saving it for later, apparently.', '{name} sits this one out. Arms folded.'],
   bet_closed: ['That\'s the book closed! Let\'s go racing!', 'Bets are in! Runners to the line!', 'All the money is down. Here we go!', 'The betting window slams shut! Off we go!'],
 };
 const SPEAKER = { rv_tiny: 'pam', rv_mid: 'jeff', rv_fav: 'pam', rv_longshot: 'jeff', rv_allin: 'jeff', rv_biggest: 'jeff', rv_clash: 'jeff', rv_oppose: 'jeff', rv_oppose_win: 'pam', rv_h2h: 'pam', rv_prop_yes: 'jeff', rv_prop_no: 'pam', rv_hot: 'pam', rv_none: 'pam', bet_closed: 'jeff' };

@@ -46,10 +46,10 @@ const B = {
     'Thrilling. Truly. Let\'s get on with it.',
   ],
   theme_intro: [
-    'This week\'s theme: {theme}! {blurb}',
-    'Tonight\'s card is {theme}. {blurb}',
-    'It\'s a themed race, Pam! {theme}! {blurb}',
-    'Our theme this round: {theme}. {blurb}',
+    'This week\'s theme: {theme}!',
+    'Tonight\'s card is a themed one: {theme}!',
+    'It\'s a themed race, Pam! {theme}!',
+    'Our theme this round: {theme}!',
   ],
   finale_intro: [
     'It\'s the FINALE! Double payouts on everything! Every bet counts twice!',
@@ -577,6 +577,27 @@ const B = {
     'Second helping of candyfloss. Of course.',
     'The dodgems called. He answered.',
   ],
+  diversion_mass1: [
+    'They\'re going to the funfair in droves! Look at that!',
+    'It\'s a stampede! Off they go towards the fairground!',
+    'Mass desertion! Everybody loves a hook-a-duck!',
+  ],
+  diversion_mass2: [
+    'And they\'re off to the funfair AGAIN! Second lap, same chaos!',
+    'Lap two, and they\'re back at the waltzers!',
+    'Here we go again! Heading for the candyfloss!',
+  ],
+  diversion_mass_pam: [
+    'This is what happens when you schedule a race next to a fair.',
+    'I\'ve lost half the field to the dodgems.',
+    'Somebody\'s going to come back with a giant teddy. Mark my words.',
+    'The marshals have given up and joined the queue.',
+  ],
+  rejoin_mass: [
+    'And they\'re back! Sticky, but back!',
+    'The field returns from the funfair! Somebody has a goldfish!',
+    'Back on the course they come, smelling of doughnuts!',
+  ],
   rejoin: [
     'And {a} rejoins the course, clutching a goldfish!',
     '{a} is back on the course! Smelling faintly of doughnuts!',
@@ -677,7 +698,10 @@ export const speechSeconds = (text) => countWords(text) * 0.38 + 0.7;
 export function introLines(rng, mem, { title, wildcard, theme, finale }) {
   const out = [...line(rng, mem, 'intro_jeff', 'jeff', { title })];
   if (finale) out.push(...line(rng, mem, 'finale_intro', 'jeff', {}));
-  if (theme && !theme.key.startsWith('band_') && theme.key !== 'wildcard') out.push(...line(rng, mem, 'theme_intro', 'jeff', { theme: theme.label, blurb: theme.blurb }));
+  if (theme && !theme.key.startsWith('band_') && theme.key !== 'wildcard') {
+    out.push(...line(rng, mem, 'theme_intro', 'jeff', { theme: theme.label }));
+    out.push({ speaker: 'pam', text: theme.blurb });
+  }
   out.push(...line(rng, mem, 'intro_pam', 'pam', {}));
   if (wildcard) out.push(...line(rng, mem, 'wildcard_intro', 'jeff', {}));
   return out;
@@ -706,6 +730,7 @@ export function raceCommentary(ctx) {
     const lead = runnersAt(broadcastToRace(plan.timeMap, tEarly))[0];
     add(tEarly, line(rng, mem, 'early_leader', 'jeff', { a: nm(lead) }), 2, null, 6);
   }
+  const massLaps = new Set([1, 2].filter((lap) => ev.filter((x) => x.type === 'diversion' && x.lap === lap).length >= 3));
   let lastLeadT = -99, swapSaid = false;
   const calledBack = new Set();
   const cbOnce = (id, dir) => { if (calledBack.has(id)) return null; const c = callback(ctx, id, dir); if (c) calledBack.add(id); return c; };
@@ -757,6 +782,13 @@ export function raceCommentary(ctx) {
         add(t, line(rng, mem, 'finish_last', 'jeff', { a: nm(e.who) }), 2, e, 4);
         add(t + 4.5, line(rng, mem, 'finish_last_pam', 'pam', {}), 3, e, 4);
       }
+    } else if (e.type === 'diversion' && massLaps.has(e.lap)) {
+      const lapEv = ev.filter((x) => x.type === 'diversion' && x.lap === e.lap);
+      if (lapEv[0] !== e) continue; // one mass call per lap
+      add(t, line(rng, mem, `diversion_mass${e.lap === 1 ? 1 : 2}`, 'jeff', {}), 1, e, 2);
+      add(t + 5, line(rng, mem, 'diversion_mass_pam', 'pam', {}), 2, e, 3);
+      const end = Math.max(...lapEv.map((x) => x.endBroadcastS ?? x.broadcastS + 8));
+      add(end, line(rng, mem, 'rejoin_mass', 'jeff', {}), 2, e, 4);
     } else if (e.type === 'diversion') {
       const g = e.lap === 1 ? 'diversion1' : 'diversion2';
       add(t, line(rng, mem, g, 'jeff', { a: nm(e.who) }), e.lap === 1 ? 1 : 2, e, 2);

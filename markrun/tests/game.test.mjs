@@ -3,7 +3,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { historyDb } from '../server/db.mjs';
-import { createRound, settleRound, betReactionLines, normalizeSettings } from '../server/game/round.mjs';
+import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives } from '../server/game/round.mjs';
+import { tipIsTrue } from '../server/game/hottips.mjs';
+import { skeleton } from '../server/game/clues.mjs';
+import { isPBDay } from '../server/game/select.mjs';
+import { revealCard } from '../server/game/settle.mjs';
 import { checkText, checkRound, leakContext } from '../server/game/leak.mjs';
 import { oddsFromProb, LADDER, winProbs } from '../server/game/model.mjs';
 import { loadData } from '../server/game/data.mjs';
@@ -98,12 +102,14 @@ test('no leaks in 2000 generated rounds (clues, names, intros, odds, matchups)',
   for (let s = 0; rounds < 2000; s++) {
     const sess = freshSess();
     for (let k = 1; k <= 8 && rounds < 2000; k++, rounds++) {
-      const r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: `leak${s}`, selectTries: 10, wildcardRate: 0.3 }, rng: 9000 + s * 10 + k });
-      const ctx = { ...leakContext(Object.values(r.hidden.perfs)), raceWords: loadData(hist).raceWords };
+      const r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: `leak${s}`, selectTries: 10, wildcardRate: 0.3, funfairRate: 0.3, alternatives: 2 }, rng: 9000 + s * 10 + k });
+      const ctx = { ...leakContext(Object.values(r.hidden.perfs)), raceWords: loadData(hist).raceWords, nicknames: r.public.runners.map((x) => x.nickname) };
       if (r.hidden.leaks.length) problems.push(...r.hidden.leaks.map((l) => JSON.stringify(l)));
       problems.push(...checkRound(r, ctx));
       // the betting-phase commentary must be clean too
       problems.push(...betReactionLines(r, { p1: [{ type: 'win', runnerId: 'r1', stake: 300 }], p2: [] }, P2).flatMap((l) => checkText(l.text, ctx)));
+      problems.push(...betRevealOrder(r, { p1: [{ type: 'win', runnerId: 'r2', stake: 300 }, { type: 'prop', propId: 'funfair', pick: 'yes', stake: 10 }], p2: [{ type: 'h2h', matchupId: 'm1', pick: r.public.matchups[0].a, stake: 20 }] }, { p1: 1000, p2: 1000 }, P2)
+        .flatMap((x) => checkText(x.line.text, ctx, { allowFunfair: true })));
       if (problems.length > 5) break;
     }
     if (problems.length > 5) break;
@@ -214,4 +220,116 @@ test('session variety: no performance reused within an 8-round session; usage is
 test('settings defaults', () => {
   const s = normalizeSettings({});
   assert.equal(s.startingBankroll, 1000); assert.equal(s.rounds, 8); assert.equal(s.drinks, false);
+});
+
+test('hot tips: one per player (two for the non-runner), always true, never priced', () => {
+  for (let s = 1; s <= 120; s++) {
+    const runner = s % 2 === 0 ? 'p1' : null;
+    const r = mk({ rng: 3000 + s, settings: { runnerPlayerId: runner } });
+    const plan = r.racePlan;
+    for (const p of P2) {
+      const hot = r.private[p.id].filter((c) => c.tier === 'hot');
+      const expect = runner && p.id !== runner ? 2 : 1;
+      assert.equal(hot.length, expect, `player ${p.id} hot tips`);
+      assert.ok(r.private[p.id].every((c) => c.tier === 'hot' || c.tier === 'gossip'));
+      assert.equal(new Set(hot.map((c) => c.runnerId)).size, hot.length, 'one hot tip per runner per player');
+    }
+    const tipped = Object.values(r.hidden.hotTips).flat();
+    if (tipped.length <= 5) assert.equal(new Set(tipped.map((t) => t.runnerId)).size, tipped.length, 'different runners across players');
+    for (const [pid, list] of Object.entries(r.hidden.hotTips)) for (const t of list) {
+      assert.ok(tipIsTrue(plan.runners, { events: plan.events }, t), `false tip ${t.type}`);
+      const c = r.hidden.clues[t.runnerId].private[pid];
+      assert.equal(c.tier, 'hot'); assert.deepEqual(c.features, []); // the bookie cannot price it
+      assert.ok(!/\{other\}/.test(c.text));
+    }
+  }
+});
+
+test('no clue wording repeated within a round; styles are mixed', () => {
+  const tot = { hedge: 0, fact: 0, tipster: 0 };
+  for (let s = 1; s <= 60; s++) {
+    const r = mk({ rng: 4000 + s });
+    const texts = Object.values(r.hidden.clues).flatMap((c) => [c.public, ...Object.values(c.private)]).filter((c) => c.tier !== 'hot');
+    const sk = texts.map((c) => c.style === 'tipster' ? `${skeleton(c.text.split(/ (Jeff|Pam)/)[0])}|tip` : skeleton(c.text));
+    assert.equal(new Set(sk).size, sk.length, `repeat in round: ${sk.join(' / ')}`);
+    for (const c of texts) tot[c.style] = (tot[c.style] || 0) + 1;
+  }
+  const n = tot.hedge + tot.fact + tot.tipster;
+  for (const k of ['hedge', 'fact', 'tipster']) assert.ok(tot[k] / n > 0.22 && tot[k] / n < 0.45, `${k} share ${tot[k] / n}`);
+});
+
+test('themes, bands and PB caps', () => {
+  for (let s = 0; s < 6; s++) {
+    const sess = freshSess();
+    for (let k = 1; k <= 8; k++) {
+      const r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: `th${s}`, selectTries: 30 }, rng: 6000 + s * 10 + k });
+      assert.ok(r.public.theme?.key && r.public.theme.label && r.public.theme.blurb);
+      assert.ok(Object.values(r.hidden.perfs).filter(isPBDay).length <= 1, 'at most one PB-day run');
+      if (k === 1) assert.ok(r.hidden.runners.every((x) => x.officialS >= 1185), 'round 1 never draws from the fastest band');
+      assert.equal(r.public.payoutMultiplier, k === 8 ? 2 : 1);
+      assert.ok(!('archetype' in r.public));
+    }
+  }
+});
+
+test('prop, in-play and multiplier settlement', () => {
+  const sess = freshSess();
+  let r;
+  for (let k = 1; k <= 8; k++) r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: 'mult', rounds: 8, selectTries: 20 }, rng: 7100 + k });
+  assert.equal(r.public.payoutMultiplier, 2);
+  const order = r.racePlan.finishOrder;
+  const win = r.public.runners.find((x) => x.id === order[0]);
+  const prop = r.public.props[0];
+  const outcome = r.hidden.propOutcomes[prop.id];
+  const ip = inPlayMarket(r);
+  assert.equal(ip.atM, 2500);
+  assert.deepEqual(ip.standings.map((x) => x.place), [1, 2, 3, 4, 5]);
+  assert.equal(ip.standings[0].gapS, 0);
+  assert.ok(ip.standings.every((x, i) => i === 0 || x.gapS >= ip.standings[i - 1].gapS));
+  const book = Object.values(ip.odds).reduce((s2, o) => s2 + 1 / o.win, 0);
+  assert.ok(book > 0.85 && book < 1.15, `in-play book ${book}`);
+  const bets = { p1: [{ type: 'win', runnerId: win.id, stake: 100 }, { type: 'prop', propId: prop.id, pick: outcome, stake: 50 }],
+    p2: [{ type: 'inplay', runnerId: order[0], stake: 40, odds: 999 }, { type: 'prop', propId: prop.id, pick: outcome === 'yes' ? 'no' : 'yes', stake: 30 }] };
+  const res = settleRound(r, bets, { p1: 1000, p2: 1000 });
+  const dbl = (stake, dec) => Math.round(stake * (1 + 2 * (dec - 1)));
+  const [w, pr] = res.payouts.p1.bets;
+  if (!res.deadHeat) assert.equal(w.returned, dbl(100, win.odds.win));
+  assert.equal(pr.returned, dbl(50, outcome === 'yes' ? prop.odds.yes : prop.odds.no));
+  const [ipb, pr2] = res.payouts.p2.bets;
+  if (!res.deadHeat) assert.equal(ipb.returned, dbl(40, ip.odds[order[0]].win), 'in-play uses the market price, not the client claim');
+  assert.equal(pr2.returned, 0);
+  assert.equal(res.payoutMultiplier, 2);
+});
+
+test('bet reveal order, clash lines, superlatives, highlights and headlines', () => {
+  const r = mk({ rng: 81 });
+  const [a, b] = r.public.runners;
+  const m = r.public.matchups[0];
+  const bets = { p1: [{ type: 'win', runnerId: a.id, stake: 20 }, { type: 'h2h', matchupId: m.id, pick: m.a, stake: 30 }], p2: [{ type: 'win', runnerId: a.id, stake: 600 }, { type: 'h2h', matchupId: m.id, pick: m.b, stake: 40 }] };
+  const seq = betRevealOrder(r, bets, { p1: 1000, p2: 1000 }, P2);
+  assert.equal(seq.length, 4);
+  const fr = seq.map((x) => x.bet.stake / 1000);
+  assert.deepEqual(fr, [...fr].sort((x, y) => x - y), 'smallest to largest relative stake');
+  const all = seq.map((x) => x.line.text).join(' ');
+  assert.match(all, /both|too|Snap|as well/i, 'clash named');
+  assert.match(all, /opposite|opposition|sofa to sofa|against/i, 'h2h opposition named');
+  for (const x of seq) assert.ok(['jeff', 'pam'].includes(x.line.speaker));
+  const res = settleRound(r, bets, { p1: 1000, p2: 1000 });
+  assert.ok(res.clueReview.filter((c) => c.highlight).length <= 3);
+  for (const rv of res.reveal) assert.ok(rv.headline.includes(rv.dateText) && rv.headline.includes(rv.timeText));
+  const sup = sessionSuperlatives([{ number: 1, round: { public: r.public, hidden: r.hidden }, bets, results: res }], P2.map((p) => ({ ...p, bankroll: res.payouts[p.id].bankroll })));
+  assert.ok(sup.length >= 3 && sup.every((x) => x.title && x.text));
+  assert.ok(sup.some((x) => x.title === 'The Real Mark of the Night'));
+});
+
+test('reveal cards: no repeated jokes on one screen; lying heart-rate monitors are a joke, not a stat', () => {
+  const data = loadData(hist);
+  const used = new Set();
+  const pbs = data.perfs.filter((p) => p.result.pbFlag === 'PB').slice(0, 5);
+  const facts = pbs.map((p) => revealCard('r', p, used).funFacts).flat();
+  assert.equal(new Set(facts).size, facts.length);
+  const fake = { ...data.byDate.get('2024-10-05'), hr: Array(201).fill(158) };
+  const card = revealCard('r', fake, new Set());
+  assert.ok(card.funFacts.some((f) => /lying watch/.test(f)));
+  assert.ok(!card.funFacts.some((f) => /peaked at/.test(f)));
 });

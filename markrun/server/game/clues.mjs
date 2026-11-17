@@ -251,7 +251,8 @@ G.day_before = ({ f, rng }) => {
   const C = (text, said, interest, hint = 0) => [{ cat: 'day_before', family: 'day', features: ['daybefore'], text, said, interest, hint, factKeys: ['day_before'], group: 'daybefore' }];
   if (race) {
     const t = raceType(race.km, race.name);
-    return C(rng.pick([`Raced ${aOrAn(t)} the day before. Warmed up, or worn out?`, `Squeezed in ${aOrAn(t)}, as a race, the day before. Glutton for punishment, or secret weapon?`, `The day before, he only went and raced ${aOrAn(t)}. Ambitious double, or idiotic double?`]), `raced ${aOrAn(t)} the day before`, 0.95, 15);
+    const ra = t === 'mile race' ? 'a mile' : aOrAn(t);
+    return C(rng.pick([`Raced ${ra} the day before. Warmed up, or worn out?`, `Squeezed in ${aOrAn(t)}, as a race, the day before. Glutton for punishment, or secret weapon?`, `The day before, he only went and raced ${ra}. Ambitious double, or idiotic double?`]), `raced ${ra} the day before`, 0.95, 15);
   }
   if (runKm >= 7) return C(fill(rng.pick(['Ran {k} km the day before. Bold. Very bold.', '{ak} run the day before. Loosening up or wearing down?', 'Knocked out {k} km the day before parkrun. Who does that? Him, apparently.']), { k: km(runKm), ak: cap(aKm(km(runKm))) }), `ran ${km(runKm)} kilometres the day before`, 0.8, 5);
   if (runKm > 0) return C(fill(rng.pick(['A little {k} km shake-out run the day before. Very professional. Very smug.', 'Jogged {k} km the day before. Legs primed, or legs pre-cooked?']), { k: km(runKm) }), `did a little shake-out run the day before`, 0.5);
@@ -395,8 +396,8 @@ const OPINIONS = {
     pos: ['All those miles. He\'ll fly round.', 'Engine like a diesel lorry. Lump on.', 'That\'s a man in form. Easy money.', 'Proper graft in the bank. He\'s the one.', 'Fit as a flea. Back him.', 'The work is done. Now he collects.'],
     neg: ['Overcooked. He\'ll be walking the Hill.', 'Legs like lead. Lay him.', 'Not enough in the tank. Swerve.', 'Tired as a Monday. No chance.', 'Undercooked. Pass.', 'Wrong side of the training plan. Avoid.'] },
   form: {
-    pos: ['Form is temporary, class is permanent. Back him.', 'On a roll. Don\'t fight it.', 'He\'s the one they all have to beat.', 'Momentum is everything. He\'s got it.'],
-    neg: ['Form says no. I say no.', 'Off the boil. Avoid.', 'The wheels are wobbling. Steer clear.', 'Bad form sticks. Like chewing gum.'] },
+    pos: ['Class is permanent. Back him.', 'Bounce-back time. Back him.', 'He\'s the one they all have to beat.', 'Read the form however you like. I like him.'],
+    neg: ['Peaked too soon. Sell.', 'Due a bad one. Mark my words.', 'Can\'t keep it up. Lay him.', 'Form is a liar. Swerve.'] },
   prep: {
     pos: ['Perfect preparation. He\'s ready.', 'Fresh as a daisy. He\'ll go well.', 'Smart prep. Clever lad.', 'Rested and raring. Lump on.'],
     neg: ['Shocking preparation. Rusty as a gate.', 'Wrong prep. He\'ll pay for it on the Hill.', 'Did the wrong thing beforehand. Dead legs.', 'Amateur hour. No thanks.'] },
@@ -407,8 +408,8 @@ const OPINIONS = {
     pos: ['Race sharp. Peaking nicely. Back him.', 'Peaking at the right time.', 'Taper legs. Lethal.', 'Big-race fitness. Watch out.'],
     neg: ['Saving himself for the big one. Ignore.', 'Legs still in the last race. Avoid.', 'Mind\'s elsewhere. On the big race.', 'He\'ll be jogging it. Trust me.'] },
   cross: {
-    pos: ['Cross-training! Strong as an ox.', 'All-round athlete. Dangerous.', 'The bike gives him an engine.'],
-    neg: ['Should\'ve been running, not pedalling.', 'Jack of all trades. Master of none.', 'Wrong sport, mate.'] },
+    pos: ['Cross-training! Strong as an ox.', 'All-round athlete. Dangerous.', 'Fitness is fitness. Back him.'],
+    neg: ['Should\'ve been running instead.', 'Jack of all trades. Master of none.', 'Wrong sport, mate.'] },
 };
 const VOICE = {
   jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker of the day:', 'Jeff is all over this one:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff has gone off him:'] },

@@ -144,7 +144,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const counts = Object.fromEntries(pids.map((pid) => [pid, runnerPid && pid !== runnerPid ? 2 : 1]));
   const preMus = perfs.map((p, i) => predict(model, p.date, assigned[ids[i]].map(({ slot, clue }) => ({ features: clue.features, weight: slot === 0 ? 1 : S.privateWeight }))));
   const marketProb = Object.fromEntries(winProbs(preMus, S.sigma).map((q, i) => [ids[i], q]));
-  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, favourBias: S.tipFavourBias ?? 2.5, positiveShare: S.tipPositiveShare ?? 0.55 });
+  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, favourBias: S.tipFavourBias ?? 3.5, positiveShare: S.tipPositiveShare ?? 0.42 });
   for (const [pid, list] of Object.entries(tips)) {
     for (const t of list) {
       const old = clues[t.runnerId].private[pid];
@@ -157,7 +157,9 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const visible = (id) => [{ features: clues[id].public.features, weight: 1 },
     ...Object.values(clues[id].private).filter((c) => c.tier !== 'hot').map((c) => ({ features: c.features, weight: S.privateWeight }))];
   const mus = perfs.map((p, i) => predict(model, p.date, visible(ids[i])));
-  const probs = winProbs(mus, S.sigma);
+  // The Funfair Stakes mixes very different mornings: the bookie (who knows the theme) prices it with extra uncertainty.
+  const sigma = S.sigma * (theme.sigmaX ?? 1); // themes the bookie knows are unpredictable get wider prices
+  const probs = winProbs(mus, sigma);
   const odds = probs.map((p) => oddsFromProb(p, S.margin));
 
   // 6. characters
@@ -179,7 +181,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   }));
 
   // 7. head-to-heads where the price and the clues disagree; prop bet; multiplier
-  const matchups = pickMatchups(R, ids, mus, clues, S);
+  const matchups = pickMatchups(R, ids, mus, clues, { ...S, sigma });
   const { props, outcomes: propOutcomes } = makeProps({ theme, perfs, ids, plan, data, settings: S });
   const payoutMultiplier = roundNumber === S.rounds ? 2 : 1;
 
@@ -219,6 +221,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   };
 
   // 9. final leak sweep over everything pre-race (belt and braces)
+  ctx.nicknames = runners.map((r) => r.nickname);
   const problems = checkRound(round, ctx);
   if (problems.length) round.hidden.leaks.push(...problems.map((p) => ({ payload: p })));
 

@@ -93,6 +93,7 @@ for (let s = 0; s < SESSIONS; s++) {
         // "sensible": back a good-sounding tipped runner; on a bad-sounding tip, back the favourite unless that's the tipped one
         const pick = t.polarity > 0 ? t.runnerId : (fav.id === t.runnerId ? sorted[1].id : fav.id);
         win('hotTipSensible', pick);
+        if (args.types) win(`type_${t.type}`, pick);
         if (t.polarity > 0) win('hotTipPositiveOnly', t.runnerId);
         else win('hotTipNegative_favExcl', pick);
       }
@@ -137,7 +138,7 @@ const report = {
   calibration: { logLoss: (S.logLoss / N).toFixed(3), uniform: (S.logLossU / N).toFixed(3) },
   h2h: { favouriteWins: pct(S.h2hFavWins / S.h2h), underdogDecimalMedian: q(S.h2hUnder, 0.5) },
   halfwayMarket: { leaderWins: pct(S.ipLeaderWins / S.ip), logLoss: (S.ipLogLoss / S.ip).toFixed(3) },
-  props: { funfairYesRate_nonFunfairRounds: pct(S.propYesNon / Math.max(1, S.propNon)), clearBy20s_funfairRounds: `${S.propYesFun}/${S.propFun}` },
+  props: { funfairYesRate_nonFunfairRounds: pct(S.propYesNon / Math.max(1, S.propNon)), funfairStakesVisitorWins: `${S.propYesFun}/${S.propFun}` },
   strategyROI_100perBet: roi,
   themes: Object.fromEntries(Object.entries(S.themes).map(([k, v]) => [k, pct(v / N)])),
   round1Bands: S.round1Bands, consecutiveBandThemeRepeats: S.bandRepeats, maxPBDaysInAField: S.pbMax,

@@ -23,14 +23,15 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'markrun-e2e-'));
 const RESTART_AFTER = Number(arg('restart-after', 0));
-const env = { ...process.env, PORT: String(arg('port', RESTART_AFTER ? 18790 : 0)), MARKRUN_SESSION_DB: path.join(tmp, 'session.db'), MARKRUN_HOST: '127.0.0.1' };
+const env = { ...process.env, PORT: String(arg('port', RESTART_AFTER ? 18790 : 0)), MARKRUN_SESSION_DB: path.join(tmp, 'session.db'), MARKRUN_HOST: '127.0.0.1', MARKRUN_MARKET_MS: process.env.MARKRUN_MARKET_MS || '20000' };
 if (SOURCE === 'fixture') env.MARKRUN_ROUND_SOURCE = 'fixture';
-let srv, srvOut = '';
+let srv, srvOut = '', stopping = false;
 async function startServer(fresh) {
   srvOut = '';
   srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.mjs', ...(fresh ? ['--fresh'] : [])], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   srv.stdout.on('data', (d) => { srvOut += d; });
   srv.stderr.on('data', (d) => { srvOut += d; });
+  srv.on('exit', (code, sig) => { if (!stopping) console.log(`  [host exited code=${code} signal=${sig}]`); });
   return new Promise((res, rej) => {
     const t = setTimeout(() => rej(new Error(`server did not start:\n${srvOut}`)), 15000);
     const iv = setInterval(() => { const m = srvOut.match(/MARKRUN_READY port=(\d+)/); if (m) { clearTimeout(t); clearInterval(iv); res(Number(m[1])); } }, 50);
@@ -69,7 +70,7 @@ async function ctx(opts, label) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${label} console: ${m.text()}`); });
   return page;
 }
-const shot = async (page, name) => { try { await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); console.log('  shot', name); } catch (e) { console.log('  shot FAILED (slow headless GPU?)', name, e.message.split('\n')[0]); } };
+const shot = async (page, name) => { const t0 = Date.now(); try { await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); console.log('  shot', name, `${Date.now() - t0}ms`); } catch (e) { console.log('  shot FAILED (slow headless GPU?)', name, e.message.split('\n')[0]); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let ok = false;
@@ -194,16 +195,6 @@ try {
     if (round === 1) { await shot(tv, '15-tv-reveal'); await shot(pb, '16-phoneB-revealed'); }
     await waitPhase('RACE', 60000);
     await pa.waitForSelector('.react-grid');
-    await sleep(1500);
-    if (round === 1) {
-      await shot(pa, '17-phoneA-race');
-      for (const e of ['😱', '🔥', '😂']) { await pa.click(`[data-react="${e}"]`); await sleep(280); }
-      await pb.click('[data-react="🍺"]');
-      await sleep(500);
-      await shot(tv, '18-tv-race');
-      await sleep(Math.max(1500, 40000 / SPEED));
-      await shot(tv, '19-tv-race-later');
-    }
     // HALFWAY MARKET: both phones get the sheet; A bets on the leader, B on the 2nd
     {
       const t0 = Date.now();
@@ -214,20 +205,32 @@ try {
         await sleep(200);
       }
       if (opened) {
-        if (round === 1) { await sleep(400); await shot(pa, '19b-phoneA-market'); await shot(tv, '19c-tv-market'); }
-        await pa.click('[data-ms="100"]').catch(() => {});
-        await pa.click('#modal .mkr:not([disabled])');
+        if (round === 1) { await sleep(300); await shot(pa, '19b-phoneA-market'); }
+        await pa.click('[data-ms="100"]', { timeout: 3000 }).catch(() => {});
+        await pa.click('#modal .mkr:not([disabled])', { timeout: 5000 });
         const pbRow = await pb.$$('#modal .mkr:not([disabled])');
-        if (pbRow[1]) await pbRow[1].click();
-        await pa.waitForFunction(() => document.querySelector('#modal .done'), null, { timeout: 8000 });
+        if (pbRow[1]) await pbRow[1].click({ timeout: 5000 });
+        if (round === 1) await shot(tv, '19c-tv-market');
+        await pa.waitForFunction(() => document.querySelector('#modal .done') || document.body.innerText.includes('(halfway)'), null, { timeout: 15000 });
         if (round === 1) { await shot(pa, '19d-phoneA-market-placed'); await sleep(300); await shot(tv, '19e-tv-market-bets'); }
         console.log(`  round ${round}: halfway (inplay) bets placed`);
         inplayPlaced++;
         await sleep(1500);
+        await pa.waitForFunction(() => !document.querySelector('#modal .market'), null, { timeout: 30000 });
         if (round === 1) await shot(pa, '19f-phoneA-live');
       } else console.log(`  round ${round}: no halfway market (game module has no inPlayMarket yet?)`);
     }
-    await waitPhase('RESULTS', 400000);
+    if (round === 1 && (await health()).phase === 'RACE') {
+      await shot(pa, '17-phoneA-race');
+      if ((await health()).phase === 'RACE') {
+        for (const e of ['😱', '🔥', '😂']) { await pa.click(`[data-react="${e}"]`, { timeout: 3000 }).catch(() => {}); await sleep(250); }
+        await pb.click('[data-react="🍺"]', { timeout: 3000 }).catch(() => {});
+        await sleep(400);
+        await shot(tv, '18-tv-race');
+      }
+    }
+    const atRes = await waitPhase(['RESULTS', 'SCOREBOARD'], 400000);
+    if (atRes.phase !== 'RESULTS') console.log('  (results already over by the time screenshots finished — slow headless GPU)');
     const stages = ['order', 'reveal', 'clues', 'payouts', 'awards'];
     for (let i = 0; i < stages.length; i++) {
       const t0 = Date.now();
@@ -287,6 +290,7 @@ try {
   console.error('--- server output ---\n' + srvOut.slice(-4000));
 } finally {
   await browser.close();
+  stopping = true;
   srv.kill('SIGTERM');
 }
 if (external.length) { console.error('EXTERNAL REQUESTS ATTEMPTED:\n  ' + external.join('\n  ')); ok = false; }

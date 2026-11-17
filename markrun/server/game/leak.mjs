@@ -45,7 +45,9 @@ export function checkText(text, ctx = {}, opts = {}) {
     for (const p of pats) if (new RegExp(p, 'i').test(text)) out.push(`official time ${m}:${ss}`);
   }
   for (const e of ctx.eventNumbers || []) if (e >= 100 && new RegExp(`\\b${e}\\b`).test(text)) out.push(`event number ${e}`);
-  const nt = norm(text);
+  // nicknames of this round's runners may contain London place names (The Hackney Hurricane); they are not race names
+  let nt = norm(text);
+  for (const n of ctx.nicknames || []) nt = nt.split(norm(n)).join(' ');
   for (const t of ctx.titles || []) { const n = norm(t); if (n.length >= 6 && nt.includes(n)) out.push(`strava title "${t}"`); }
   for (const d of ctx.descriptions || []) {
     const w = norm(d).split(' ');
