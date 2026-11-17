@@ -12,7 +12,7 @@ export const FUNFAIR_BASE_RATE = 0.10;
 export const FUNFAIR_STAKES_VISITOR_WIN = 0.41;
 
 // Base rates measured with tools/simulate.mjs (block "props"); constants, so a price never depends on this round's result.
-export const PROP_BASE = { photo: 0.2, latelead: 0.3, funfair_open: FUNFAIR_BASE_RATE };
+export const PROP_BASE = { photo: 0.2, latelead: 0.37, funfair_open: 0.18 };
 
 // At most one cheap side bet per round, and only where it makes sense:
 //  - The Funfair Stakes: "Will one of the funfair-goers win?"
@@ -92,10 +92,11 @@ const RV = {
   rv_prop_yes: ['{name} says yes: {stake} on "{prop}"', '{name} goes yes on the side bet. {stake} parkpounds.'],
   rv_prop_no: ['{name} says no to "{prop}" {stake} on it.', '{name} says no on the side bet. {stake} parkpounds of scepticism.'],
   rv_hot: ['Hmm. {name} looks very sure about {a}. Very sure.', '{name} is on {a}. Has somebody had a word in their ear?'],
+  rv_special: ['Underdog Special! {name} boosts {a}: {stake} at souped-up odds!', '{name} plays the Underdog Special: {stake} on {a}, winnings times one and a half!'],
   rv_none: ['{name} keeps the wallet shut. Not a penny.', 'Zero from {name}. A spectator. A coward. A genius?', '{name} hasn\'t bet a single parkpound. Wise. Cowardly, but wise.', 'Nothing at all from {name}. Saving it for later, apparently.', '{name} sits this one out. Arms folded.'],
   bet_closed: ['That\'s the book closed! Let\'s go racing!', 'Bets are in! Runners to the line!', 'All the money is down. Here we go!', 'The betting window slams shut! Off we go!'],
 };
-const SPEAKER = { rv_tiny: 'pam', rv_mid: 'jeff', rv_fav: 'pam', rv_longshot: 'jeff', rv_allin: 'jeff', rv_biggest: 'jeff', rv_clash: 'jeff', rv_oppose: 'jeff', rv_oppose_win: 'pam', rv_h2h: 'pam', rv_prop_yes: 'jeff', rv_prop_no: 'pam', rv_hot: 'pam', rv_none: 'pam', bet_closed: 'jeff' };
+const SPEAKER = { rv_special: 'jeff', rv_tiny: 'pam', rv_mid: 'jeff', rv_fav: 'pam', rv_longshot: 'jeff', rv_allin: 'jeff', rv_biggest: 'jeff', rv_clash: 'jeff', rv_oppose: 'jeff', rv_oppose_win: 'pam', rv_h2h: 'pam', rv_prop_yes: 'jeff', rv_prop_no: 'pam', rv_hot: 'pam', rv_none: 'pam', bet_closed: 'jeff' };
 
 export function betRevealOrder(round, betsByPlayer, bankrolls, players, { rng = makeRng(), mem = null, closing = false } = {}) {
   const pub = round.public;
@@ -119,13 +120,14 @@ export function betRevealOrder(round, betsByPlayer, bankrolls, players, { rng = 
     let g;
     const b = it.bet;
     if (!b) g = 'rv_none';
-    else if (b.type === 'win' || b.type === 'inplay') {
+    else if (b.type === 'win' || b.type === 'inplay' || b.type === 'special') {
       const r = R.get(b.runnerId);
       Object.assign(v, { a: r?.nickname, stake: b.stake, odds: spokenOdds(r?.odds?.display || 'evens'), pct: Math.round(it.frac * 100) });
       const others = (seenWin.get(b.runnerId) || []).filter((x) => x !== it.playerId);
       const opp = [...seenH2h.values()].find((h) => h.playerId !== it.playerId && h.against === b.runnerId);
       const hot = round.hidden?.clues?.[b.runnerId]?.private?.[it.playerId];
-      if (others.length) { g = 'rv_clash'; v.other = name(others[0]); }
+      if (b.type === 'special' || b.boost === true) g = 'rv_special';
+      else if (others.length) { g = 'rv_clash'; v.other = name(others[0]); }
       else if (opp) { g = 'rv_oppose_win'; v.other = name(opp.playerId); v.b = R.get(opp.pick)?.nickname; }
       else if (idx === lastIdx && it.frac >= 0.12 && items.length > 1) g = 'rv_biggest';
       else if (it.frac >= 0.4) g = 'rv_allin';

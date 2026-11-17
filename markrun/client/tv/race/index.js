@@ -216,6 +216,7 @@ export function createRaceView(container, opts = {}) {
         return { left: r.left - cr.left, right: right - cr.left, top: r.top - cr.top, bottom: bottom - cr.top };
       }); _rectsAt = wall; } return _rects; };
   function hudState(st, showTags = true) {
+    camera.updateMatrixWorld(); // project with this frame's camera (not last frame's)
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const tags = [];
     for (const id of ids) {
@@ -223,7 +224,7 @@ export function createRaceView(container, opts = {}) {
       proj.set(r.root.position.x, r.root.position.y + r.height + 0.55, r.root.position.z);
       const dist = proj.distanceTo(camera.position);
       proj.project(camera);
-      let vis = showTags && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && proj.y < 0.82 && proj.y > -0.62 && dist > 9.5 && dist < 150;
+      let vis = showTags && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && proj.y < 0.82 && proj.y > -0.62 && dist > 9.5 && dist < (WIDE_SHOTS.has(director?.shot?.type) ? 450 : 150);
       // tight close-up of this runner (body fills > ~30% of the frame height): the face is enough, no tag
       const pxTall = (r.height / Math.max(0.1, dist)) * (h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
       if (pxTall > h * 0.3) vis = false;
@@ -508,11 +509,15 @@ export function createRaceView(container, opts = {}) {
         camera.lookAt(c.x, c.y + 2.3, c.z); setFov(44);
       } else director.update(b, ddt, shots);
       st = b >= 0 ? sim.stateAt(b) : null;
+      // cut away trees between a tracking camera and its subject
+      const occ = !freeze && marketT == null && ['side', 'headon', 'finishcam'].includes(director.shot?.type);
+      world.setOcclusionCorridor(occ ? camera.position : null, occ ? director.cam.look : null);
       if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
       else applyRace(b, freeze > 0 ? 0 : ddt);
       const shotType = director.shot?.type;
       updateSun(director.cam.look, WIDE_SHOTS.has(shotType) ? 160 : 70);
     } else if (mode === 'podium' && podium) {
+      world.setOcclusionCorridor(null);
       podium.update(ddt, wall);
       for (const id of ids) runners[id].update(ddt, {});
       updateSun(podium.center, 40);

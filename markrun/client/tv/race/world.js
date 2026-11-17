@@ -60,7 +60,33 @@ export function buildWorld(scene, C, opts) {
   const PX = 1.7; // px per metre
   // instanced props that can be cleared from an area later (e.g. the fairground strip once a plan with diversions loads)
   const registry = [];
-  function registerInstanced(im, list) { registry.push({ im, list }); }
+  function registerInstanced(im, list, occluder = false) { registry.push({ im, list, occluder }); }
+  // camera cut-away: tree instances standing between the camera and its subject are hidden (scaled to zero)
+  const hiddenOcc = new Set(); const tmpM = new THREE.Matrix4();
+  function setOcclusionCorridor(cam, target, radius = 5) {
+    const dirty = new Set();
+    const ax = cam ? cam.x : 0, az = cam ? cam.z : 0, bx = target ? target.x : 0, bz = target ? target.z : 0;
+    const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1;
+    for (const e of registry) {
+      if (!e.occluder) continue;
+      e.list.forEach((t, i) => {
+        let hide = false;
+        if (cam && !t.cleared) {
+          const u = ((t.x - ax) * vx + (t.z - az) * vz) / L2;
+          if (u > 0.02 && u < 1) {
+            const px = ax + vx * u - t.x, pz = az + vz * u - t.z;
+            // keep trees right next to the subject (within ~6 m) so the framing still has context
+            const nearSubject = (1 - u) * Math.sqrt(L2) < 6;
+            hide = !nearSubject && px * px + pz * pz < (radius * (t.s || 1)) ** 2;
+          }
+        }
+        const key = e.im.id * 100000 + i;
+        if (hide && !hiddenOcc.has(key)) { hiddenOcc.add(key); e.im.setMatrixAt(i, zeroM); dirty.add(e.im); }
+        else if (!hide && hiddenOcc.has(key)) { hiddenOcc.delete(key); e.im.setMatrixAt(i, t._m || tmpM.identity()); dirty.add(e.im); }
+      });
+    }
+    for (const im of dirty) im.instanceMatrix.needsUpdate = true;
+  }
   const zeroM = new THREE.Matrix4().makeScale(0, 0, 0);
   function clearArea(fn) {
     for (const { im, list } of registry) {
@@ -401,21 +427,21 @@ ${THREE.ShaderChunk.fog_fragment}
   const dummy = new THREE.Object3D();
   // Instanced props. With `chunk` (metres) the instances are split into spatial tiles so the main and shadow passes
   // can frustum-cull them (big win for trees / grass spread over the whole park).
-  function instanced(geo, mat, list, { ol = 0, olRef, cast = true, colors, chunk = 0 } = {}) {
+  function instanced(geo, mat, list, { ol = 0, olRef, cast = true, colors, chunk = 0, occluder = false } = {}) {
     if (!list.length) return null;
     if (chunk) {
       const tiles = new Map();
       list.forEach((t, i) => { const k = `${Math.floor(t.x / chunk)},${Math.floor(t.z / chunk)}`; let a = tiles.get(k); if (!a) tiles.set(k, (a = { l: [], c: [] })); a.l.push(t); if (colors) a.c.push(colors[i]); });
       let first = null;
-      for (const { l, c } of tiles.values()) { const m = instanced(geo, mat, l, { ol, olRef, cast, colors: colors ? c : null }); first = first || m; }
+      for (const { l, c } of tiles.values()) { const m = instanced(geo, mat, l, { ol, olRef, cast, colors: colors ? c : null, occluder }); first = first || m; }
       return first;
     }
     const im = new THREE.InstancedMesh(geo, mat, list.length);
-    list.forEach((t, i) => { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0); dummy.scale.set(t.sx ?? t.s ?? 1, t.sy ?? t.s ?? 1, t.sz ?? t.s ?? 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); if (colors) im.setColorAt(i, new THREE.Color(colors[i])); });
+    list.forEach((t, i) => { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0); dummy.scale.set(t.sx ?? t.s ?? 1, t.sy ?? t.s ?? 1, t.sz ?? t.s ?? 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); if (occluder) t._m = dummy.matrix.clone(); if (colors) im.setColorAt(i, new THREE.Color(colors[i])); });
     im.castShadow = cast; im.receiveShadow = true;
     im.computeBoundingSphere();
     if (ol) outline(im, ol, undefined, olRef);
-    registerInstanced(im, list);
+    registerInstanced(im, list, occluder);
     add(im); return im;
   }
 
@@ -641,13 +667,13 @@ ${THREE.ShaderChunk.fog_fragment}
     const blob = mergeGeometries([new THREE.IcosahedronGeometry(3.0, 1).translate(0, 6.2, 0), new THREE.IcosahedronGeometry(2.3, 0).translate(1.9, 5.3, 0.6), new THREE.IcosahedronGeometry(2.2, 0).translate(-1.7, 5.5, -0.8), new THREE.IcosahedronGeometry(2.0, 0).translate(0.2, 8.2, 0.3)].map(flatGeo));
     const cone = mergeGeometries([new THREE.ConeGeometry(3.0, 4.2, 8).translate(0, 5.0, 0), new THREE.ConeGeometry(2.4, 3.6, 8).translate(0, 7.2, 0), new THREE.ConeGeometry(1.6, 3.0, 8).translate(0, 9.2, 0)].map(flatGeo));
     const tlist = trees.map((t) => ({ x: t.x, y: C.heightAt(t.x, t.z) - 0.2, z: t.z, ry: rnd() * 6.28, s: t.s }));
-    instanced(trunkG, toon(0x8a5a36), tlist, { ol: 2, olRef: 40, chunk: 160 });
+    instanced(trunkG, toon(0x8a5a36), tlist, { ol: 2, olRef: 40, chunk: 160, occluder: true });
     const crownMat = toon(0xffffff);
     lolli.computeVertexNormals();
     const kinds = [lolli, blob, cone];
     kinds.forEach((g, k) => {
       const l = tlist.filter((_, i) => trees[i].kind === k);
-      instanced(g, crownMat, l, { ol: 2.2, olRef: 40, colors: l.map(() => greens[Math.floor(rnd() * greens.length)]), chunk: 160 });
+      instanced(g, crownMat, l, { ol: 2.2, olRef: 40, colors: l.map(() => greens[Math.floor(rnd() * greens.length)]), chunk: 160, occluder: true });
     });
     anchors.treeCount = trees.length;
   }
@@ -697,7 +723,7 @@ ${THREE.ShaderChunk.fog_fragment}
     for (const d of disposables) d.dispose?.();
     scene.remove(group); scene.remove(sky);
   }
-  return { group, anchors, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath, registerInstanced, clearArea, redrawGround };
+  return { group, anchors, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath, registerInstanced, clearArea, redrawGround, setOcclusionCorridor };
 }
 
 // non-indexed with per-face normals (the toon material has no flatShading option)

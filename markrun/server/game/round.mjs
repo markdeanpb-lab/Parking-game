@@ -16,6 +16,8 @@ import { makeProps, setLapStats, inPlayMarket as ipm, betRevealOrder as bro, ses
 
 export const CURRENCY = { name: 'Parkpounds', singular: 'Parkpound', short: 'pp', symbol: 'ℙ' };
 export { COMMENTATORS };
+export { provisionalNet } from './provisional.mjs';
+export { coldOpenLines, lockLine, stampLine, rematchLine, awardLines } from './moments.mjs';
 
 export const DEFAULT_SETTINGS = {
   startingBankroll: 1000,
@@ -188,6 +190,9 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const divOpen = !theme.funfair && (mem.diverted ?? 0) < 1; // could a diversion run have been drawn this round?
   const { props, outcomes: propOutcomes } = makeProps({ theme, perfs, plan, settings: S, rng: R, divOpen });
   const payoutMultiplier = roundNumber === S.rounds ? 2 : 1;
+  // Underdog Special (final round, trailing player only): ONE win pick at boosted odds (winnings x1.5)
+  const underdogSpecial = trailPid ? { playerId: trailPid, boost: S.underdogBoost ?? 1.5, label: 'UNDERDOG SPECIAL',
+    text: 'One win bet of your choice at boosted odds: winnings x1.5. Pick wisely.' } : null;
 
   // 8. commentary
   plan.commentary = raceCommentary({ plan, runners, clues: Object.fromEntries(ids.map((id) => [id, { public: clues[id].public, private: Object.values(clues[id].private) }])), wildcardId, rng: R, mem });
@@ -197,6 +202,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
     roundId, number: roundNumber, title,
     theme: thInfo,
     runners, matchups, ...(props.length ? { props } : {}), payoutMultiplier,
+    ...(underdogSpecial ? { underdogSpecial } : {}),
     rules: { minStake: S.minStake, maxBetsPerPlayer: S.maxBetsPerPlayer },
     wildcard: !!sel.wildcard,
     ...(sel.wildcard ? { notice: 'WILDCARD ROUND: one of these five was not exactly trying that morning. Read the clues.' } : {}),

@@ -4,6 +4,7 @@ import { ARCHETYPES } from './select.mjs';
 import { resultsLines } from './commentary.mjs';
 import { pickLine } from './memory.mjs';
 import { fill } from './text.mjs';
+import { payReturn, boostedDecimal, isBoosted } from './provisional.mjs';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -209,20 +210,22 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
 
   // payouts. Multiplier (final round = 2) doubles the WINNINGS; the stake comes back once.
   const mult = pub.payoutMultiplier ?? 1;
-  const pay = (stake, dec) => Math.round(stake * (1 + mult * (dec - 1)));
+  const pay = (stake, dec) => payReturn(stake, dec, mult);
   const payouts = {};
   for (const [pid, bets] of Object.entries(betsByPlayer || {})) {
-    let staked = 0, back = 0;
+    let staked = 0, back = 0, boostUsed = false;
     const res = (bets || []).map((b) => {
       staked += b.stake;
       let won = false, returned = 0, push = false;
-      let lockedOdds;
-      if (b.type === 'win' || b.type === 'inplay') {
+      let lockedOdds, boosted = false;
+      if (b.type === 'win' || b.type === 'inplay' || b.type === 'special') {
         const r = R.get(b.runnerId);
         // in-play: the odds locked at halfway (recomputed from the market, so a client can't invent a price)
         const mk = b.type === 'inplay' ? inPlay?.odds?.[b.runnerId]?.win : null;
         const claimed = typeof b.odds === 'number' ? b.odds : b.odds?.win;
-        const dec = b.type === 'inplay' ? (mk ?? claimed ?? 0) : (r?.odds?.win ?? 0);
+        let dec = b.type === 'inplay' ? (mk ?? claimed ?? 0) : (r?.odds?.win ?? 0);
+        // Underdog Special: one boosted win pick for the trailing player in the final round
+        if (b.type !== 'inplay' && isBoosted(pub, b, pid) && !boostUsed) { dec = boostedDecimal(dec, pub.underdogSpecial.boost); boostUsed = boosted = true; }
         if (b.type === 'inplay') lockedOdds = dec;
         won = deadHeat.includes(b.runnerId);
         returned = won ? Math.round(pay(b.stake, dec) / deadHeat.length) : 0;
@@ -240,7 +243,7 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
         else { push = true; returned = b.stake; }
       }
       back += returned;
-      return { ...b, won, returned, ...(push ? { push: true } : {}), ...(lockedOdds ? { lockedOdds } : {}) };
+      return { ...b, won, returned, ...(push ? { push: true } : {}), ...(lockedOdds ? { lockedOdds } : {}), ...(boosted ? { boosted: true } : {}) };
     });
     const bank = (bankrolls[pid] ?? 0) - staked + back;
     payouts[pid] = { bets: res, staked, net: back - staked, bankroll: bank };
@@ -290,7 +293,7 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
   const nets = players.map((p) => payouts[p.id].net);
   for (const p of players) {
     const P = payouts[p.id];
-    const wins = P.bets.filter((b) => b.type === 'win' || b.type === 'inplay');
+    const wins = P.bets.filter((b) => b.type === 'win' || b.type === 'inplay' || b.type === 'special');
     const cands = [];
     const add = (k, score, vars) => cands.push({ k, score, vars: { name: p.name, ...vars } });
     if (!P.bets.length) add('sat_on_hands', 2, {});

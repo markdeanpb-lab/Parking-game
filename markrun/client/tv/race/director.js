@@ -12,7 +12,7 @@ import { raceToBroadcast, timeAtDistance, HILL_M } from '../../../server/game/ra
 
 export const GLIDE_S = 1.3;
 const RUNNER_H = 2.4;     // character height incl. hat (m)
-const TARGET_FRAC = 0.2;  // runner height as a fraction of frame height in tracking shots
+const TARGET_FRAC = 0.24;  // runner height as a fraction of frame height in tracking shots
 const ASPECT = 16 / 9;
 const deg = (r) => (r * 180) / Math.PI;
 const fovFor = (dist, frac = TARGET_FRAC) => deg(2 * Math.atan(RUNNER_H / (2 * frac * dist)));
@@ -176,10 +176,10 @@ export function createDirector({ camera, C, sim, world, funfair }) {
     const v = new THREE.Vector3(); for (const r of l) v.add(new THREE.Vector3(r.x, r.y, r.z)); return v.divideScalar(Math.max(1, l.length));
   }
   // window-averaged centre + heading: smooth through bends, no jitter
+  // c = the group's real centre (runner motion is already smooth; averaging along a bend would drift off the runners),
+  // h = heading averaged over a window, so camera offsets swing gently through bends
   function smooth(ids, t, w) {
-    const c = new THREE.Vector3(); let n = 0;
-    for (let k = -2; k <= 2; k++) { c.add(center(ids, t + k * w * 0.5)); n++; }
-    c.divideScalar(n);
+    const c = center(ids, t);
     const a = center(ids, t - w * 1.5), b = center(ids, t + w * 1.5);
     const h = new THREE.Vector3(b.x - a.x, 0, b.z - a.z);
     if (h.lengthSq() < 1e-4) { const id = ids?.[0] ?? sim.stateAt(Math.max(0, t)).order[0]; const s = sim.stateAt(Math.max(0, t)).byId[id]; h.set(s.tx, 0, s.tz); }
@@ -218,12 +218,12 @@ export function createDirector({ camera, C, sim, world, funfair }) {
       }
       case 'side': {
         const { c, h, r } = smooth(groupOf(s, b), b, w);
-        pos = c.clone().addScaledVector(r, s.side * s.dist).addScaledVector(h, s.dist * 0.18).add(up.clone().multiplyScalar(2.2 + s.dist * 0.08));
+        pos = c.clone().addScaledVector(r, s.side * s.dist).addScaledVector(h, s.dist * 0.18).add(up.clone().multiplyScalar(2.5 + s.dist * 0.2));
         look = c.clone().add(up.clone().multiplyScalar(1.1)); fov = s.fov; break;
       }
       case 'headon': {
         const { c, h, r } = smooth(groupOf(s, b), b, w);
-        pos = c.clone().addScaledVector(h, s.dist).addScaledVector(r, 1.5).add(up.clone().multiplyScalar(1.6 + s.dist * 0.06));
+        pos = c.clone().addScaledVector(h, s.dist).addScaledVector(r, 1.5).add(up.clone().multiplyScalar(2 + s.dist * 0.16));
         look = c.clone().add(up.clone().multiplyScalar(1.15)); fov = s.fov; break;
       }
       case 'drone': {
@@ -261,13 +261,12 @@ export function createDirector({ camera, C, sim, world, funfair }) {
     let cut = false;
     if (s !== shot) {
       const hard = hardNext || !!s.hard;
-      glide = hard ? null : { from: { pos: camera.position.clone(), quat: camera.quaternion.clone(), fov: camera.fov }, t0: b };
+      glide = hard ? null : { from: { pos: camera.position.clone(), look: cam.look.clone(), fov: camera.fov }, t0: b };
       cut = hard; hardNext = false; shot = s; smoothLook = null;
     }
     const T = evaluate(s, b);
     const gy = C.heightAt(T.pos.x, T.pos.z) + 1.2; if (T.pos.y < gy) T.pos.y = gy;
     if (s.smoothLook) { if (!smoothLook || dt <= 0) smoothLook = smoothLook || T.look.clone(); smoothLook.lerp(T.look, 1 - Math.exp(-3 * dt)); T.look.copy(smoothLook); }
-    cam.pos.copy(T.pos); cam.look.copy(T.look);
     m4.lookAt(T.pos, T.look, up); q.setFromRotationMatrix(m4);
     let pos = T.pos, quat = q, fov = T.fov;
     if (glide) {
@@ -277,10 +276,13 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep
         const arc = Math.sin(Math.PI * e) * Math.min(12, glide.from.pos.distanceTo(T.pos) * 0.12);
         pos = glide.from.pos.clone().lerp(T.pos, e).add(up.clone().multiplyScalar(arc));
-        quat = glide.from.quat.clone().slerp(q, e);
+        // aim at a blend of the old and new subjects so the action stays in frame during the move
+        const lk = glide.from.look.clone().lerp(T.look, e);
+        m4.lookAt(pos, lk, up); quat = new THREE.Quaternion().setFromRotationMatrix(m4);
         fov = glide.from.fov + (T.fov - glide.from.fov) * e;
       }
     }
+    cam.pos.copy(T.pos); cam.look.copy(T.look);
     camera.position.copy(pos); camera.quaternion.copy(quat);
     if (Math.abs(camera.fov - fov) > 0.001) { camera.fov = fov; camera.updateProjectionMatrix(); }
     return { shot: s, cut };

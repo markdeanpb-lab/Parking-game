@@ -197,3 +197,4 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 .pr span.avatar, .stand .sr span.avatar { flex: none; }
 .pr span { flex: none; }
 .stand .sr span { flex: none; }
+.rhead .rn .lane { background: #fff !important; color: var(--ink) !important; text-shadow: none !important; border-left: 8px solid var(--c1) !important; }

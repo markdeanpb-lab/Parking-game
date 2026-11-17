@@ -23214,19 +23214,15 @@ function buildCourse(course, park, plan) {
     return sm[i] + (sm[i + 1] - sm[i]) * f;
   };
   const diversions = {};
-  function setPlan(pl) {
-    for (const k of Object.keys(diversions)) delete diversions[k];
-    for (const r of pl?.runners || []) {
-      if (!r.diversions || !r.diversions.length) continue;
-      diversions[r.id] = r.diversions.map((d) => {
-        const pts = d.path;
-        const cum = [0];
-        for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-        return { ...d, cum, len: cum.at(-1) };
-      });
-    }
+  for (const r of plan?.runners || []) {
+    if (!r.diversions) continue;
+    diversions[r.id] = r.diversions.map((d) => {
+      const pts = d.path;
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      return { ...d, cum, len: cum.at(-1) };
+    });
   }
-  setPlan(plan);
   const divPos = (d, m) => {
     const s = Math.max(0, Math.min(1, (m - d.fromM) / (d.toM - d.fromM))) * d.len;
     let i = 0;
@@ -23388,7 +23384,7 @@ function buildCourse(course, park, plan) {
   const ribbons = [{ from: 0, to: LAP1_END_DRAW, lift: 0 }, { from: 2540, to: 2690, lift: 0.02 }, { from: MAP_TO - 80, to: course.lengthM + 45, lift: 0.035 }];
   const finishM = course.lengthM;
   const geoOf = (m) => m >= MAP_FROM && m <= MAP_TO ? mapLap2(m) : m;
-  return { P, raw, rawExt, baseXZ, LAP1_END_DRAW, xzAt, sample, heading, heightAt, terrain: T, ribbons, finishM, lake, flat, geoOf, diversions, setPlan, LAP1_END, MAP_FROM, MAP_TO };
+  return { P, raw, rawExt, baseXZ, LAP1_END_DRAW, xzAt, sample, heading, heightAt, terrain: T, ribbons, finishM, lake, flat, geoOf, diversions, LAP1_END, MAP_FROM, MAP_TO };
 }
 function bbox(pts) {
   let a = [1e9, 1e9, -1e9, -1e9];
@@ -23673,7 +23669,7 @@ function gradientMap() {
 }
 var matCache = /* @__PURE__ */ new Map();
 function toon(color, opts = {}) {
-  const key = !opts.map && (typeof color === "number" || typeof color === "string") ? `${color}|${JSON.stringify(opts)}` : null;
+  const key = typeof color === "number" || typeof color === "string" ? `${color}|${JSON.stringify(opts)}` : null;
   if (key && !opts.map && matCache.has(key)) return matCache.get(key);
   const m = new MeshToonMaterial({ color: new Color(color ?? 16777215), gradientMap: gradientMap(), ...opts });
   if (key && !opts.map) matCache.set(key, m);
@@ -23891,29 +23887,6 @@ function buildWorld(scene, C, opts) {
   const blockBB = blockers.map((f) => [bbox(f.pts), f]);
   const blocked = (x, z, pad = 2) => blockBB.some(([b, f]) => x > b[0] - pad && x < b[2] + pad && z > b[1] - pad && z < b[3] + pad && signedDist(f.pts, x, z) < pad);
   const PX = 1.7;
-  const registry = [];
-  function registerInstanced(im, list) {
-    registry.push({ im, list });
-  }
-  const zeroM = new Matrix4().makeScale(0, 0, 0);
-  function clearArea(fn) {
-    for (const { im, list } of registry) {
-      let hit = false;
-      list.forEach((t, i) => {
-        if (!t.cleared && fn(t.x, t.z)) {
-          t.cleared = true;
-          im.setMatrixAt(i, zeroM);
-          hit = true;
-        }
-      });
-      if (hit) im.instanceMatrix.needsUpdate = true;
-    }
-  }
-  function redrawGround() {
-    const g = groundTex.image.getContext("2d");
-    drawGround(g, groundTex.image.width, groundTex.image.height);
-    groundTex.needsUpdate = true;
-  }
   const groundTex = canvasTexture(Math.round(Wm * PX), Math.round(Hm * PX), (g, w, h) => drawGround(g, w, h), { aniso: 8 });
   disposables.push(groundTex);
   function drawGround(g, w, h) {
@@ -24534,7 +24507,6 @@ ${ShaderChunk.fog_fragment}
     im.receiveShadow = true;
     im.computeBoundingSphere();
     if (ol) outline(im, ol, void 0, olRef);
-    registerInstanced(im, list);
     add(im);
     return im;
   }
@@ -24846,6 +24818,14 @@ ${ShaderChunk.fog_fragment}
     reserve(s.x + s.rx * o * z.side, s.z + s.rz * o * z.side, z.depth / 2 + 3);
   }
   for (const s of [start, finish]) reserve(s.x, s.z, 14);
+  if (hasFunfair && course.funfair) {
+    const div = Object.values(C.diversions)[0]?.[0];
+    if (div) for (const p of div.path) {
+      const q = nearestOnRibbon(p[0], p[1]);
+      const mx = (p[0] + q[0]) / 2, mz = (p[1] + q[1]) / 2;
+      reserve(mx, mz, Math.max(6, Math.hypot(p[0] - q[0], p[1] - q[1]) / 2 - 3));
+    }
+  }
   function nearestOnRibbon(x, z) {
     let best = null, bd = 1e9;
     for (const s of ribbonSamples) {
@@ -24918,12 +24898,11 @@ ${ShaderChunk.fog_fragment}
     const lolli = new IcosahedronGeometry(3.2, 1);
     lolli.scale(1, 1.08, 1);
     lolli.translate(0, 6.6, 0);
-    const blob = mergeGeometries([new IcosahedronGeometry(3, 1).translate(0, 6.2, 0), new IcosahedronGeometry(2.3, 0).translate(1.9, 5.3, 0.6), new IcosahedronGeometry(2.2, 0).translate(-1.7, 5.5, -0.8), new IcosahedronGeometry(2, 0).translate(0.2, 8.2, 0.3)].map(flatGeo));
-    const cone = mergeGeometries([new ConeGeometry(3, 4.2, 8).translate(0, 5, 0), new ConeGeometry(2.4, 3.6, 8).translate(0, 7.2, 0), new ConeGeometry(1.6, 3, 8).translate(0, 9.2, 0)].map(flatGeo));
+    const blob = mergeGeometries([new IcosahedronGeometry(3, 1).translate(0, 6.2, 0), new IcosahedronGeometry(2.3, 0).translate(1.9, 5.3, 0.6), new IcosahedronGeometry(2.2, 0).translate(-1.7, 5.5, -0.8), new IcosahedronGeometry(2, 0).translate(0.2, 8.2, 0.3)].map((g) => g.toNonIndexed()));
+    const cone = mergeGeometries([new ConeGeometry(3, 4.2, 8).translate(0, 5, 0), new ConeGeometry(2.4, 3.6, 8).translate(0, 7.2, 0), new ConeGeometry(1.6, 3, 8).translate(0, 9.2, 0)].map((g) => g.index ? g.toNonIndexed() : g));
     const tlist = trees.map((t) => ({ x: t.x, y: C.heightAt(t.x, t.z) - 0.2, z: t.z, ry: rnd() * 6.28, s: t.s }));
     instanced(trunkG, toon(9067062), tlist, { ol: 2, olRef: 40, chunk: 160 });
-    const crownMat = toon(16777215);
-    lolli.computeVertexNormals();
+    const crownMat = toon(16777215, { flatShading: true });
     const kinds = [lolli, blob, cone];
     kinds.forEach((g, k) => {
       const l = tlist.filter((_, i) => trees[i].kind === k);
@@ -24938,7 +24917,7 @@ ${ShaderChunk.fog_fragment}
       c.rotateZ((i - 1.5) * 0.25);
       c.rotateY(i * 1.7);
       c.translate((i - 1.5) * 0.08, 0, i % 2 * 0.06);
-      return c.index ? c.toNonIndexed() : c;
+      return c.toNonIndexed();
     }));
     const flower = mergeGeometries([new CylinderGeometry(0.03, 0.03, 0.35, 4).translate(0, 0.17, 0).toNonIndexed(), new IcosahedronGeometry(0.13, 0).translate(0, 0.38, 0)]);
     const tl = [], fl = [], fc = [];
@@ -25003,12 +24982,7 @@ ${ShaderChunk.fog_fragment}
     scene.remove(group);
     scene.remove(sky);
   }
-  return { group, anchors, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath, registerInstanced, clearArea, redrawGround };
-}
-function flatGeo(g) {
-  const n = g.index ? g.toNonIndexed() : g;
-  n.computeVertexNormals();
-  return n;
+  return { group, anchors, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath };
 }
 function centroid(pts) {
   let x = 0, z = 0;
@@ -25051,7 +25025,6 @@ function buildCrowd(scene, members) {
   const group = new Group();
   scene.add(group);
   if (!N) return { update() {
-  }, hideWhere() {
   }, dispose() {
     scene.remove(group);
   }, group };
@@ -25099,20 +25072,9 @@ function buildCrowd(scene, members) {
     t.count = counts[k];
   });
   for (const m of [body, hands, ...tops]) if (m.instanceColor) m.instanceColor.needsUpdate = true;
-  const zero = new Matrix4().makeScale(0, 0, 0);
   const mat = new Matrix4(), q = new Quaternion(), e = new Euler(), v = new Vector3(), s = new Vector3(), base = new Matrix4(), loc = new Matrix4();
   function place2(i, t, force) {
     const m = M[i];
-    if (m.hidden) {
-      for (const im of [body]) im.setMatrixAt(i, zero);
-      for (let k = 0; k < 2; k++) {
-        eyes.setMatrixAt(i * 2 + k, zero);
-        pups.setMatrixAt(i * 2 + k, zero);
-        hands.setMatrixAt(i * 2 + k, zero);
-      }
-      if (m.tk >= 0) tops[m.tk].setMatrixAt(m.ti, zero);
-      return;
-    }
     const ex = m.ex;
     const ph = t * m.sp * (0.5 + ex * 0.6) + m.ph;
     const hop = Math.max(0, Math.sin(ph)) * 0.32 * ex;
@@ -25181,16 +25143,7 @@ function buildCrowd(scene, members) {
     for (const m of [body, eyes, pups, hands, ...tops]) m.dispose();
     scene.remove(group);
   }
-  function hideWhere(fn) {
-    let any = false;
-    for (let i = 0; i < N; i++) if (!M[i].hidden && fn(M[i].x, M[i].z)) {
-      M[i].hidden = true;
-      place2(i, 0);
-      any = true;
-    }
-    if (any) flag();
-  }
-  return { update, dispose, hideWhere, group, members: M };
+  return { update, dispose, group, members: M };
 }
 function crowdMembersFromZones(C, zones, seed = 5, onPath = null, blocked = null) {
   const R = mulberry(seed);
@@ -26268,7 +26221,6 @@ function createRunner(info, opts = {}) {
 // ../../../../tmp/claude-0/-home-user-Parking-game/201ae4ef-9467-51e3-9846-baf7bf89ba8b/scratchpad/b/server/game/raceplan.mjs
 var STEP_M = 25;
 var N_PTS = 201;
-var HILL_M = [1720, 4220];
 function distanceAt(progress, t) {
   if (t <= 0) return 0;
   if (t >= progress[N_PTS - 1]) return 5e3;
@@ -26421,380 +26373,397 @@ function fmtTime(s) {
 }
 
 // ../../../../tmp/claude-0/-home-user-Parking-game/201ae4ef-9467-51e3-9846-baf7bf89ba8b/scratchpad/b/client/tv/race/director.js
-var GLIDE_S = 1.3;
-var RUNNER_H = 2.4;
-var TARGET_FRAC = 0.2;
-var ASPECT = 16 / 9;
-var deg = (r) => r * 180 / Math.PI;
-var fovFor = (dist, frac = TARGET_FRAC) => deg(2 * Math.atan(RUNNER_H / (2 * frac * dist)));
-function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
-  const out = [];
-  const tm = plan.timeMap;
-  const leaderAtB = (m) => raceToBroadcast(tm, Math.min(...plan.runners.map((r) => timeAtDistance(r.progress, m))));
-  const rate = (b) => b <= 0 ? 4 : sim.rateAt(b);
-  const meanRate = (a, b) => {
-    let s = 0, n = 0;
-    for (let t2 = a; t2 <= b; t2 += Math.max(0.5, (b - a) / 12)) {
-      s += rate(t2);
-      n++;
-    }
-    return s / Math.max(1, n);
-  };
-  const firstFin = sim.firstFinishB, lastFin = sim.lastFinishB;
-  const packGroup = (t2) => {
-    const st = sim.stateAt(Math.max(0, t2));
-    const live = st.order.filter((id) => !st.byId[id].finished);
-    const l = live[0] ?? st.order[0];
-    return (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < 120);
-  };
-  const leadGroup = (t2) => {
-    const st = sim.stateAt(Math.max(0, t2));
-    const live = st.order.filter((id) => !st.byId[id].finished);
-    const l = live[0] ?? st.order[0];
-    return (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < 20);
-  };
-  const groupNear = (id, t2) => {
-    const st = sim.stateAt(Math.max(0, t2));
-    return st.order.filter((x) => !st.byId[x].finished && Math.abs(st.byId[x].m - st.byId[id].m) < 20);
-  };
-  let gunEnd = 0.25 + 8;
-  for (let t2 = 0.25; t2 < 30; t2 += 0.25) if (rate(t2) > 7) {
-    gunEnd = Math.max(gunEnd, t2);
-    break;
-  }
-  let bSlow = firstFin - 6;
-  for (let t2 = firstFin - 6; t2 > gunEnd; t2 -= 0.25) if (rate(t2) > 6) {
-    bSlow = t2;
-    break;
-  }
-  const b4700 = Math.max(bSlow, Math.min(firstFin - 6, leaderAtB(4700)));
-  out.push({ type: "heli", a: -8.5, b: -3.2, hard: true });
-  out.push({ type: "startgo", a: -3.2, b: 0.25 });
-  out.push({ type: "side", a: 0.25, b: gunEnd, hard: true, ids: null });
+function buildShotList({ plan, sim, backedIds = [], hasDiversion }) {
+  const ev = plan.events || [];
+  const endB = sim.lastFinishB + 3.5;
   const windows = [];
-  const divR = plan.runners.find((r) => r.diversions?.length);
-  if (divR && funfair) {
-    const d = divR.diversions[0];
-    const a = raceToBroadcast(tm, timeAtDistance(divR.progress, d.fromM)) - 0.5;
-    const e = raceToBroadcast(tm, timeAtDistance(divR.progress, d.toM)) + 0.8;
-    windows.push({ type: "side", tag: "fair", a, b: Math.max(a + 8, e), ids: [divR.id], fair: true, prio: 3 });
+  const W = (type, a, b, prio, extra = {}) => {
+    if (b - a >= 1.2) windows.push({ type, a, b, prio, ...extra });
+  };
+  const firstFinish = sim.firstFinishB;
+  const fin = sim.finishOrder.map((id) => ({ who: id, broadcastS: sim.byId[id].finishB }));
+  let cursor = firstFinish - 5.5;
+  fin.forEach((f, i) => {
+    const prev = fin[i - 1];
+    if (prev && f.broadcastS - prev.broadcastS > 7.5) {
+      W("front", prev.broadcastS + 2.2, f.broadcastS - 3.2, 10, { ids: [f.who], tag: "chaser" });
+      cursor = f.broadcastS - 3.2;
+    }
+    W("finishcam", cursor, f.broadcastS + 2.2, 10, { ids: [f.who] });
+    cursor = f.broadcastS + 2.2;
+  });
+  if (sim.photoFinish) W("photo", firstFinish - 0.02, firstFinish + 0.02, 11);
+  const fs = ev.find((e) => e.type === "final_stretch");
+  if (fs) {
+    const a = fs.broadcastS, b = firstFinish - 5.5;
+    const n = Math.max(1, Math.round((b - a) / 6));
+    const kinds = ["final", "track", "battle", "final", "drone", "front"];
+    for (let i = 0; i < n; i++) {
+      const s = a + (b - a) * i / n, e = a + (b - a) * (i + 1) / n;
+      const mid = (s + e) / 2;
+      const o = sim.orderAt(mid);
+      let type = kinds[i % kinds.length], ids = [o[0]];
+      if (type === "battle") ids = [o[0], o[1]];
+      const close = sim.gapM(o[0], o[1], mid) < 12;
+      if (i === 0) {
+        type = "final";
+        ids = [o[0]];
+      } else if (close && type !== "final") {
+        type = "battle";
+        ids = [o[0], o[1]];
+      }
+      W(type, s, e, 5, { ids });
+    }
   }
-  for (const m of HILL_M) {
-    const hb = leaderAtB(m);
-    windows.push({ type: "headon", tag: "hill", a: hb - 1.5, b: hb + 8, prio: 2 });
+  const div = ev.filter((e) => e.type === "diversion").sort((a, b) => a.broadcastS - b.broadcastS);
+  if (div[0]) W("distracted", div[0].broadcastS - 0.4, Math.max(div[0].broadcastS + 6.5, Math.min((div[0].endBroadcastS ?? div[0].broadcastS + 8) + 1.2, div[0].broadcastS + 9)), 9, { ids: [div[0].who], banner: true });
+  for (const h of ev.filter((e) => e.type === "hill")) {
+    const rate = sim.rateAt(h.broadcastS);
+    const dur = Math.max(2.6, Math.min(6, 140 / Math.max(1, rate * 3.4)));
+    W("hill", h.broadcastS - 1.4, h.broadcastS + dur, 7, { lap: h.lap });
   }
-  windows.sort((x, y) => y.prio - x.prio);
+  const lap = ev.find((e) => e.type === "lap");
+  if (lap) W("lapboard", lap.broadcastS - 2.6, lap.broadcastS + 2, 6);
+  for (const e of ev.filter((x) => x.type === "lead_change")) W("battle", e.broadcastS - 1.6, e.broadcastS + 2.8, 6, { ids: [e.to, e.from], tag: "lead" });
+  let lastBattle = -1e9;
+  const leadTimes = ev.filter((x) => x.type === "lead_change").map((x) => x.broadcastS);
+  for (const e of ev.filter((x) => x.type === "overtake")) {
+    const backed = backedIds.includes(e.by) || backedIds.includes(e.on);
+    const o = sim.orderAt(e.broadcastS + 0.5);
+    const top = o.indexOf(e.by) <= 1;
+    if (!backed && !top) continue;
+    if (e.broadcastS - lastBattle < 11 || leadTimes.some((t2) => Math.abs(t2 - e.broadcastS) < 6)) continue;
+    lastBattle = e.broadcastS;
+    W("battle", e.broadcastS - 1.4, e.broadcastS + 2.6, backed ? 4 : 3, { ids: [e.by, e.on] });
+  }
+  W("startgo", -3.2, 2.4, 12);
+  W("heli", -8.5, -3.2, 12);
+  windows.sort((x, y) => y.prio - x.prio || x.a - y.a);
   const placed = [];
+  const free = (a, b) => !placed.some((p) => a < p.b && b > p.a);
   for (const w of windows) {
-    const b = Math.min(bSlow, w.b), a = Math.max(gunEnd, Math.min(w.a, b - 8));
-    if (b - a < 6) continue;
-    if (placed.some((p) => a < p.b && b > p.a)) continue;
-    placed.push({ ...w, a, b });
+    if (free(w.a, w.b)) {
+      placed.push(w);
+      continue;
+    }
+    let a = w.a, b = w.b;
+    for (const p of placed) {
+      if (a < p.b && b > p.a) {
+        if (p.a <= a) a = p.b;
+        else b = Math.min(b, p.a);
+      }
+    }
+    if (b - a >= 2.2 && free(a, b)) placed.push({ ...w, a, b });
   }
   placed.sort((x, y) => x.a - y.a);
-  const cycle = ["side", "drone", "headon"];
-  let ci = 0, backedTurn = 0;
-  const fill = (a, b) => {
+  const out = [];
+  let t = -8.5;
+  let fillerIdx = 0;
+  const fillers = ["track", "drone", "front", "chase", "track", "blimp", "front", "side"];
+  const addFill = (a, b) => {
     const len = b - a;
-    if (len <= 0.01) return;
-    if (len < 8 && out.length >= 3) {
+    if (len <= 0.05) return;
+    if (len < 2.2 && out.length) {
       out.at(-1).b = b;
       return;
     }
-    const n = Math.max(1, Math.round(len / 11));
+    const n = Math.max(1, Math.round(len / 5.2));
     for (let i = 0; i < n; i++) {
       const s = a + len * i / n, e = a + len * (i + 1) / n, mid = (s + e) / 2;
-      let type = cycle[ci++ % cycle.length];
-      if (type === out.at(-1)?.type) type = cycle[ci++ % cycle.length];
-      const st = sim.stateAt(mid);
-      const lead = st.byId[st.order[0]];
-      const lonely = backedIds.filter((id) => st.byId[id] && !st.byId[id].finished && lead.m - st.byId[id].m > 40);
-      let ids = null;
-      if (lonely.length && backedTurn++ % 2 === 0) {
-        ids = groupNear(lonely[backedTurn % lonely.length], mid);
-        type = type === "drone" ? "side" : type;
+      const o = sim.orderAt(mid);
+      let type = fillers[fillerIdx++ % fillers.length], ids = [o[0]];
+      const lonelyBacked = backedIds.filter((id) => !sim.finishedAt(id, mid) && sim.gapM(o[0], id, mid) > 25);
+      if (lonelyBacked.length && fillerIdx % 3 === 0) {
+        type = "chase";
+        ids = [lonelyBacked[fillerIdx % lonelyBacked.length]];
+      } else if (type === "track" || type === "side") {
+        ids = o.filter((id) => sim.gapM(o[0], id, mid) < 15).slice(0, 3);
+      } else if (type === "drone" || type === "blimp") ids = o;
+      if (sim.allFinishedAt(mid - 2)) {
+        type = "celebrate";
+        ids = sim.finishOrder;
       }
-      out.push({ type, a: s, b: e, ids });
+      out.push({ type, a: s, b: e, prio: 1, ids, filler: true });
     }
   };
-  let t = gunEnd;
   for (const p of placed) {
-    fill(t, p.a);
+    if (p.a > t) addFill(t, p.a);
     out.push(p);
-    t = p.b;
+    t = Math.max(t, p.b);
   }
-  fill(t, bSlow);
-  {
-    const len = b4700 - bSlow;
-    if (len >= 8) {
-      const n = Math.max(1, Math.round(len / 11));
-      for (let i = 0; i < n; i++) out.push({ type: i % 2 ? "headon" : "side", a: bSlow + len * i / n, b: bSlow + len * (i + 1) / n });
-    }
-    if (out.at(-1).type === "headon" && out.at(-1).a >= bSlow) out.at(-1).b = firstFin - 6;
-    else out.push({ type: "headon", a: Math.max(bSlow, out.at(-1).b), b: firstFin - 6 });
-  }
-  if (out.at(-1).b - out.at(-1).a < 6 && out.length > 4) {
-    const l = out.pop();
-    out.at(-1).b = l.b;
-  }
-  out.push({ type: "finishcam", a: firstFin - 6, b: lastFin + 2.5, hard: true });
-  out.push({ type: "celebrate", a: lastFin + 2.5, b: lastFin + 90 });
-  const pri = (plan.events || []).filter((e) => (e.type === "lead_change" || e.type === "overtake" && (backedIds.includes(e.by) || backedIds.includes(e.on))) && e.broadcastS > gunEnd + 2 && e.broadcastS < bSlow - 3);
-  let lastI = -1e9;
-  for (const e of pri) {
-    const pair = e.type === "lead_change" ? [e.to, e.from] : [e.by, e.on];
-    if (e.broadcastS - lastI < 12) continue;
-    const i = out.findIndex((s2) => e.broadcastS >= s2.a && e.broadcastS < s2.b);
-    if (i < 0) continue;
-    const s = out[i];
-    if (["heli", "startgo", "finishcam", "celebrate", "drone"].includes(s.type) || s.interrupt || s.tag || s.hard) continue;
-    const framed = s.ids || leadGroup((s.a + s.b) / 2);
-    if (pair.every((id) => framed.includes(id))) continue;
-    if (e.broadcastS - s.a < 8 || s.b - e.broadcastS < 8) {
-      Object.assign(s, { type: "side", ids: pair, interrupt: e.type });
-    } else {
-      const ia = e.broadcastS - 1.8;
-      out.splice(i, 1, { ...s, b: ia }, { type: "side", a: ia, b: s.b, ids: pair, interrupt: e.type });
-    }
-    lastI = e.broadcastS;
-  }
-  for (const s of out) {
-    s.rate = meanRate(Math.max(0, s.a), Math.max(0.5, s.b));
-    s.ids = s.ids || null;
-    if (s.type === "side" || s.type === "headon" || s.type === "drone") {
-      const ids = s.ids || (s.type === "drone" ? packGroup((s.a + s.b) / 2) : leadGroup((s.a + s.b) / 2));
-      if (s.type === "drone" && !s.ids) s.pack = true;
-      let spread = 0;
-      for (let k = 0; k <= 6; k++) {
-        const st = sim.stateAt(Math.max(0, s.a + (s.b - s.a) * k / 6));
-        const ms = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m);
-        if (ms.length) spread = Math.max(spread, Math.max(...ms) - Math.min(...ms));
-      }
-      s.spread = spread;
-      if (s.type === "side") {
-        s.dist = MathUtils.clamp(14 + 1.7 * s.rate, 18, 48);
-        let fov2 = fovFor(s.dist);
-        const needW = spread + 7;
-        const fitFov = deg(2 * Math.atan(needW / (2 * ASPECT * s.dist)));
-        s.fov = MathUtils.clamp(Math.max(fov2, fitFov), 10, 34);
-        s.side = chooseSide(s, ids);
-      } else if (s.type === "headon") {
-        s.dist = MathUtils.clamp(16 + 1.9 * s.rate, 20, 52) + spread * 0.6;
-        s.fov = MathUtils.clamp(fovFor(s.dist - spread * 0.3, 0.2), 10, 30);
-      } else {
-        s.back = 30 + 2.2 * s.rate + spread * 0.35;
-        s.height = 16 + 1.9 * s.rate + spread * 0.25;
-        s.fov = 40;
-        s.side = chooseSide(s, ids);
-      }
-    }
-  }
+  if (t < endB + 30) addFill(t, endB + 30);
   return out;
-  function chooseSide(s, ids) {
-    const at = (t2) => {
-      const st = sim.stateAt(Math.max(0, t2));
-      const l = ids.map((id) => st.byId[id]).filter(Boolean);
-      const x = l.reduce((a, r2) => a + r2.x, 0) / l.length, z = l.reduce((a, r2) => a + r2.z, 0) / l.length;
-      return [x, z];
-    };
-    const p0 = at(s.a), p1 = at((s.a + s.b) / 2), p2 = at(s.b);
-    const cross = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
-    let side = s.fair ? null : cross > 0 ? 1 : -1;
-    if (s.fair && funfair) {
-      const c = funfair.anchors.center;
-      const h2 = [p2[0] - p0[0], p2[1] - p0[1]];
-      const r2 = [-h2[1], h2[0]];
-      side = (c.x - p1[0]) * r2[0] + (c.z - p1[1]) * r2[1] > 0 ? -1 : 1;
-      return side;
-    }
-    const h = [p2[0] - p0[0], p2[1] - p0[1]];
-    const L = Math.hypot(...h) || 1;
-    const r = [-h[1] / L, h[0] / L];
-    const d = s.dist || 40;
-    const ok = (sg) => world.inPark(p1[0] + r[0] * d * sg, p1[1] + r[1] * d * sg);
-    if (!ok(side) && ok(-side)) side = -side;
-    return side;
-  }
 }
 function createDirector({ camera, C, sim, world, funfair }) {
-  const cam = { pos: new Vector3(), look: new Vector3() };
-  const up = new Vector3(0, 1, 0);
-  let shot = null, glide = null, hardNext = true, smoothLook = null;
-  const q = new Quaternion(), m4 = new Matrix4();
-  function center(ids, t) {
-    const st = sim.stateAt(Math.max(0, t));
-    let l = (ids || st.order.slice(0, 1)).map((id) => st.byId[id]).filter(Boolean);
-    const live = l.filter((r) => !r.finished);
-    if (live.length) l = live;
-    const v = new Vector3();
-    for (const r of l) v.add(new Vector3(r.x, r.y, r.z));
-    return v.divideScalar(Math.max(1, l.length));
+  const cam = { pos: new Vector3(), look: new Vector3(), fov: 45 };
+  const sm = { off: new Vector3(), lookOff: new Vector3(), fov: 45, init: false };
+  let shot = null;
+  const v = new Vector3(), w = new Vector3(), up = new Vector3(0, 1, 0);
+  const tmp2 = {};
+  function focus(ids, b) {
+    const st = sim.stateAt(b);
+    const list = ids.map((id) => st.byId[id]).filter(Boolean);
+    if (!list.length) return { p: new Vector3(st.leader.x, st.leader.y, st.leader.z), h: new Vector3(st.leader.tx, 0, st.leader.tz), m: st.leader.m, spread: 0 };
+    const p = new Vector3();
+    let m = 0;
+    for (const r of list) {
+      p.x += r.x;
+      p.y += r.y;
+      p.z += r.z;
+      m += r.m;
+    }
+    p.divideScalar(list.length);
+    m /= list.length;
+    let lo = 1e9, hi = -1e9;
+    for (const r of list) {
+      lo = Math.min(lo, r.m);
+      hi = Math.max(hi, r.m);
+    }
+    const r0 = list[0];
+    const ma = Math.max(0, r0.mVis - 18);
+    const a = C.xzAt(ma, r0.id), c = C.xzAt(ma + 36, r0.id);
+    const h = new Vector3(c.x - a.x, 0, c.z - a.z).normalize();
+    if (!isFinite(h.x)) h.set(0, 0, 1);
+    return { p, h, m, spread: hi - lo, list };
   }
-  function smooth3(ids, t, w) {
-    const c = new Vector3();
-    let n = 0;
-    for (let k = -2; k <= 2; k++) {
-      c.add(center(ids, t + k * w * 0.5));
-      n++;
-    }
-    c.divideScalar(n);
-    const a = center(ids, t - w * 1.5), b = center(ids, t + w * 1.5);
-    const h = new Vector3(b.x - a.x, 0, b.z - a.z);
-    if (h.lengthSq() < 1e-4) {
-      const id = ids?.[0] ?? sim.stateAt(Math.max(0, t)).order[0];
-      const s = sim.stateAt(Math.max(0, t)).byId[id];
-      h.set(s.tx, 0, s.tz);
-    }
-    h.normalize();
-    return { c, h, r: new Vector3(-h.z, 0, h.x) };
-  }
-  const groupOf = (s, t) => {
-    if (s.ids) return s.ids;
-    if (!s._group) {
-      const tm = (s.a + s.b) / 2, st = sim.stateAt(Math.max(0, tm));
-      const live = st.order.filter((id) => !st.byId[id].finished);
-      const l = live[0] ?? st.order[0];
-      s._group = (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < (s.pack ? 120 : 20));
-      if (!s._group.length) s._group = [l];
-    }
-    return s._group;
-  };
-  function evaluate(s, b) {
+  const right = (h) => new Vector3(-h.z, 0, h.x);
+  function evaluate(s, b, dt) {
+    const u = (b - s.a) / Math.max(0.01, s.b - s.a);
     const fin = world.anchors.finish, start = world.anchors.start;
-    let pos, look, fov2 = 40;
-    const w = s.rate > 8 ? 2.2 : 1.2;
+    let pos, look, fov2 = 45, damp2 = true;
     switch (s.type) {
       case "heli": {
-        const u = (b - s.a) / Math.max(0.01, s.b - s.a);
         const ctr = new Vector3(150, 0, 0);
         const st = new Vector3(start.x, start.y, start.z);
-        const k = easeInOut(Math.min(1, u));
-        const ang = -1.2 + k * 1.6, R = 420 - k * 360;
-        pos = new Vector3(ctr.x + Math.cos(ang) * R, 170 - k * 140, ctr.z + Math.sin(ang) * R).lerp(new Vector3(st.x - start.tx * 40 + start.rx * 25, st.y + 22, st.z - start.tz * 40 + start.rz * 25), k * k);
+        const k = easeInOut(Math.min(1, u * 1.05));
+        const ang = -1.2 + k * 1.6;
+        const R = 420 - k * 360;
+        const p0 = new Vector3(ctr.x + Math.cos(ang) * R, 170 - k * 140, ctr.z + Math.sin(ang) * R);
+        pos = p0.lerp(new Vector3(st.x - start.tx * 40 + start.rx * 25, st.y + 22, st.z - start.tz * 40 + start.rz * 25), k * k);
         look = ctr.clone().setY(10).lerp(st, Math.min(1, k * 1.3));
         fov2 = 50;
+        damp2 = false;
         break;
       }
       case "startgo": {
         const st = new Vector3(start.x, start.y, start.z);
         const h = new Vector3(start.tx, 0, start.tz);
-        const r = new Vector3(-h.z, 0, h.x);
-        pos = st.clone().addScaledVector(h, 10.5).addScaledVector(r, 2.6).add(up.clone().multiplyScalar(1.9));
-        look = st.clone().add(up.clone().multiplyScalar(1.3)).addScaledVector(h, -1);
+        const r = right(h);
+        if (b < 0.6) {
+          pos = st.clone().addScaledVector(h, 9.5 + (b + 3.2) * 0.25).addScaledVector(r, 2.6).add(up.clone().multiplyScalar(1.9));
+          look = st.clone().add(up.clone().multiplyScalar(1.3)).addScaledVector(h, -1);
+          fov2 = 42;
+        } else {
+          const f = focus(sim.orderAt(b).slice(0, 3), b);
+          pos = f.p.clone().addScaledVector(f.h, 11).addScaledVector(right(f.h), 3.5).add(up.clone().multiplyScalar(2.2));
+          look = f.p.clone().add(up.clone().multiplyScalar(1.2));
+          fov2 = 44;
+        }
+        damp2 = false;
+        break;
+      }
+      case "track":
+      case "side": {
+        const f = focus(s.ids, b);
+        const r = right(f.h);
+        const side = s.type === "side" ? -1 : 1;
+        const d = 8 + Math.min(14, f.spread * 0.6);
+        pos = f.p.clone().addScaledVector(r, side * (d + 2)).addScaledVector(f.h, 3 + Math.sin(u * 3) * 0.6).add(up.clone().multiplyScalar(2.6));
+        look = f.p.clone().addScaledVector(f.h, 1.5).add(up.clone().multiplyScalar(1.1));
         fov2 = 42;
         break;
       }
-      case "side": {
-        const { c, h, r } = smooth3(groupOf(s, b), b, w);
-        pos = c.clone().addScaledVector(r, s.side * s.dist).addScaledVector(h, s.dist * 0.18).add(up.clone().multiplyScalar(2.2 + s.dist * 0.08));
-        look = c.clone().add(up.clone().multiplyScalar(1.1));
-        fov2 = s.fov;
+      case "front":
+      case "final": {
+        const f = focus(s.ids, b);
+        const r = right(f.h);
+        const dist = s.type === "final" ? 7.5 - u * 1.5 : 7;
+        pos = f.p.clone().addScaledVector(f.h, dist).addScaledVector(r, s.type === "final" ? 1.4 : -2).add(up.clone().multiplyScalar(s.type === "final" ? 0.9 : 1.8));
+        look = f.p.clone().add(up.clone().multiplyScalar(1.35)).addScaledVector(f.h, -2);
+        fov2 = s.type === "final" ? 38 : 42;
         break;
       }
-      case "headon": {
-        const { c, h, r } = smooth3(groupOf(s, b), b, w);
-        pos = c.clone().addScaledVector(h, s.dist).addScaledVector(r, 1.5).add(up.clone().multiplyScalar(1.6 + s.dist * 0.06));
-        look = c.clone().add(up.clone().multiplyScalar(1.15));
-        fov2 = s.fov;
+      case "chase": {
+        const f = focus(s.ids, b);
+        const r = right(f.h);
+        pos = f.p.clone().addScaledVector(f.h, -7.5).addScaledVector(r, 2.2).add(up.clone().multiplyScalar(3));
+        look = f.p.clone().addScaledVector(f.h, 5).add(up.clone().multiplyScalar(1.2));
+        fov2 = 46;
         break;
       }
-      case "drone": {
-        const { c, h, r } = smooth3(groupOf(s, b), b, w * 1.3);
-        pos = c.clone().addScaledVector(h, -s.back).addScaledVector(r, s.side * s.back * 0.5).add(up.clone().multiplyScalar(s.height));
-        look = c.clone().addScaledVector(h, s.back * 0.15);
-        fov2 = s.fov;
+      case "battle": {
+        const f = focus(s.ids, b);
+        const r = right(f.h);
+        const side = Math.floor(s.a * 7) % 2 ? 1 : -1;
+        const d = 11 + Math.min(10, f.spread * 0.7);
+        pos = f.p.clone().addScaledVector(f.h, d * 0.7).addScaledVector(r, side * d * 0.75).add(up.clone().multiplyScalar(2.3));
+        look = f.p.clone().add(up.clone().multiplyScalar(1.1));
+        fov2 = 42;
+        break;
+      }
+      case "drone":
+      case "blimp": {
+        const st = sim.stateAt(b);
+        const lead = st.byId[st.order[0]];
+        const act = st.order.map((id) => st.byId[id]).filter((r) => !r.finished);
+        const c = new Vector3();
+        for (const r of act.length ? act : [lead]) c.add(new Vector3(r.x, r.y, r.z));
+        c.divideScalar(Math.max(1, act.length));
+        const spread = act.length ? act[0].m - act.at(-1).m : 0;
+        const f = focus([st.order[0]], b);
+        const hgt = s.type === "blimp" ? 38 + Math.min(50, spread * 0.25) : 20 + Math.min(40, spread * 0.25);
+        const back = s.type === "blimp" ? 48 : 30 + Math.min(40, spread * 0.25);
+        const tgt = c.clone().lerp(new Vector3(lead.x, lead.y, lead.z), 0.5);
+        pos = tgt.clone().addScaledVector(f.h, -back).addScaledVector(right(f.h), back * 0.6).add(up.clone().multiplyScalar(hgt));
+        look = tgt;
+        fov2 = 46;
+        break;
+      }
+      case "hill": {
+        const m = world.anchors.hillM;
+        const mid = C.sample(m + 105);
+        const h = new Vector3(mid.tx, 0, mid.tz);
+        const r = right(h);
+        pos = new Vector3(mid.x, mid.y, mid.z).addScaledVector(r, 6.5).add(up.clone().multiplyScalar(2.2));
+        const st = sim.stateAt(b);
+        const onHill = st.order.map((id) => st.byId[id]).filter((x) => C.geoOf(x.m) > m - 120 && C.geoOf(x.m) < m + 200 && !x.finished);
+        const tg = onHill.length ? onHill[0] : null;
+        const tgt = tg ? new Vector3(tg.x, tg.y + 1.1, tg.z) : new Vector3(mid.x, mid.y + 1, mid.z);
+        look = tgt;
+        const dist = pos.distanceTo(tgt);
+        fov2 = MathUtils.clamp(2 * Math.atan(5.5 / dist) * 180 / Math.PI, 12, 50);
+        damp2 = true;
+        break;
+      }
+      case "lapboard": {
+        const g = world.anchors.lapBoard;
+        const bp = new Vector3();
+        g.getWorldPosition(bp);
+        const sb = C.sample(2500 - 25 + 16);
+        const h = new Vector3(sb.tx, 0, sb.tz);
+        const r = right(h);
+        pos = new Vector3(sb.x, sb.y, sb.z).addScaledVector(r, -(4.6 + 3)).add(up.clone().multiplyScalar(2.4));
+        const st = sim.stateAt(b);
+        const near = st.order.map((id) => st.byId[id]).filter((x) => x.m > 2350 && x.m < 2600);
+        const tgt = near.length ? new Vector3(near[0].x, near[0].y + 1.2, near[0].z) : bp.clone().add(up.clone().multiplyScalar(2));
+        look = bp.clone().add(up.clone().multiplyScalar(1.8)).lerp(tgt, 0.45);
+        fov2 = 46;
         break;
       }
       case "finishcam": {
-        const h = new Vector3(fin.tx, 0, fin.tz), r = new Vector3(-h.z, 0, h.x);
+        const h = new Vector3(fin.tx, 0, fin.tz);
+        const r = right(h);
+        const st = sim.stateAt(b);
+        const wid = s.ids?.[0] ?? st.order[0];
+        const rr = st.byId[wid];
         pos = new Vector3(fin.x, fin.y, fin.z).addScaledVector(h, 16).addScaledVector(r, -4).add(up.clone().multiplyScalar(2.6));
-        const st = sim.stateAt(Math.max(0, b));
-        const next = st.order.map((id) => st.byId[id]).find((x) => !x.finished);
-        const arch = new Vector3(fin.x, fin.y + 2.2, fin.z);
-        look = next ? arch.clone().lerp(new Vector3(next.x, next.y + 1.3, next.z), Math.min(0.8, 18 / Math.max(18, next.distToFinish))) : arch;
-        fov2 = 34;
-        s.smoothLook = true;
+        const arch = new Vector3(fin.x, fin.y + 2.5, fin.z);
+        const tgt = rr && !rr.finished ? new Vector3(rr.x, rr.y + 1.3, rr.z) : arch;
+        look = arch.clone().lerp(tgt, rr && !rr.finished ? Math.min(0.85, 15 / Math.max(15, rr.distToFinish)) : 0.3);
+        fov2 = rr && !rr.finished && rr.distToFinish > 30 ? 30 : 40;
         break;
       }
       case "celebrate": {
-        const st = sim.stateAt(Math.max(0, b));
+        const st = sim.stateAt(b);
         const c = new Vector3();
         for (const id of st.order) c.add(new Vector3(st.byId[id].x, st.byId[id].y, st.byId[id].z));
         c.divideScalar(st.order.length);
-        const fh = new Vector3(fin.tx, 0, fin.tz), fr = new Vector3(-fh.z, 0, fh.x);
-        const a = Math.sin((b - s.a) * 0.08) * 0.5;
-        pos = c.clone().addScaledVector(fh, -11 * Math.cos(a)).addScaledVector(fr, 11 * Math.sin(a)).add(up.clone().multiplyScalar(2.8));
+        const fh = new Vector3(fin.tx, 0, fin.tz), fr = right(fh);
+        const a = Math.sin(b * 0.15) * 0.5;
+        pos = c.clone().addScaledVector(fh, -10 * Math.cos(a)).addScaledVector(fr, 10 * Math.sin(a)).add(up.clone().multiplyScalar(2.6));
         look = c.clone().add(up.clone().multiplyScalar(1.2));
-        fov2 = 44;
+        fov2 = 46;
+        damp2 = false;
+        break;
+      }
+      case "photo": {
+        const h = new Vector3(fin.tx, 0, fin.tz);
+        const r = right(h);
+        pos = new Vector3(fin.x, fin.y, fin.z).addScaledVector(r, 8.5).add(up.clone().multiplyScalar(1.3));
+        look = new Vector3(fin.x, fin.y + 1.1, fin.z);
+        fov2 = 40;
+        damp2 = false;
+        break;
+      }
+      case "distracted": {
+        const f = focus(s.ids, b);
+        const r = right(f.h);
+        const q = world.anchors.nearestOnRibbon(f.p.x, f.p.z);
+        const side = Math.sign((q[0] - f.p.x) * r.x + (q[1] - f.p.z) * r.z) || 1;
+        const toFair = r.clone().multiplyScalar(side);
+        const el = b - s.a;
+        if (el < 2.6 && funfair) {
+          const wheel = funfair.anchors.rides[0].pos;
+          const k = el / 2.6;
+          const fromCourse = new Vector3(wheel.x - f.p.x, 0, wheel.z - f.p.z).normalize();
+          pos = f.p.clone().addScaledVector(f.h, -18 + k * 2).addScaledVector(fromCourse, -4).add(up.clone().multiplyScalar(13 - k * 2));
+          look = new Vector3(wheel.x, f.p.y + 8, wheel.z).lerp(f.p.clone().add(up), 0.45 + k * 0.2);
+          fov2 = 54;
+          damp2 = false;
+        } else if (u < 0.62) {
+          const dir = f.h.clone().multiplyScalar(0.55).addScaledVector(toFair, 0.85).normalize();
+          pos = f.p.clone().addScaledVector(dir, 5.2).add(up.clone().multiplyScalar(2));
+          look = f.p.clone().add(up.clone().multiplyScalar(1.85));
+          fov2 = 46;
+        } else {
+          pos = f.p.clone().addScaledVector(f.h, -12).addScaledVector(toFair, -9).add(up.clone().multiplyScalar(7.5));
+          look = f.p.clone().addScaledVector(toFair, 10).add(up.clone().multiplyScalar(2.5));
+          fov2 = 52;
+        }
         break;
       }
       default: {
-        const { c, h } = smooth3(groupOf(s, b), b, w);
-        pos = c.clone().addScaledVector(h, -12).add(up.clone().multiplyScalar(5));
-        look = c.clone();
+        const f = focus(s.ids || [], b);
+        pos = f.p.clone().addScaledVector(f.h, -10).add(up.clone().multiplyScalar(4));
+        look = f.p.clone();
       }
     }
-    return { pos, look, fov: fov2 };
+    return { pos, look, fov: fov2, damp: damp2 };
   }
+  let phase = 0;
   function update(b, dt, shots) {
     const s = shots.find((x) => b >= x.a && b < x.b) || shots.at(-1);
-    let cut = false;
-    if (s !== shot) {
-      const hard = hardNext || !!s.hard;
-      glide = hard ? null : { from: { pos: camera.position.clone(), quat: camera.quaternion.clone(), fov: camera.fov }, t0: b };
-      cut = hard;
-      hardNext = false;
-      shot = s;
-      smoothLook = null;
+    const ph = s.type === "distracted" ? b - s.a < 2.6 ? 0 : (b - s.a) / (s.b - s.a) < 0.62 ? 1 : 2 : 0;
+    const cut = s !== shot || ph !== phase;
+    phase = ph;
+    shot = s;
+    const r = evaluate(s, b, dt);
+    if (!r) return { shot: s, cut };
+    const gy = C.heightAt(r.pos.x, r.pos.z) + 0.8;
+    if (r.pos.y < gy) r.pos.y = gy;
+    if (cut || !sm.init || !r.damp) {
+      cam.pos.copy(r.pos);
+      cam.look.copy(r.look);
+      sm.fov = r.fov;
+      sm.init = true;
+    } else {
+      const k = 1 - Math.exp(-4.5 * dt);
+      const prevOff = cam.pos.clone().sub(cam.look);
+      const newOff = r.pos.clone().sub(r.look);
+      prevOff.lerp(newOff, k);
+      cam.look.copy(r.look);
+      cam.pos.copy(cam.look).add(prevOff);
+      sm.fov += (r.fov - sm.fov) * k;
     }
-    const T = evaluate(s, b);
-    const gy = C.heightAt(T.pos.x, T.pos.z) + 1.2;
-    if (T.pos.y < gy) T.pos.y = gy;
-    if (s.smoothLook) {
-      if (!smoothLook || dt <= 0) smoothLook = smoothLook || T.look.clone();
-      smoothLook.lerp(T.look, 1 - Math.exp(-3 * dt));
-      T.look.copy(smoothLook);
-    }
-    cam.pos.copy(T.pos);
-    cam.look.copy(T.look);
-    m4.lookAt(T.pos, T.look, up);
-    q.setFromRotationMatrix(m4);
-    let pos = T.pos, quat = q, fov2 = T.fov;
-    if (glide) {
-      const u = (b - glide.t0) / GLIDE_S;
-      if (u >= 1 || u < 0) glide = null;
-      else {
-        const e = u * u * u * (u * (u * 6 - 15) + 10);
-        const arc = Math.sin(Math.PI * e) * Math.min(12, glide.from.pos.distanceTo(T.pos) * 0.12);
-        pos = glide.from.pos.clone().lerp(T.pos, e).add(up.clone().multiplyScalar(arc));
-        quat = glide.from.quat.clone().slerp(q, e);
-        fov2 = glide.from.fov + (T.fov - glide.from.fov) * e;
-      }
-    }
-    camera.position.copy(pos);
-    camera.quaternion.copy(quat);
-    if (Math.abs(camera.fov - fov2) > 1e-3) {
-      camera.fov = fov2;
+    camera.position.copy(cam.pos);
+    camera.lookAt(cam.look);
+    if (Math.abs(camera.fov - sm.fov) > 0.01) {
+      camera.fov = sm.fov;
       camera.updateProjectionMatrix();
     }
     return { shot: s, cut };
   }
-  function reset(hard = true) {
+  function reset() {
+    sm.init = false;
     shot = null;
-    glide = null;
-    hardNext = !!hard;
-    smoothLook = null;
   }
   return { update, reset, evaluate, get shot() {
     return shot;
-  }, get gliding() {
-    return !!glide;
   }, cam };
 }
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
-var WIDE_SHOTS = /* @__PURE__ */ new Set(["drone", "heli"]);
 
 // ../../../../tmp/claude-0/-home-user-Parking-game/201ae4ef-9467-51e3-9846-baf7bf89ba8b/scratchpad/b/client/tv/race/hud.js
 var CSS = `
@@ -26804,12 +26773,7 @@ var CSS = `
 .mr-num{color:var(--yellow);-webkit-text-stroke:calc(var(--u)*.38) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.3) 0 rgba(0,0,0,.35)}
 .mr-panel{background:linear-gradient(180deg,#3d86ff,#2457c8);border:calc(var(--u)*.32) solid var(--ink);border-radius:calc(var(--u)*.9);transform:skewX(-10deg);box-shadow:0 calc(var(--u)*.45) 0 rgba(0,0,0,.35)}
 .mr-panel>.mr-unskew{transform:skewX(10deg)}
-.mr-top{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*1.8);display:flex}
-.mr-pill{display:flex;align-items:center;gap:calc(var(--u)*.7);background:rgba(20,22,48,.78);border-radius:99px;padding:calc(var(--u)*.35) calc(var(--u)*1.1);font-size:calc(var(--u)*1.35);line-height:1.2}
-.mr-pill b{font-weight:400;color:var(--yellow)}
-.mr-pill .mr-dot{width:calc(var(--u)*.7);height:calc(var(--u)*.7);border-radius:50%;background:#ff3d5a;display:inline-block}
-.mr-pill .mr-sep{width:1px;align-self:stretch;background:rgba(255,255,255,.3)}
-.mr-pill .mr-clk{font-family:Nunito,sans-serif;font-weight:800;font-size:.8em;opacity:.65}
+.mr-top{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*1.8);display:flex;gap:calc(var(--u)*1);align-items:stretch}
 .mr-live{background:var(--pink);padding:calc(var(--u)*.5) calc(var(--u)*1.2);font-size:calc(var(--u)*1.5);display:flex;align-items:center;gap:calc(var(--u)*.5)}
 .mr-live i{width:calc(var(--u)*.9);height:calc(var(--u)*.9);border-radius:50%;background:#fff;display:inline-block;animation:mrblink 1s infinite}
 @keyframes mrblink{50%{opacity:.25}}
@@ -26819,49 +26783,47 @@ var CSS = `
 .mr-dist{padding:calc(var(--u)*.3) calc(var(--u)*1.2);font-size:calc(var(--u)*1.4);display:flex;flex-direction:column;justify-content:center;min-width:calc(var(--u)*11)}
 .mr-bar{height:calc(var(--u)*.7);background:rgba(0,0,0,.35);border-radius:9px;margin-top:calc(var(--u)*.3);overflow:hidden;border:2px solid var(--ink)}
 .mr-bar>i{display:block;height:100%;background:var(--yellow);width:0}
-.mr-tower{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*5.2);width:calc(var(--u)*19)}
-.mr-row{position:absolute;left:0;width:100%;height:calc(var(--u)*2.9);display:flex;align-items:center;transition:transform .55s cubic-bezier(.3,1.2,.5,1),opacity .35s}
-.mr-row.off{opacity:0}
-.mr-row .mr-pos{width:calc(var(--u)*3.8);font-size:calc(var(--u)*2.2);text-align:center;line-height:1}
-.mr-row .mr-pos small{font-size:.42em;margin-right:2px;vertical-align:middle;color:#fff}
+.mr-tower{position:absolute;left:calc(var(--u)*2.2);top:calc(var(--u)*8.2);width:calc(var(--u)*28)}
+.mr-row{position:absolute;left:0;width:100%;height:calc(var(--u)*4.1);display:flex;align-items:center;transition:transform .55s cubic-bezier(.3,1.4,.5,1),opacity .3s}
+.mr-row .mr-pos{width:calc(var(--u)*5.2);font-size:calc(var(--u)*3.3);text-align:center;line-height:1}
 .mr-row .mr-pos sup{font-size:.45em;vertical-align:top;margin-left:1px}
-.mr-row .mr-card{flex:1;min-width:0;height:calc(var(--u)*2.4);display:flex;align-items:center;padding:0 calc(var(--u)*.6) 0 0;background:rgba(20,22,48,.72);border-radius:calc(var(--u)*.45);transform:skewX(-10deg);overflow:hidden}
+.mr-row .mr-card{flex:1;height:calc(var(--u)*3.4);display:flex;align-items:center;padding:0 calc(var(--u)*.8) 0 0;background:rgba(20,22,48,.82);border:calc(var(--u)*.25) solid var(--ink);border-radius:calc(var(--u)*.6);transform:skewX(-10deg);overflow:hidden}
 .mr-row .mr-card>*{transform:skewX(10deg)}
-.mr-row .mr-chip{width:calc(var(--u)*.8);align-self:stretch;margin-right:calc(var(--u)*.6)}
-.mr-row .mr-name{flex:1;min-width:0;font-size:calc(var(--u)*1.25);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mr-row .mr-gap{font-family:Nunito,"Arial Rounded MT Bold",sans-serif;font-weight:900;font-size:calc(var(--u)*.95);color:#cfe0ff;margin-left:calc(var(--u)*.5)}
+.mr-row .mr-chip{width:calc(var(--u)*1.6);align-self:stretch;margin-right:calc(var(--u)*.8)}
+.mr-row .mr-name{flex:1;min-width:0;font-size:calc(var(--u)*1.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mr-row .mr-gap{font-family:Nunito,"Arial Rounded MT Bold",sans-serif;font-weight:900;font-size:calc(var(--u)*1.2);color:#cfe0ff;margin-left:calc(var(--u)*.5)}
 .mr-row.lead .mr-card{background:linear-gradient(90deg,rgba(255,210,63,.95),rgba(255,160,40,.92));color:var(--ink)}
 .mr-row.lead .mr-gap{color:var(--ink)}
 .mr-row.fin .mr-gap{color:#7dff9a}
 .mr-row.lead.fin .mr-gap{color:var(--ink)}
 .mr-badge{display:inline-flex;align-items:center;gap:.2em;background:var(--bc,#fff);color:var(--ink);border:calc(var(--u)*.18) solid var(--ink);border-radius:99px;font-size:calc(var(--u)*1.05);padding:.05em .55em;margin-left:calc(var(--u)*.35);line-height:1.2;box-shadow:0 calc(var(--u)*.15) 0 rgba(0,0,0,.35);white-space:nowrap}
-.mr-inis{display:inline-flex;gap:calc(var(--u)*.2);margin-left:calc(var(--u)*.4);flex-shrink:0}
-.mr-ini{display:inline-flex;align-items:center;justify-content:center;width:calc(var(--u)*1.25);height:calc(var(--u)*1.25);border-radius:50%;background:var(--bc);color:var(--ink);font-family:Nunito,sans-serif;font-weight:900;font-size:calc(var(--u)*.8);line-height:1;border:1px solid rgba(26,20,32,.6)}
-
-.mr-tag .mr-tb{display:inline-flex;gap:calc(var(--u)*.15)}
-.mr-title{position:absolute;left:41%;top:9%;width:max-content;max-width:64%;transform:translate(-50%,-30%) scale(.8);opacity:0;text-align:center;transition:all .6s cubic-bezier(.3,1.5,.5,1)}
+.mr-row .mr-badges{position:absolute;left:100%;top:50%;transform:translateY(-50%);display:flex;gap:calc(var(--u)*.25);margin-left:calc(var(--u)*.6)}
+.mr-row .mr-badges .mr-badge{margin:0;font-size:calc(var(--u)*1.25)}
+.mr-row.backed .mr-card{box-shadow:0 0 0 calc(var(--u)*.22) var(--bc,#ffd23f),0 0 calc(var(--u)*1.2) var(--bc,#ffd23f)}
+.mr-tag .mr-tb{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);display:flex;gap:calc(var(--u)*.2);margin-bottom:calc(var(--u)*.3)}
+.mr-tag .mr-tb .mr-badge{margin:0;font-size:calc(var(--u)*1.15)}
+.mr-title{position:absolute;left:50%;top:9%;width:max-content;max-width:92%;transform:translate(-50%,-30%) scale(.8);opacity:0;text-align:center;transition:all .6s cubic-bezier(.3,1.5,.5,1)}
 .mr-title.on{opacity:1;transform:translate(-50%,0) scale(1)}
 .mr-title .mr-t0{display:inline-block;font-size:calc(var(--u)*1.7);background:var(--pink);padding:.1em .9em;border:calc(var(--u)*.3) solid var(--ink);border-radius:calc(var(--u)*.8);transform:skewX(-10deg)}
-.mr-title .mr-t1{display:block;white-space:normal;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*5.2);line-height:1.02;color:#fff;-webkit-text-stroke:calc(var(--u)*.45) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
+.mr-title .mr-t1{display:block;white-space:nowrap;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*6);line-height:1;color:#fff;-webkit-text-stroke:calc(var(--u)*.45) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
 .mr-title .mr-t2{display:inline-block;margin-top:calc(var(--u)*.8);font-size:calc(var(--u)*2.1);color:var(--ink);background:var(--yellow);padding:.1em .9em;border:calc(var(--u)*.3) solid var(--ink);border-radius:calc(var(--u)*.8);transform:skewX(-10deg)}
 .mr-pcap{position:absolute;left:50%;bottom:19%;transform:translateX(-50%) skewX(-10deg);background:var(--ink);color:#fff;border:calc(var(--u)*.3) solid #fff;padding:calc(var(--u)*.4) calc(var(--u)*2);font-size:calc(var(--u)*2.2);white-space:nowrap}
 .mr-market{position:absolute;inset:0;opacity:0;transition:opacity .5s;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(20,10,40,.55) 100%)}
 .mr-market.on{opacity:1}
-.mr-market .mr-m1{position:absolute;left:60%;top:15%;transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg);background:linear-gradient(180deg,#3ddc84,#1f9d5a);border:calc(var(--u)*.45) solid var(--ink);border-radius:calc(var(--u)*1.2);padding:calc(var(--u)*.35) calc(var(--u)*1.8);font-size:calc(var(--u)*3.5);white-space:nowrap;color:#fff;-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill;box-shadow:0 calc(var(--u)*.7) 0 rgba(0,0,0,.35);animation:mrpulse 1.6s ease-in-out infinite}
+.mr-market .mr-m1{position:absolute;left:50%;top:17%;transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg);background:linear-gradient(180deg,#3ddc84,#1f9d5a);border:calc(var(--u)*.45) solid var(--ink);border-radius:calc(var(--u)*1.2);padding:calc(var(--u)*.5) calc(var(--u)*3);font-size:calc(var(--u)*5.6);white-space:nowrap;color:#fff;-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill;box-shadow:0 calc(var(--u)*.7) 0 rgba(0,0,0,.35);animation:mrpulse 1.6s ease-in-out infinite}
 @keyframes mrpulse{50%{transform:translate(-50%,-50%) skewX(-10deg) rotate(-2deg) scale(1.04)}}
-.mr-market .mr-m2{position:absolute;left:60%;top:22%;transform:translateX(-50%);font-size:calc(var(--u)*2.3);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill;white-space:nowrap}
+.mr-market .mr-m2{position:absolute;left:50%;top:27%;transform:translateX(-50%);font-size:calc(var(--u)*2.3);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill;white-space:nowrap}
 .mr-market .mr-mt{position:absolute;right:calc(var(--u)*3);top:calc(var(--u)*25);font-size:calc(var(--u)*1.6);background:var(--ink);padding:.2em .8em;border-radius:calc(var(--u)*.6)}
-.mr-map{position:absolute;right:calc(var(--u)*2.2);top:calc(var(--u)*1.8);width:calc(var(--u)*11);height:calc(var(--u)*13.5);padding:calc(var(--u)*.4);transition:opacity .5s}
-.mr-hud.mr-nomap .mr-map{opacity:0}
+.mr-map{position:absolute;right:calc(var(--u)*2.2);top:calc(var(--u)*1.8);width:calc(var(--u)*17);height:calc(var(--u)*21);padding:calc(var(--u)*.5)}
 .mr-map canvas{position:relative;width:100%;height:100%;display:block}
-.mr-mapwrap{position:absolute;inset:0;background:rgba(255,255,255,.72);border-radius:calc(var(--u)*1)}
-.mr-banner{position:absolute;left:50%;top:13%;transform:translate(-50%,-50%) scale(0);text-align:center;white-space:nowrap;transition:transform .35s cubic-bezier(.3,1.7,.5,1)}
+.mr-mapwrap{position:absolute;inset:0;background:rgba(255,255,255,.88);border:calc(var(--u)*.32) solid var(--ink);border-radius:calc(var(--u)*1.2);box-shadow:0 calc(var(--u)*.45) 0 rgba(0,0,0,.3)}
+.mr-banner{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%) scale(0);text-align:center;white-space:nowrap;transition:transform .35s cubic-bezier(.3,1.7,.5,1)}
 .mr-banner.on{transform:translate(-50%,-50%) scale(1)}
-.mr-banner .mr-b1{display:inline-block;padding:calc(var(--u)*.2) calc(var(--u)*1.6);font-size:calc(var(--u)*2.8);line-height:1.05;background:var(--pink);border:calc(var(--u)*.4) solid var(--ink);border-radius:calc(var(--u)*1.2);transform:skewX(-10deg) rotate(-3deg);box-shadow:0 calc(var(--u)*.6) 0 rgba(0,0,0,.35)}
+.mr-banner .mr-b1{display:inline-block;padding:calc(var(--u)*.4) calc(var(--u)*3);font-size:calc(var(--u)*5.6);line-height:1.05;background:var(--pink);border:calc(var(--u)*.4) solid var(--ink);border-radius:calc(var(--u)*1.2);transform:skewX(-10deg) rotate(-3deg);box-shadow:0 calc(var(--u)*.6) 0 rgba(0,0,0,.35)}
 .mr-banner .mr-b1 span{display:inline-block;transform:skewX(10deg)}
-.mr-banner .mr-b2{display:block;margin-top:calc(var(--u)*.6);font-size:calc(var(--u)*1.8);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill}
+.mr-banner .mr-b2{display:block;margin-top:calc(var(--u)*1);font-size:calc(var(--u)*2.1);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill}
 .mr-tags{position:absolute;inset:0}
-.mr-tag{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;display:flex;align-items:center;gap:calc(var(--u)*.3);font-size:calc(var(--u)*1.05);will-change:transform;transition:opacity .25s}
+.mr-tag{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;display:flex;align-items:center;gap:calc(var(--u)*.35);font-size:calc(var(--u)*1.25);will-change:transform;transition:opacity .25s}
 .mr-tag .mr-tp{background:var(--ink);color:var(--yellow);border-radius:calc(var(--u)*.5);padding:0 calc(var(--u)*.45);font-size:calc(var(--u)*1.35)}
 .mr-tag .mr-tn{padding:calc(var(--u)*.05) calc(var(--u)*.6);border:calc(var(--u)*.22) solid var(--ink);border-radius:calc(var(--u)*.6);-webkit-text-stroke:calc(var(--u)*.22) var(--ink);paint-order:stroke fill;box-shadow:0 calc(var(--u)*.25) 0 rgba(0,0,0,.3)}
 .mr-tag:after{content:"";position:absolute;left:50%;bottom:calc(var(--u)*-.75);border:calc(var(--u)*.45) solid transparent;border-top-color:var(--ink);transform:translateX(-50%)}
@@ -26915,7 +26877,12 @@ function createHud(container, { runners, backedBy = {}, course, park, C }) {
   const root = document.createElement("div");
   root.className = "mr-hud mr-dim";
   root.innerHTML = `
-    <div class="mr-top"><div class="mr-pill"><i class="mr-dot"></i><span>LAP <b data-k="lap">1</b>/2</span><span class="mr-sep"></span><span data-k="dist">0.0 KM</span><span class="mr-clk" data-k="clock">0:00</span></div></div>
+    <div class="mr-top">
+      <div class="mr-panel mr-live"><div class="mr-unskew"><i></i> LIVE</div></div>
+      <div class="mr-panel mr-clock"><div class="mr-unskew mr-num" data-k="clock">0:00</div></div>
+      <div class="mr-panel mr-lap"><div class="mr-unskew">LAP <b class="mr-num" data-k="lap">1</b>/2</div></div>
+      <div class="mr-panel mr-dist"><div class="mr-unskew"><span data-k="dist">0.0 KM</span><div class="mr-bar"><i data-k="bar"></i></div></div></div>
+    </div>
     <div class="mr-tower"></div>
     <div class="mr-map"><div class="mr-mapwrap"></div><canvas></canvas></div>
     <div class="mr-tags"></div>
@@ -26936,27 +26903,22 @@ function createHud(container, { runners, backedBy = {}, course, park, C }) {
   for (const r of runners) {
     const row = document.createElement("div");
     row.className = "mr-row";
-    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(shortOf(r))}</div><span class="mr-inis"></span><div class="mr-gap"></div></div>`;
+    const bl = backedBy[r.id] || [];
+    const backers = bl.map((n) => `<span class="mr-badge" style="--bc:${backerColour(n)}">${isEmoji(n) ? "" : "\u2605"}${esc(String(n)).slice(0, 10)}</span>`).join("");
+    if (bl.length) {
+      row.classList.add("backed");
+      row.style.setProperty("--bc", backerColour(bl[0]));
+    }
+    row.innerHTML = `<div class="mr-pos mr-num">1</div><div class="mr-card"><div class="mr-chip" style="background:${r.colour.primary};border-right:4px solid ${r.colour.secondary}"></div><div class="mr-name">${esc(shortOf(r))}</div><div class="mr-gap"></div></div><span class="mr-badges">${backers}</span>`;
     tower.appendChild(row);
     rows[r.id] = { el: row, pos: row.querySelector(".mr-pos"), gap: row.querySelector(".mr-gap"), last: "" };
     const tag = document.createElement("div");
     tag.className = "mr-tag";
-    tag.innerHTML = `<span class="mr-tp mr-num"></span><span class="mr-tb"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(shortOf(r))}</span>`;
+    tag.innerHTML = `<span class="mr-tb">${backers}</span><span class="mr-tp mr-num"></span><span class="mr-tn" style="background:${r.colour.primary};color:#fff">${esc(shortOf(r))}</span>`;
     tag.style.opacity = "0";
     q(".mr-tags").appendChild(tag);
     tags[r.id] = { el: tag, pos: tag.querySelector(".mr-tp"), x: 0, y: 0, vis: false };
   }
-  function setBackedBy(bb = {}) {
-    for (const r of runners) {
-      const bl = (bb[r.id] || []).filter((n) => n != null && n !== "");
-      const inis = bl.map((n) => `<span class="mr-ini" style="--bc:${backerColour(n)}">${esc(initialOf(n))}</span>`).join("");
-      const row = rows[r.id].el;
-      row.classList.toggle("backed", bl.length > 0);
-      row.querySelector(".mr-inis").innerHTML = inis;
-      tags[r.id].el.querySelector(".mr-tb").innerHTML = inis;
-    }
-  }
-  setBackedBy(backedBy);
   const mapCanvas = q(".mr-map canvas");
   const mctx = mapCanvas.getContext("2d");
   let mapBg = null;
@@ -26970,13 +26932,6 @@ function createHud(container, { runners, backedBy = {}, course, park, C }) {
     bx1 = Math.max(bx1, p[0]);
     bz0 = Math.min(bz0, p[2]);
     bz1 = Math.max(bz1, p[2]);
-  }
-  if (course.funfair) {
-    const [fx, fz] = course.funfair.center, fr = course.funfair.radius * 0.6;
-    bx0 = Math.min(bx0, fx - fr);
-    bx1 = Math.max(bx1, fx + fr);
-    bz0 = Math.min(bz0, fz - fr);
-    bz1 = Math.max(bz1, fz + fr);
   }
   for (const id in C.diversions) for (const d of C.diversions[id]) for (const p of d.path) {
     bx0 = Math.min(bx0, p[0]);
@@ -27041,68 +26996,43 @@ function createHud(container, { runners, backedBy = {}, course, park, C }) {
     return c;
   }
   mapBg = drawMapBg();
-  function redrawMap() {
-    mapBg = drawMapBg();
-  }
-  let bannerT = 0, hudClock = 0;
-  const bannerQ = [];
+  let bannerT = 0;
   const banner = q(".mr-banner");
-  function popBanner() {
-    while (bannerQ.length && hudClock - bannerQ[0].at > 2) bannerQ.shift();
-    const b = bannerQ.shift();
-    if (!b) return;
-    banner.querySelector(".mr-b1 span").textContent = b.text;
-    banner.querySelector(".mr-b1").style.background = b.colour;
-    banner.querySelector(".mr-b2").textContent = "";
+  function showBanner(text, sub = "", colour = "#ff3d8b", secs = 2.4) {
+    banner.querySelector(".mr-b1 span").textContent = text;
+    banner.querySelector(".mr-b1").style.background = colour;
+    banner.querySelector(".mr-b2").textContent = sub;
     banner.classList.remove("on");
     void banner.offsetWidth;
     banner.classList.add("on");
-    bannerT = Math.min(1.5, b.secs);
-  }
-  function showBanner(text, _sub = "", colour = "#ff3d8b", secs = 1.4) {
-    if (bannerQ.length >= 3) bannerQ.shift();
-    bannerQ.push({ text, colour, secs, at: hudClock });
-    if (bannerT <= 0) popBanner();
+    bannerT = secs;
   }
   let lastOrderKey = "";
   function update(dt, s) {
-    hudClock += dt;
     if (bannerT > 0) {
       bannerT -= dt;
-      if (bannerT <= 0) {
-        banner.classList.remove("on");
-        bannerT = -0.25;
-      }
-    } else if (bannerT < 0) {
-      bannerT = Math.min(0, bannerT + dt);
-      if (bannerT === 0) popBanner();
+      if (bannerT <= 0) banner.classList.remove("on");
     }
     if (!s) return;
-    if (s.map != null) root.classList.toggle("mr-nomap", !s.map);
     if (s.raceS != null) K.clock.textContent = fmt(s.raceS);
     if (s.leaderM != null) {
       K.lap.textContent = s.leaderM >= 2500 ? "2" : "1";
       K.dist.textContent = `${(Math.min(5e3, s.leaderM) / 1e3).toFixed(1)} KM`;
+      K.bar.style.width = `${Math.min(100, s.leaderM / 5e3 * 100)}%`;
     }
     if (s.order) {
       const h = tower.clientHeight || 0;
       const rowH = (tower.querySelector(".mr-row")?.offsetHeight || 40) + 6;
-      let slot = 0;
       s.order.forEach((o, i) => {
         const r = rows[o.id];
         if (!r) return;
-        r.el.classList.toggle("off", !!o.hidden);
-        if (o.hidden) return;
-        if (slot === 3) slot += 0.35;
-        r.el.style.transform = `translateY(${slot * rowH}px)`;
-        slot++;
+        r.el.style.transform = `translateY(${i * rowH}px)`;
         const key = `${i}|${o.gapText}|${o.finished}`;
-        const key2 = key + (o.posHtml || "");
-        if (key2 !== r.last) {
-          r.last = key2;
-          r.pos.innerHTML = o.posHtml ?? ord(i + 1);
+        if (key !== r.last) {
+          r.last = key;
+          r.pos.innerHTML = ord(i + 1);
           r.gap.textContent = o.gapText;
-          r.el.classList.toggle("lead", i === 0 && !o.posHtml);
+          r.el.classList.toggle("lead", i === 0);
           r.el.classList.toggle("fin", !!o.finished);
         }
       });
@@ -27164,7 +27094,6 @@ function createHud(container, { runners, backedBy = {}, course, park, C }) {
   }
   function clearBanner() {
     bannerT = 0;
-    bannerQ.length = 0;
     banner.classList.remove("on");
   }
   function introCard(r) {
@@ -27233,7 +27162,7 @@ function createHud(container, { runners, backedBy = {}, course, park, C }) {
   function dispose() {
     root.remove();
   }
-  return { root, update, setBackedBy, redrawMap, showBanner, clearBanner, setDim, setDimTop, introCard, countdown, photo, photoLine, results, market, titleCard, dispose };
+  return { root, update, showBanner, clearBanner, setDim, setDimTop, introCard, countdown, photo, photoLine, results, market, titleCard, dispose };
 }
 function shortOf(r) {
   if (r.shortName) return r.shortName;
@@ -27250,12 +27179,6 @@ function backerColour(name) {
   return BACKER_COLS[backerIdx.get(name) % BACKER_COLS.length];
 }
 var isEmoji = (s) => /\p{Extended_Pictographic}/u.test(String(s));
-function initialOf(n) {
-  const t = String(n).trim();
-  if (isEmoji(t)) return [...t][0];
-  const w = t.split(/\s+/).filter(Boolean);
-  return (w.length > 1 && w[0].length <= 3 ? w[0][0] + w[1][0] : t[0] || "?").toUpperCase();
-}
 function shade(hex, k) {
   const c = parseInt(hex.slice(1), 16);
   let r = c >> 16 & 255, g = c >> 8 & 255, b = c & 255;
@@ -27659,14 +27582,6 @@ function buildFunfair(scene, C, world, diversion) {
     const x = p.x + p.tz * off, z = p.z - p.tx * off;
     crowd.push({ x, y: C.heightAt(x, z), z, yaw: R() * 6.28 });
   }
-  function contains(x, z) {
-    for (const m of mids) {
-      if (m.s < s0 - 20 || m.s > s1 + 20) continue;
-      const r = Math.max(6, m.gap / 2 - 4);
-      if ((x - m.x) ** 2 + (z - m.z) ** 2 < r * r) return true;
-    }
-    return false;
-  }
   function update(t) {
     for (const f of spinners) f(t);
   }
@@ -27677,11 +27592,11 @@ function buildFunfair(scene, C, world, diversion) {
     for (const d of disposables) d.dispose?.();
     scene.remove(group);
   }
-  return { group, update, dispose, anchors, crowd, at, s0, s1, contains };
+  return { group, update, dispose, anchors, crowd, at, s0, s1 };
 }
 
 // ../../../../tmp/claude-0/-home-user-Parking-game/201ae4ef-9467-51e3-9846-baf7bf89ba8b/scratchpad/b/client/tv/race/podium.js
-function buildPodium(scene, C, world, runners, order, { camera, offsetX = 3.2 }) {
+function buildPodium(scene, C, world, runners, order, { camera }) {
   const group = new Group();
   scene.add(group);
   const disposables = [];
@@ -27712,14 +27627,14 @@ function buildPodium(scene, C, world, runners, order, { camera, offsetX = 3.2 })
     c.fillStyle = "#ff3d8b";
     roundRect(c, 10, 10, w - 20, hh - 20, 42);
     c.fill();
-    outlinedText(c, "MARKRUN CHAMPIONS", w / 2, hh / 2 + 6, 80, "#ffffff", "#1a1420", 0.16);
+    outlinedText(c, "MARKRUN CHAMPIONS", w / 2, hh / 2 + 6, 100, "#ffffff", "#1a1420", 0.16);
   }, disposables);
   const ban = mesh(new RoundedBoxGeometry(9, 2.2, 0.3, 2, 0.1), [toon("#ff3d8b"), toon("#ff3d8b"), toon("#ff3d8b"), toon("#ff3d8b"), toon("#ffffff", { map: bt }), toon("#ffffff", { map: bt })], { ol: 3, olRef: 14 });
-  ban.position.set(0, 5.6, -2.4);
+  ban.position.set(0, 4.6, -2.4);
   group.add(ban);
   for (const s of [-1, 1]) {
-    const p = mesh(new CylinderGeometry(0.14, 0.16, 5.6, 8), toon("#ffffff"), { ol: 2, olRef: 14 });
-    p.position.set(s * 4.3, 2.8, -2.4);
+    const p = mesh(new CylinderGeometry(0.14, 0.16, 4.6, 8), toon("#ffffff"), { ol: 2, olRef: 14 });
+    p.position.set(s * 4.3, 2.3, -2.4);
     group.add(p);
   }
   const n = order.length;
@@ -27785,7 +27700,7 @@ function buildPodium(scene, C, world, runners, order, { camera, offsetX = 3.2 })
     const dist = 15 - Math.min(2.5, t * 0.2);
     const off = new Vector3(Math.sin(a) * dist, 3 + Math.sin(t * 0.3) * 0.3, Math.cos(a) * dist).applyAxisAngle(new Vector3(0, 1, 0), yaw);
     camera.position.copy(center).add(off);
-    const lk = new Vector3(offsetX, 2.2, 0).applyAxisAngle(new Vector3(0, 1, 0), yaw).add(center);
+    const lk = new Vector3(3.2, 2.2, 0).applyAxisAngle(new Vector3(0, 1, 0), yaw).add(center);
     camera.lookAt(lk);
     if (camera.fov !== 42) {
       camera.fov = 42;
@@ -27950,7 +27865,6 @@ function buildDressing(scene, C, world, park) {
     im.receiveShadow = true;
     im.computeBoundingSphere();
     group.add(im);
-    world.registerInstanced(im, list);
     const bg = mergeGeometries([col(new RoundedBoxGeometry(0.7, 0.45, 0.5, 2, 0.08).translate(0, 0.22, 0), "#c98a4a"), col(new TorusGeometry(0.25, 0.04, 6, 12, Math.PI).translate(0, 0.45, 0), "#8a5a36")]);
     const bm = new InstancedMesh(bg, toon("#ffffff", { vertexColors: true }), baskets.length);
     baskets.forEach((t, i) => {
@@ -27963,7 +27877,6 @@ function buildDressing(scene, C, world, park) {
     bm.computeBoundingSphere();
     outline(bm, 1.6, void 0, 20);
     group.add(bm);
-    world.registerInstanced(bm, baskets);
   }
   {
     const dogGeo = mergeGeometries([
@@ -28016,7 +27929,6 @@ function buildDressing(scene, C, world, park) {
       m.computeBoundingSphere();
       outline(m, 2, void 0, 18);
       group.add(m);
-      world.registerInstanced(m, list);
       return m;
     };
     const dogMesh = dogs.length ? inst(dogGeo, toon("#ffffff"), dogs, dogCols) : null;
@@ -28051,10 +27963,8 @@ function buildDressing(scene, C, world, park) {
     bm.computeBoundingSphere();
     outline(bm, 1.6, void 0, 20);
     group.add(bm);
-    world.registerInstanced(bm, beds);
     const fg = new IcosahedronGeometry(0.24, 0);
-    fg.computeVertexNormals();
-    const fm = new InstancedMesh(fg, toon("#ffffff"), flowers.length);
+    const fm = new InstancedMesh(fg, toon("#ffffff", { flatShading: true }), flowers.length);
     d.scale.setScalar(1);
     flowers.forEach((t, i) => {
       d.position.set(t.x, t.y, t.z);
@@ -28065,7 +27975,6 @@ function buildDressing(scene, C, world, park) {
     });
     fm.computeBoundingSphere();
     group.add(fm);
-    world.registerInstanced(fm, flowers);
   }
   {
     const s = C.sample(55);
@@ -28154,12 +28063,11 @@ function buildDressing(scene, C, world, park) {
 // ../../../../tmp/claude-0/-home-user-Parking-game/201ae4ef-9467-51e3-9846-baf7bf89ba8b/scratchpad/b/client/tv/race/index.js
 var PRE_ROLL = 8.5;
 function createRaceView(container, opts = {}) {
-  const { course, park, round } = opts;
-  let plan = opts.plan || null;
-  let backedBy = opts.backedBy || {};
-  let backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
+  const { course, park, round, plan } = opts;
+  const backedBy = opts.backedBy || {};
+  const backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
   const runnersPub = [...round?.runners || []].sort((a, b2) => (a.lane ?? 0) - (b2.lane ?? 0));
-  let hasDiversion = false;
+  const hasDiversion = !!plan?.runners?.some((r) => r.diversions && r.diversions.length);
   const renderer = new WebGLRenderer({ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, opts.maxPixelRatio ?? 1.5));
   renderer.outputColorSpace = SRGBColorSpace;
@@ -28185,11 +28093,17 @@ function createRaceView(container, opts = {}) {
   scene.add(sun);
   scene.add(sun.target);
   const C = buildCourse(course, park, plan);
-  const world = buildWorld(scene, C, { course, park });
-  let funfair = null, fairCrowd = null;
+  const world = buildWorld(scene, C, { course, park, hasFunfair: hasDiversion });
+  let funfair = null;
+  if (hasDiversion) {
+    const d = plan.runners.find((r) => r.diversions?.length).diversions[0];
+    const div = C.diversions[plan.runners.find((r) => r.diversions?.length).id][0];
+    funfair = buildFunfair(scene, C, world, div || d);
+  }
   const crowdMembers = crowdMembersFromZones(C, world.anchors.crowdZones, 5, world.onPath, world.blocked);
   const dressing = buildDressing(scene, C, world, park);
   crowdMembers.push(...dressing.crowd);
+  if (funfair) crowdMembers.push(...funfair.crowd.map((m) => ({ ...m, zone: "fair" })));
   const byZone = /* @__PURE__ */ new Map();
   for (const m of crowdMembers) {
     const k = m.zone ?? "x";
@@ -28197,13 +28111,8 @@ function createRaceView(container, opts = {}) {
     byZone.get(k).push(m);
   }
   const crowds = [...byZone.values()].map((list) => buildCrowd(scene, list));
-  const crowd = { update: (...a) => {
-    crowds.forEach((c) => c.update(...a));
-    fairCrowd?.update(...a);
-  }, dispose: () => {
-    crowds.forEach((c) => c.dispose());
-    fairCrowd?.dispose();
-  } };
+  const crowd = { update: (...a) => crowds.forEach((c) => c.update(...a)), dispose: () => crowds.forEach((c) => c.dispose()) };
+  const sim = createSim(plan, C, runnersPub);
   const runners = {};
   for (const r of runnersPub) {
     const rr = createRunner(r);
@@ -28213,53 +28122,20 @@ function createRaceView(container, opts = {}) {
   const ids = runnersPub.map((r) => r.id);
   const pubById = Object.fromEntries(runnersPub.map((r) => [r.id, r]));
   const hud = createHud(container, { runners: runnersPub, backedBy, course, park, C });
+  const shots = buildShotList({ plan, sim, backedIds, hasDiversion });
+  const director = createDirector({ camera, C, sim, world, funfair });
   let podium = null;
-  let sim = null, shots = [], director = null, timeline = [], hadDiversion = false;
-  function setupPlan(pl) {
-    plan = pl || null;
-    C.setPlan(plan);
-    hasDiversion = !!plan?.runners?.some((r) => r.diversions && r.diversions.length);
-    if (funfair) {
-      funfair.dispose();
-      funfair = null;
-    }
-    if (fairCrowd) {
-      fairCrowd.dispose();
-      fairCrowd = null;
-    }
-    if (hasDiversion) {
-      const who = plan.runners.find((r) => r.diversions?.length).id;
-      funfair = buildFunfair(scene, C, world, C.diversions[who][0]);
-      world.clearArea(funfair.contains);
-      crowds.forEach((c) => c.hideWhere(funfair.contains));
-      fairCrowd = buildCrowd(scene, funfair.crowd);
-    }
-    if (hasDiversion || hadDiversion) {
-      world.redrawGround();
-      hud.redrawMap();
-    }
-    hadDiversion = hasDiversion;
-    timeline = [];
-    if (plan) {
-      sim = createSim(plan, C, runnersPub);
-      shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair });
-      director = createDirector({ camera, C, sim, world, funfair });
-      for (const e of plan.events || []) timeline.push({ at: e.broadcastS, evt: { ...e, kind: "event" } });
-      for (const c of plan.commentary || []) timeline.push({ at: c.broadcastS, evt: { ...c, kind: "commentary" } });
-      timeline.sort((a, b2) => a.at - b2.at);
-    } else {
-      sim = null;
-      shots = [];
-      director = null;
-    }
-  }
+  const timeline = [];
+  for (const e of plan.events || []) timeline.push({ at: e.broadcastS, evt: { ...e, kind: "event" } });
+  for (const c of plan.commentary || []) timeline.push({ at: c.broadcastS, evt: { ...c, kind: "commentary" } });
+  timeline.sort((a, b2) => a.at - b2.at);
   let mode = "idle";
   let paused = false, disposed = false;
   let b = -PRE_ROLL;
   let wall = 0;
   let raceCb = null, introState = null, freeze = 0, photoDone = false, raceDone = false;
   let evIdx = 0, countdownIdx = 0;
-  let titleShown = false, hudDt = 0;
+  let titleShown = false;
   let speed = Math.max(0.05, Number(opts.speed) || 1);
   let marketT = null, marketBase = 0;
   const firedBanners = /* @__PURE__ */ new Set();
@@ -28295,7 +28171,6 @@ function createRaceView(container, opts = {}) {
     }
   }
   placeAtStart();
-  setupPlan(plan);
   const celebrateFor = (place2, n) => place2 === 1 ? "jump" : place2 === 2 ? "fist" : place2 === 3 ? "fist" : place2 === n ? "collapse" : "kneel";
   function applyRace(bb, dt) {
     const st = sim.stateAt(Math.max(0, bb));
@@ -28348,17 +28223,9 @@ function createRaceView(container, opts = {}) {
   const hudRects = () => {
     if (_rectsAt !== wall || !_rects) {
       const cr = canvas.getBoundingClientRect();
-      _rects = [...hud.root.querySelectorAll(".mr-tower, .mr-map, .mr-top")].filter((e) => !hud.root.classList.contains("mr-dim") && !(hud.root.classList.contains("mr-dimtop") && !e.classList.contains("mr-map"))).map((e) => {
+      _rects = [...hud.root.querySelectorAll(".mr-tower, .mr-map, .mr-top")].map((e) => {
         const r = e.getBoundingClientRect();
-        let right = r.right, bottom = r.bottom;
-        if (e.classList.contains("mr-tower")) {
-          bottom = r.top + e.querySelectorAll(".mr-row").length * ((e.querySelector(".mr-row")?.offsetHeight || 40) + 6);
-          for (const bdg of e.querySelectorAll(".mr-badges")) {
-            const br = bdg.getBoundingClientRect();
-            if (br.width) right = Math.max(right, br.right);
-          }
-        }
-        return { left: r.left - cr.left, right: right - cr.left, top: r.top - cr.top, bottom: bottom - cr.top };
+        return { left: r.left - cr.left, right: r.right - cr.left, top: r.top - cr.top, bottom: (e.classList.contains("mr-tower") ? r.top + e.querySelectorAll(".mr-row").length * ((e.querySelector(".mr-row")?.offsetHeight || 40) + 6) : r.bottom) - cr.top };
       });
       _rectsAt = wall;
     }
@@ -28373,84 +28240,41 @@ function createRaceView(container, opts = {}) {
       const dist = proj.distanceTo(camera.position);
       proj.project(camera);
       let vis = showTags && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && proj.y < 0.82 && proj.y > -0.62 && dist > 9.5 && dist < 150;
-      const pxTall = r.height / Math.max(0.1, dist) * (h / (2 * Math.tan(MathUtils.degToRad(camera.fov) / 2)));
-      if (pxTall > h * 0.3) vis = false;
+      const sx = (proj.x * 0.5 + 0.5) * w, sy = (-proj.y * 0.5 + 0.5) * h;
+      if (vis && hudRects().some((rc) => sx > rc.left - 40 && sx < rc.right + 40 && sy > rc.top - 10 && sy < rc.bottom + 40)) vis = false;
       tags.push({ id, x: (proj.x * 0.5 + 0.5) * w, y: (-proj.y * 0.5 + 0.5) * h, visible: vis, pos: st ? st.order.indexOf(id) + 1 : 0, scale: Math.max(0.7, Math.min(1.15, 30 / dist)), dist });
     }
-    const wide = mode === "race" && WIDE_SHOTS.has(director?.shot?.type) && !director?.gliding;
-    const orderNow = st ? st.order : ids;
-    const want = /* @__PURE__ */ new Set([...orderNow.slice(0, 3), ...backedIds]);
-    tags.sort((a, b2) => orderNow.indexOf(a.id) - orderNow.indexOf(b2.id));
+    tags.sort((a, b2) => a.dist - b2.dist);
     const placed = [];
     for (const t of tags) {
-      if (!wide || !want.has(t.id)) t.visible = false;
       if (!t.visible) continue;
-      const tw = (shortOf(pubById[t.id]).length * 10 + 50 + (backedBy[t.id]?.length || 0) * 18) * t.scale, th = 26 * t.scale, pad = 10;
-      const box = { l: t.x - tw / 2, r: t.x + tw / 2, t: t.y - th, b: t.y + 6 };
-      if (placed.some((p) => box.l < p.r + 4 && box.r > p.l - 4 && box.t < p.b + 2 && box.b > p.t - 2)) {
-        t.visible = false;
-        continue;
+      const tw = (shortOf(pubById[t.id]).length * 12 + 60) * t.scale;
+      for (let k = 0; k < 8; k++) {
+        const hit = placed.find((p) => Math.abs(p.x - t.x) < (p.tw + tw) / 2 && Math.abs(p.y - t.y) < 30 * Math.max(p.scale, t.scale));
+        if (!hit) break;
+        t.y = hit.y - 31 * Math.max(hit.scale, t.scale);
       }
-      if (hudRects().some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) {
-        t.visible = false;
-        continue;
-      }
-      placed.push(box);
+      t.tw = tw;
+      placed.push(t);
     }
     if (!st) {
       if (mode !== "race") return { tags };
-      return { tags, raceS: 0, leaderM: 0, map: false, order: ids.map((id) => ({ id, hidden: true, gapText: "" })) };
+      return {
+        tags,
+        raceS: 0,
+        leaderM: 0,
+        order: ids.map((id) => ({ id, gapText: "", finished: false })),
+        dots: ids.map((id) => ({ x: startSlots[id].x, z: startSlots[id].z, colour: pubById[id].colour.primary }))
+      };
     }
-    const finalKm = st.leader.m >= 4e3;
-    const order = st.order.map((id, i) => {
-      const r = st.byId[id];
-      const show = i < 3 || backedIds.includes(id);
-      let gapText = finalKm || r.finished ? r.gapText : "";
-      if (!gapText && backedIds.includes(id) && i > 0 && !r.finished) {
-        const ahead = st.byId[st.order[i - 1]];
-        const g = st.raceS - timeAtDistance(sim.byId[st.order[i - 1]].progress, r.m);
-        if (!ahead.finished && g >= 0 && g <= 5) gapText = `\u2191${g.toFixed(1)}s`;
-      }
-      return { id, gapText, finished: r.finished, hidden: !show };
-    });
     return {
       raceS: st.raceS,
       leaderM: st.leader.m,
       tags,
-      order,
-      map: WIDE_SHOTS.has(director?.shot?.type),
-      dots: st.order.map((id, i) => ({ x: st.byId[id].x, z: st.byId[id].z, colour: pubById[id].colour.primary, lead: i === 0, focus: director?.shot?.ids?.includes(id) }))
+      order: st.order.map((id) => ({ id, gapText: st.byId[id].gapText, finished: st.byId[id].finished })),
+      dots: st.order.map((id, i) => ({ x: st.byId[id].x, z: st.byId[id].z, colour: pubById[id].colour.primary, lead: i === 0, focus: director.shot?.ids?.includes(id) }))
     };
   }
-  const ringGeo = new RingGeometry(0.78, 1, 48);
-  ringGeo.rotateX(-Math.PI / 2);
-  const rings = {};
-  function updateRings() {
-    for (const id of ids) {
-      const g = rings[id] || (rings[id] = new Group());
-      if (!g.parent) runners[id].root.add(g);
-      for (const c of [...g.children]) {
-        g.remove(c);
-        c.material.dispose();
-      }
-      (backedBy[id] || []).forEach((name, k) => {
-        const m = new Mesh(ringGeo, new MeshBasicMaterial({ color: backerColour(name), transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
-        m.scale.setScalar(1 + k * 0.32);
-        m.position.y = 0.06 + k * 0.01;
-        m.renderOrder = 2;
-        g.add(m);
-      });
-    }
-  }
-  function scaleRings() {
-    for (const id of ids) {
-      const g = rings[id];
-      if (!g || !g.children.length) continue;
-      const d = camera.position.distanceTo(runners[id].root.position);
-      g.scale.setScalar(MathUtils.clamp(d * 0.016, 0.9, 3.2));
-    }
-  }
-  updateRings();
   function updateSun(target, size) {
     const s = Math.max(30, Math.min(220, size));
     const cam = sun.shadow.camera;
@@ -28577,7 +28401,6 @@ function createRaceView(container, opts = {}) {
     }
   }
   function playRace(onEvent, onDone) {
-    if (!sim) throw new Error("createRaceView: playRace needs a plan (pass opts.plan or call loadPlan(plan) first)");
     mode = "race";
     hud.setDim(false);
     hud.results(null);
@@ -28604,21 +28427,26 @@ function createRaceView(container, opts = {}) {
   }
   const countdowns = [[-3, "3"], [-2, "2"], [-1, "1"], [0, "GO!"]];
   function bannerFor(e) {
+    const nick = (id) => pubById[id]?.nickname || id;
     switch (e.type) {
       case "lead_change":
-        return ["LEAD CHANGE", "", "#ff3d8b"];
-      case "overtake":
-        return backedIds.includes(e.by) || backedIds.includes(e.on) ? ["OVERTAKE", "", "#2e6fe0"] : null;
+        return ["LEAD CHANGE!", `${nick(e.to)} hits the front`, "#ff3d8b"];
+      case "overtake": {
+        if (!backedIds.includes(e.by) && !backedIds.includes(e.on) && sim.stateAt(e.broadcastS).order.indexOf(e.by) > 1) return null;
+        return ["OVERTAKE!", `${nick(e.by)} passes ${nick(e.on)}`, "#2e6fe0"];
+      }
       case "hill":
-        return ["THE HILL", "", "#3aa845"];
+        return [e.lap === 1 ? "THE HILL!" : "THE HILL AGAIN!", "Legs of jelly incoming", "#3aa845"];
       case "lap":
-        return ["LAP 2", "", "#2e6fe0"];
+        return ["LAP 2 OF 2", "One more time round!", "#2e6fe0"];
       case "final_stretch":
-        return ["FINAL STRETCH", "", "#ff8a1f"];
+        return ["FINAL STRETCH!", "Here comes the finish", "#ff8a1f"];
       case "diversion":
-        return firedBanners.has("div") ? null : (firedBanners.add("div"), ["DISTRACTED!", "", "#b04bff"]);
+        return firedBanners.has("div") ? null : (firedBanners.add("div"), ["DISTRACTED!", `${nick(e.who)} has spotted the funfair`, "#b04bff"]);
       case "finish":
-        return e.place === 1 && !sim.photoFinish ? ["WINNER", "", "#ffb000"] : null;
+        return e.place === 1 && !sim.photoFinish ? ["WINNER!", nick(e.who), "#ffb000"] : null;
+      case "breakaway":
+        return ["BREAKAWAY!", `${nick(e.who)} makes a break`, "#ff3d8b"];
       default:
         return null;
     }
@@ -28631,7 +28459,8 @@ function createRaceView(container, opts = {}) {
         canvas.style.filter = "";
         world.anchors.finishArch.visible = true;
         director.reset();
-        hud.showBanner("WINNER", "", "#ffb000");
+        const w = sim.finishOrder[0];
+        hud.showBanner("WINNER!", pubById[w]?.nickname || w, "#ffb000", 2.6);
       }
       return;
     }
@@ -28681,80 +28510,13 @@ function createRaceView(container, opts = {}) {
       raceCb?.onDone?.();
     }
   }
-  function applyBackedBy(bb) {
-    backedBy = bb || {};
-    backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
-    hud.setBackedBy(backedBy);
-    updateRings();
-  }
-  function seekRace(bb, warm = 1.2) {
-    if (!sim) throw new Error("createRaceView: seek in a race needs a plan");
-    bb = Math.max(-PRE_ROLL, Math.min(sim.lastFinishB + 3.5, Number(bb) || 0));
-    mode = "race";
-    introState = null;
-    clearPodium();
-    raceCb = raceCb || {};
-    hud.setDim(false);
-    hud.introCard(null);
-    hud.results(null);
-    hud.photo(false);
-    hud.market(false);
-    hud.clearBanner();
-    hud.titleCard(false);
-    hud.setDimTop(false);
-    canvas.style.filter = "";
-    world.anchors.finishArch.visible = true;
-    marketT = null;
-    titleShown = bb >= -3.6 ? "done" : bb < -4.2 ? false : "done";
-    director.reset();
-    const steps = Math.round(warm * 30);
-    for (let i = steps; i >= 0; i--) {
-      b = bb - i / 30;
-      if (b < -3) for (const id of ids) runners[id].set("idle");
-      else if (b < 0) for (const id of ids) runners[id].set("ready");
-      if (i > 0) {
-        director.update(b, 1 / 30, shots);
-        if (b >= 0) applyRace(b, 1 / 30);
-        else for (const id of ids) runners[id].update(1 / 30, {});
-      }
-    }
-    b = bb;
-    evIdx = timeline.findIndex((x) => x.at > b);
-    if (evIdx < 0) evIdx = timeline.length;
-    countdownIdx = countdowns.findIndex((c) => c[0] > b);
-    if (countdownIdx < 0) countdownIdx = countdowns.length;
-    photoDone = b >= sim.firstFinishB;
-    raceDone = b >= sim.lastFinishB + 3.5;
-    freeze = 0;
-  }
-  function seekIntro(t) {
-    const I = introState;
-    if (!I) return;
-    t = Math.max(0, Number(t) || 0);
-    const n = ids.length;
-    if (t < I.fly) {
-      I.t = t;
-      return;
-    }
-    showTitle(false);
-    I.title = true;
-    const idx = Math.min(n, Math.floor((t - I.fly) / I.per));
-    I.idx = idx - 1;
-    I.t = t;
-    nextIntro();
-    I.segStart = I.fly + idx * I.per;
-  }
-  function seek(t) {
-    if (mode === "intro") return seekIntro(t);
-    return seekRace(t);
-  }
   function clearPodium() {
     if (podium) {
       podium.dispose();
       podium = null;
     }
   }
-  function showPodium(results, { card } = {}) {
+  function showPodium(results) {
     mode = "podium";
     hud.setDim(true);
     hud.clearBanner();
@@ -28766,9 +28528,9 @@ function createRaceView(container, opts = {}) {
     canvas.style.filter = "";
     hud.photo(false);
     clearPodium();
-    const order = results?.finishOrder?.length ? [...results.finishOrder].sort((a, b2) => a.place - b2.place) : (sim?.finishOrder || ids).map((id, i) => ({ runnerId: id, place: i + 1, officialS: sim?.byId[id].officialS ?? 0, timeText: sim ? fmtTime(sim.byId[id].officialS) : "" }));
-    podium = buildPodium(scene, C, world, runners, order, { camera, offsetX: (card ?? opts.podiumCard) !== false ? 3.2 : 0 });
-    if ((card ?? opts.podiumCard) !== false) hud.results(order.map((o) => ({ place: o.place, nickname: pubById[o.runnerId]?.nickname || o.runnerId, colour: pubById[o.runnerId]?.colour.primary || "#888", timeText: o.timeText || fmtTime(o.officialS) })));
+    const order = results?.finishOrder?.length ? [...results.finishOrder].sort((a, b2) => a.place - b2.place) : sim.finishOrder.map((id, i) => ({ runnerId: id, place: i + 1, officialS: sim.byId[id].officialS, timeText: fmtTime(sim.byId[id].officialS) }));
+    podium = buildPodium(scene, C, world, runners, order, { camera });
+    if (opts.podiumCard !== false) hud.results(order.map((o) => ({ place: o.place, nickname: pubById[o.runnerId]?.nickname || o.runnerId, colour: pubById[o.runnerId]?.colour.primary || "#888", timeText: o.timeText || fmtTime(o.officialS) })));
   }
   let last = performance.now(), raf = 0;
   const frameStats = { frames: 0, acc: 0, fps: 0 };
@@ -28818,7 +28580,7 @@ function createRaceView(container, opts = {}) {
         for (const id of ids) runners[id].update(ddt, {});
       } else applyRace(b, freeze > 0 ? 0 : ddt);
       const shotType = director.shot?.type;
-      updateSun(director.cam.look, WIDE_SHOTS.has(shotType) ? 160 : 70);
+      updateSun(director.cam.look, shotType === "drone" || shotType === "blimp" || shotType === "heli" ? 160 : 45);
     } else if (mode === "podium" && podium) {
       podium.update(ddt, wall);
       for (const id of ids) runners[id].update(ddt, {});
@@ -28834,42 +28596,30 @@ function createRaceView(container, opts = {}) {
       }
       updateSun(new Vector3(startSlots[ids[0]]?.x ?? 0, 0, startSlots[ids[0]]?.z ?? 0), mode === "intro" && introState?.idx === -1 ? 160 : 40);
     }
-    hudDt += dt;
-    if (noRender) return;
-    scaleRings();
     world.update(wall);
     funfair?.update(wall);
     const rpos = ids.map((id) => runners[id].root.position);
     crowd.update(wall, camera.position, rpos, mode === "podium" ? 0.9 : null);
-    hud.update(hudDt, mode === "race" ? hudState(st, b > -1 && marketT == null) : hudState(null, false));
-    hudDt = 0;
-    renderer.render(scene, camera);
+    hud.update(dt, mode === "race" ? hudState(st, b > -1 && marketT == null) : hudState(null, false));
+    if (!noRender) renderer.render(scene, camera);
   }
-  const MAX_CATCHUP = 2;
   function loop(now) {
     if (disposed) return;
     raf = requestAnimationFrame(loop);
-    const real = Math.max(0, (now - last) / 1e3);
+    const dt = Math.min(speed > 1 ? 0.25 : 0.1, (now - last) / 1e3);
     last = now;
     frameStats.frames++;
-    frameStats.acc += real;
+    frameStats.acc += dt;
     if (frameStats.acc > 1) {
       frameStats.fps = frameStats.frames / frameStats.acc;
       frameStats.frames = 0;
       frameStats.acc = 0;
     }
-    advance(Math.min(MAX_CATCHUP, real) * speed);
-  }
-  function advance(total) {
-    let left = total;
-    if (left <= 1e-6) {
-      frame(0);
-      return;
-    }
+    let left = dt * speed;
     while (left > 1e-6) {
       const step = Math.min(left, 0.1);
+      frame(step, left - step > 1e-6);
       left -= step;
-      frame(step, left > 1e-6);
     }
   }
   if (!opts.manualLoop) raf = requestAnimationFrame(loop);
@@ -28878,8 +28628,6 @@ function createRaceView(container, opts = {}) {
     cancelAnimationFrame(raf);
     ro?.disconnect();
     window.removeEventListener("resize", resize);
-    for (const id in rings) for (const c of rings[id].children) c.material.dispose();
-    ringGeo.dispose();
     clearPodium();
     for (const id of ids) {
       scene.remove(runners[id].root);
@@ -28901,7 +28649,34 @@ function createRaceView(container, opts = {}) {
   }
   const debug = {
     seek(bb, warm = 1.2) {
-      seekRace(bb, warm);
+      mode = "race";
+      hud.setDim(false);
+      introState = null;
+      clearPodium();
+      raceCb = raceCb || {};
+      hud.introCard(null);
+      hud.results(null);
+      hud.photo(false);
+      canvas.style.filter = "";
+      director.reset();
+      const steps = Math.round(warm * 30);
+      for (let i = steps; i >= 0; i--) {
+        b = bb - i / 30;
+        evIdx = timeline.findIndex((x) => x.at > b);
+        if (evIdx < 0) evIdx = timeline.length;
+        countdownIdx = countdowns.findIndex((c) => c[0] > b);
+        if (countdownIdx < 0) countdownIdx = countdowns.length;
+        photoDone = b >= sim.firstFinishB;
+        raceDone = b >= sim.lastFinishB + 3.5;
+        freeze = 0;
+        if (b < -3) for (const id of ids) runners[id].set("idle");
+        else if (b < 0) for (const id of ids) runners[id].set("ready");
+        if (i > 0) {
+          director.update(b, 1 / 30, shots);
+          if (b >= 0) applyRace(b, 1 / 30);
+          else for (const id of ids) runners[id].update(1 / 30, {});
+        }
+      }
       paused = true;
       frame(0);
     },
@@ -28970,16 +28745,10 @@ function createRaceView(container, opts = {}) {
     get b() {
       return b;
     },
-    get shots() {
-      return shots;
-    },
-    get sim() {
-      return sim;
-    },
+    shots,
+    sim,
     C,
-    get director() {
-      return director;
-    },
+    director,
     renderer,
     scene,
     camera,
@@ -29005,33 +28774,21 @@ function createRaceView(container, opts = {}) {
           marketT = null;
           hud.market(false);
           canvas.style.filter = "";
-          director.reset(false);
+          director.reset();
         }
       }
     },
     setSpeed(x) {
       speed = Math.max(0.05, Number(x) || 1);
     },
-    seek,
-    loadPlan(pl, { backedBy: bb } = {}) {
-      if (mode === "race") throw new Error("createRaceView: loadPlan during a race");
-      if (bb) applyBackedBy(bb);
-      setupPlan(pl);
-    },
-    setBackedBy(bb) {
-      applyBackedBy(bb);
-      if (sim && mode !== "race") {
-        shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair });
-      }
-    },
     dispose,
     /** extras */
     hudRoot: hud.root,
     get broadcastTime() {
-      return mode === "intro" ? introState?.t ?? 0 : b;
+      return b;
     },
     get durationS() {
-      return sim ? PRE_ROLL + sim.lastFinishB + 3.5 : 0;
+      return PRE_ROLL + sim.lastFinishB + 3.5;
     },
     preRollS: PRE_ROLL,
     _debug: debug
@@ -29083,10 +28840,10 @@ async function main() {
       sub.textContent = "(betting would happen here)";
       if (qs.get("auto") !== "0") setTimeout(actions.race, 1500);
     }),
-    race: () => (sub.textContent = "", view.playRace(onEvent, () => {
+    race: () => view.playRace(onEvent, () => {
       sub.textContent = "Race over";
       setTimeout(actions.podium, 2500);
-    })),
+    }),
     podium: () => view.showPodium(null),
     pause: /* @__PURE__ */ (() => {
       let p = false;

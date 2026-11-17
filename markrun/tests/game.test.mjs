@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { historyDb } from '../server/db.mjs';
-import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives } from '../server/game/round.mjs';
+import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives, provisionalNet, coldOpenLines, lockLine, stampLine, rematchLine, awardLines } from '../server/game/round.mjs';
 import { tipIsTrue, finishSteer, TIP_TYPES } from '../server/game/hottips.mjs';
 import { skeleton } from '../server/game/clues.mjs';
 import { isPBDay } from '../server/game/select.mjs';
@@ -388,4 +388,54 @@ test('reveal punchlines: one short true line per card, never the same shape twic
   const res = settleRound(r, {}, { p1: 1000, p2: 1000 });
   const shapes = res.reveal.map((x) => x.punchline.replace(/-?\d+(:\d\d)?/g, '#'));
   assert.equal(new Set(shapes).size, shapes.length);
+});
+
+test('provisional payouts equal the real settlement when orderNow is the final order', () => {
+  for (let s2 = 0; s2 < 40; s2++) {
+    const r = mk({ rng: 9500 + s2, settings: { rounds: s2 % 2 ? 1 : 8, trailingPlayerId: s2 % 3 ? 'p2' : null } });
+    const order = r.racePlan.finishOrder;
+    const ip = inPlayMarket(r);
+    const [a, b, c] = r.public.runners;
+    const m = r.public.matchups[0];
+    const bets = {
+      p1: [{ type: 'win', runnerId: a.id, stake: 100 }, { type: 'h2h', matchupId: m.id, pick: m.a, stake: 40 }, { type: 'inplay', runnerId: order[1], stake: 30, odds: ip.odds[order[1]].win }],
+      p2: [{ type: 'win', runnerId: order[0], stake: 70, boost: true }, { type: 'special', runnerId: b.id, stake: 20 }, { type: 'win', runnerId: c.id, stake: 10 }],
+    };
+    const res = settleRound(r, bets, { p1: 1000, p2: 1000 });
+    if (res.deadHeat) continue;
+    const prov = provisionalNet(r.public, bets, order);
+    for (const pid of ['p1', 'p2']) assert.equal(prov[pid], res.payouts[pid].net, `${pid} round ${s2}`);
+  }
+});
+
+test('Underdog Special: only the trailing player, one boosted pick, winnings x1.5', () => {
+  const r = mk({ rng: 9601, settings: { trailingPlayerId: 'p2' } });
+  const sp = r.public.underdogSpecial;
+  assert.equal(sp.playerId, 'p2'); assert.equal(sp.boost, 1.5);
+  const w = r.racePlan.finishOrder[0];
+  const dec = r.public.runners.find((x) => x.id === w).odds.win;
+  const bets = { p1: [{ type: 'win', runnerId: w, stake: 100, boost: true }], p2: [{ type: 'win', runnerId: w, stake: 100, boost: true }, { type: 'special', runnerId: w, stake: 100 }] };
+  const res = settleRound(r, bets, { p1: 1000, p2: 1000 });
+  if (!res.deadHeat) {
+    assert.equal(res.payouts.p1.bets[0].returned, Math.round(100 * dec), 'not the trailing player: no boost');
+    assert.equal(res.payouts.p2.bets[0].returned, Math.round(100 * (1 + 1.5 * (dec - 1))));
+    assert.equal(res.payouts.p2.bets[1].returned, Math.round(100 * dec), 'only one boosted pick');
+  }
+  assert.equal(mk({ rng: 9602 }).public.underdogSpecial, undefined);
+});
+
+test('premium moment lines name the players and stay short', () => {
+  const ps = [{ id: 'a', name: 'Mark' }, { id: 'b', name: 'Jo' }];
+  for (let i = 0; i < 30; i++) {
+    const co = coldOpenLines(ps);
+    assert.ok(co.length >= 2 && co.length <= 3 && co.some((l) => /Mark/.test(l.text)) && co.some((l) => /Jo/.test(l.text)));
+    assert.match(lockLine(ps[1]).text, /Jo/);
+    assert.match(stampLine({ name: 'Mark', net: 500 }).text, /MARK WINS 500|500/);
+    assert.match(stampLine({ name: "Jo", net: -50 }).text, /Jo.*50|50.*Jo/);
+    assert.match(rematchLine([{ name: 'Mark', bankroll: 7666 }, { name: 'Jo', bankroll: 1095 }]).text, /Jo/);
+    for (const l of [...co, lockLine(ps[0]), rematchLine([{ name: 'Mark', bankroll: 1 }, { name: 'Jo', bankroll: 2 }])]) {
+      assert.ok(['jeff', 'pam'].includes(l.speaker)); assert.ok(countWords(l.text) <= 18, l.text);
+    }
+  }
+  assert.equal(awardLines([{ title: 'Biggest Win', text: 'x' }, { title: 'B', text: 'y' }]).length, 2);
 });
