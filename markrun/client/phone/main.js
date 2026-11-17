@@ -127,9 +127,11 @@ function update() {
 function topbar() {
   const ph = { LOBBY: 'Lobby', INTRO: 'Intros', BETTING: S.revealed ? 'Revealed!' : 'Betting open', RACE: 'Racing', RESULTS: 'Results', SCOREBOARD: 'Standings', FINALE: 'Full time' }[S.phase] || '';
   const staked = slip.reduce((a, b) => a + (b.stake || 0), 0);
-  const showLeft = (S.phase === 'INTRO' || S.phase === 'BETTING') && !me.locked && !S.revealed;
+  const betting = (S.phase === 'INTRO' || S.phase === 'BETTING') && !me.locked && !S.revealed;
+  const racing = S.phase === 'RACE';
+  const leftNow = betting ? capOf() - staked : racing ? capOf() - (me.bets || []).reduce((a, b) => a + b.stake, 0) : me.bankroll;
   return `<div class="topbar">${avatarHtml(me.avatar, 44)}<div><div class="nm">${esc(me.name)}</div><div class="ph">${S.round && S.phase !== 'LOBBY' ? `Round ${S.roundNumber}/${S.roundsPerGame} · ` : ''}${ph}</div></div>
-    <div class="bank"><div class="v num">${money(showLeft ? me.bankroll - staked : me.bankroll)}</div><div class="l">${showLeft ? 'left to bet' : 'bankroll'}</div></div></div>`;
+    <div class="bank"><div class="v num">${money(Math.max(0, leftNow))}</div><div class="l">${betting || racing ? 'left to bet' : 'bankroll'}</div></div></div>`;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -227,14 +229,16 @@ function wireNext() {
 // BETTING
 const rules = () => ({ minStake: S.round?.rules?.minStake ?? 10, maxBets: S.round?.rules?.maxBetsPerPlayer ?? 3 });
 const staked = () => slip.reduce((a, b) => a + (b.stake || 0), 0);
-const left = () => me.bankroll - staked();
+const capOf = () => (Number.isFinite(me?.stakeCap) ? me.stakeCap : me.bankroll); // 50% of bankroll, except the finale
+const isFinale = () => Number(S?.round?.payoutMultiplier) >= 2;
+const left = () => capOf() - staked();
 function clampSlip() {
   if (!S?.round) { slip = []; return; }
   const { minStake, maxBets } = rules();
   slip = slip.filter((b) => (b.type === 'win' ? runnerById(S.round, b.runnerId) : b.type === 'prop' ? S.round.props?.some((x) => x.id === b.propId) : S.round.matchups?.some((m) => m.id === b.matchupId))).slice(0, maxBets);
   for (const b of slip) b.stake = Math.max(minStake, Math.floor(b.stake || minStake));
   // if over budget, trim from the last bet backwards
-  let over = staked() - me.bankroll;
+  let over = staked() - capOf();
   for (let i = slip.length - 1; i >= 0 && over > 0; i--) {
     const can = slip[i].stake - minStake;
     const cut = Math.min(can, over);
@@ -266,7 +270,7 @@ function defaultStake() { const { minStake } = rules(); return Math.max(minStake
 function canAdd() {
   const { minStake, maxBets } = rules();
   if (slip.length >= maxBets) { toast(`Max ${maxBets} bets per round`, 'red'); vibrate([40, 30, 40]); return false; }
-  if (left() < minStake) { toast("You're out of money for this round!", 'red'); vibrate([40, 30, 40]); return false; }
+  if (left() < minStake) { toast(isFinale() ? "You're out of money!" : 'That\'s your limit this round (half your bankroll)', 'red'); vibrate([40, 30, 40]); return false; }
   return true;
 }
 function toggleWin(rid) {
@@ -355,7 +359,7 @@ function chip(i, kind) {
   if (kind === 'all') b.stake += room;
   else if (kind === 'minus') b.stake = Math.max(minStake, b.stake - 10);
   else b.stake += Math.min(room, Number(kind));
-  if (kind !== 'minus' && room <= 0) toast("That's everything you've got!", 'red');
+  if (kind !== 'minus' && room <= 0) toast(isFinale() ? "That's everything you've got!" : 'Max for this round: half your bankroll. Go big in the finale!', 'red');
   vibrate(8);
   slipChanged();
 }
@@ -382,8 +386,8 @@ function renderSlip() {
     const odds = betOdds(S.round, b);
     return `<div class="sbet"><div class="r1"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${betKind(b)} · ${esc(oddsText(S.round, b))}</small></div><button class="x" data-rm="${i}" aria-label="Remove bet">✕</button></div>
       <div class="r2"><span class="stake num">${money(b.stake)}</span><span class="pays">returns<b>${money(b.stake * odds)}</b></span></div>
-      <div class="chips"><button class="chip minus" data-i="${i}" data-chip="minus">−10</button><button class="chip" data-i="${i}" data-chip="10" ${room < 1 ? 'disabled' : ''}>+10</button><button class="chip" data-i="${i}" data-chip="50" ${room < 1 ? 'disabled' : ''}>+50</button><button class="chip" data-i="${i}" data-chip="100" ${room < 1 ? 'disabled' : ''}>+100</button><button class="chip allin" data-i="${i}" data-chip="all" ${room < 1 ? 'disabled' : ''}>ALL IN</button></div></div>`;
-  }).join('') + `<div class="slip-meta"><span>Staked ${money(staked())}</span><span>Left ${money(room)}</span></div>`;
+      <div class="chips"><button class="chip minus" data-i="${i}" data-chip="minus">−10</button><button class="chip" data-i="${i}" data-chip="10" ${room < 1 ? 'disabled' : ''}>+10</button><button class="chip" data-i="${i}" data-chip="50" ${room < 1 ? 'disabled' : ''}>+50</button><button class="chip" data-i="${i}" data-chip="100" ${room < 1 ? 'disabled' : ''}>+100</button><button class="chip allin" data-i="${i}" data-chip="all" ${room < 1 ? 'disabled' : ''}>${isFinale() ? 'ALL IN' : 'MAX'}</button></div></div>`;
+  }).join('') + `<div class="slip-meta"><span>Staked ${money(staked())}</span><span>Left ${money(room)}</span></div>${isFinale() ? '<div class="slip-rule">🔥 Finale: everything can go on it!</div>' : `<div class="slip-rule">Max this round: ${money(capOf())} (half your bankroll)</div>`}`;
 }
 function renderBottomBet() {
   const bb = $('#bb'); if (!bb) return;
@@ -485,7 +489,7 @@ function renderMarket() {
   const placed = (me.bets || []).find((b) => b.type === 'inplay');
   if (!m || (!m.open && !placed)) { if (modal.dataset.kind === 'market') { modal.innerHTML = ''; modal.dataset.kind = ''; } return; }
   if (!m.open) { if (modal.dataset.kind === 'market') { modal.innerHTML = ''; modal.dataset.kind = ''; } return; }
-  const free = me.bankroll - (me.bets || []).reduce((a, b) => a + b.stake, 0);
+  const free = capOf() - (me.bets || []).reduce((a, b) => a + b.stake, 0);
   const minStake = S.round?.rules?.minStake ?? 10;
   marketStake = Math.max(minStake, Math.min(marketStake, free));
   const secs = Math.max(0, Math.ceil((m.closesAt - net.serverNow()) / 1000));
@@ -499,7 +503,7 @@ function renderMarket() {
   modal.innerHTML = `<div class="sheet market"><h3>⏱ HALFWAY MARKET <span class="secs">${secs}s</span></h3>
     ${placed ? `<p class="done">✓ You're on <b>${esc(runnerById(S.round, placed.runnerId)?.nickname || '')}</b> — ${money(placed.stake)} @ ${esc(placed.display || `×${placed.odds}`)}</p>`
     : free < minStake ? '<p>No money left for a halfway bet. Just watch! 🍿</p>' : `<p>One bet. Pick a stake, then tap a runner.</p>
-    <div class="mkst">${stakes.map((v) => `<button class="chip ${v === marketStake ? 'sel' : ''}" data-ms="${v}">${money(v)}</button>`).join('')}<button class="chip allin ${marketStake === free ? 'sel' : ''}" data-ms="${free}">ALL IN</button></div>`}
+    <div class="mkst">${stakes.map((v) => `<button class="chip ${v === marketStake ? 'sel' : ''}" data-ms="${v}">${money(v)}</button>`).join('')}<button class="chip allin ${marketStake === free ? 'sel' : ''}" data-ms="${free}">${isFinale() ? 'ALL IN' : 'MAX'}</button></div>`}
     <div class="mkrows">${rows}</div></div>`;
   modal.onclick = (e) => {
     const st = e.target.closest('[data-ms]');

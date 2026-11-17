@@ -3,7 +3,7 @@
 // Pure game-flow logic: no sockets here. The hub (server/net/hub.mjs) turns actions into calls and state into views.
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { validateBets } from './bets.mjs';
+import { validateBets, stakeCap } from './bets.mjs';
 import { broadcastToRace, distanceAt, timeAtDistance } from '../game/raceplan.mjs';
 
 export const PHASES = ['LOBBY', 'INTRO', 'BETTING', 'RACE', 'RESULTS', 'SCOREBOARD', 'FINALE'];
@@ -230,8 +230,11 @@ export class Game extends EventEmitter {
       }
       this.s.gameSessionId ||= crypto.randomBytes(6).toString('hex');
       const st = this.s.settings;
+      // final round: the player in last place gets an extra hot tip (game module)
+      const trailing = number >= st.roundsPerGame && this.s.players.length > 1
+        ? [...this.s.players].sort((a, b) => a.bankroll - b.bankroll)[0].id : null;
       const round = await this.rounds.createRound({ players: this.s.players, roundNumber: number,
-        settings: { ...st, rounds: st.roundsPerGame, drinks: st.drinkingMode, sessionId: `${this.s.sessionId}-${this.s.gameSessionId}` } });
+        settings: { ...st, rounds: st.roundsPerGame, drinks: st.drinkingMode, sessionId: `${this.s.sessionId}-${this.s.gameSessionId}`, ...(trailing ? { trailingPlayerId: trailing } : {}) } });
       this.s.round = round;
       this.s.roundNumber = number;
       this.s.phase = 'INTRO';
@@ -335,6 +338,11 @@ export class Game extends EventEmitter {
   async toRace() {
     const r = this.s.round;
     this.s.results = null; // settled at the finish: in-play bets can still be added at halfway
+    // halfway market only when it's still a contest: skip it if 2nd is more than 20 s behind at halfway
+    const pm = this.rounds.inPlayMarket?.(r);
+    const second = pm?.standings?.find((x) => x.place === 2) || pm?.standings?.[1];
+    this.s.marketPending = pm && pm.odds && (second?.gapS ?? 0) <= 20 ? pm : null;
+    this.s.marketUsed = !this.s.marketPending;
     this.s.phase = 'RACE';
     this.s.raceStartedAt = this.now();
     this.clearReady();
@@ -367,7 +375,7 @@ export class Game extends EventEmitter {
       winner: res?.finishOrder?.[0]?.runnerId ? pub.runners.find((x) => x.id === res.finishOrder[0].runnerId)?.nickname : null,
       bankrolls: Object.fromEntries(this.s.players.map((p) => [p.id, p.bankroll])),
       nets: Object.fromEntries(this.s.players.map((p) => [p.id, res?.payouts?.[p.id]?.net ?? 0])),
-      awards: (res?.awards || []).map((a) => ({ playerId: a.playerId, title: a.title })),
+      awards: (res?.awards || []).map((a) => ({ playerId: a.playerId, title: a.title, text: a.text || '' })),
     });
     // full log for the finale superlatives reel (game module's sessionSuperlatives)
     (this.s.roundLog ||= []).push({ number: this.s.roundNumber, round: { public: pub, hidden: this.s.round.hidden }, bets: betsByPlayer, results: res, bankrolls: { ...this.s.history.at(-1).bankrolls } });
@@ -452,7 +460,7 @@ export class Game extends EventEmitter {
   openMarket(roundId) {
     return this.run(() => {
       if (this.s.phase !== 'RACE' || this.s.marketUsed || (roundId && roundId !== this.s.round.public.roundId)) return;
-      const m = this.rounds.inPlayMarket?.(this.s.round);
+      const m = this.s.marketPending || this.rounds.inPlayMarket?.(this.s.round);
       this.s.marketUsed = true;
       if (!m || !m.odds) { this.changed(); return; }
       this.s.market = { open: true, atM: m.atM ?? 2500, standings: m.standings || [], odds: m.odds, closesAt: this.now() + T.MARKET };
@@ -484,10 +492,10 @@ export class Game extends EventEmitter {
       const o = m.odds[runnerId];
       if (!o) throw new GameError('Unknown runner.');
       const minStake = this.s.round.public.rules?.minStake ?? 10;
-      const free = p.bankroll - bets.reduce((a, b) => a + b.stake, 0);
+      const free = stakeCap(this.s.round.public, p.bankroll) - bets.reduce((a, b) => a + b.stake, 0);
       const st = Math.floor(Number(stake));
       if (!Number.isFinite(st) || st < minStake) throw new GameError(`Minimum stake is ${minStake}.`);
-      if (st > free) throw new GameError(`You only have ${free} left.`);
+      if (st > free) throw new GameError(`You only have ${Math.max(0, free)} left to bet this round.`);
       this.s.bets[playerId] = [...bets, { type: 'inplay', runnerId, stake: st, odds: o.win, lockedOdds: o.win, display: o.display }];
       this.changed();
     });
@@ -650,6 +658,7 @@ export class Game extends EventEmitter {
       locked: !!this.s.locked[p.id],
       privateClues: this.s.round && this.s.phase !== 'LOBBY' ? (this.s.round.private?.[p.id] || []) : [],
       bets: this.s.locked[p.id] ? (this.s.bets[p.id] || []) : (this.s.drafts[p.id] || []),
+      stakeCap: this.s.round && this.s.phase !== 'LOBBY' ? stakeCap(this.s.round.public, p.bankroll) : p.bankroll,
     };
     if (this.s.phase === 'RACE' && this.s.live) {
       const st = this.liveStandings() || [];

@@ -491,3 +491,15 @@ body.phase-BETTING:not(.revealed) .sub .who { font-size: 18px; }
 .score .upnext { bottom: 110px; }
 .reveal-grid { bottom: 300px; }
 .rv .back .strava { font-size: 28px; }
+
+/* RC fixes */
+body.phase-FINALE #subs { left: 40px; transform: none; width: 1540px; align-items: flex-start; }
+.rv .back .strava.fact { background: #eef6ff; font-size: 22px; }
+.rv .back .strava.fact .k { color: var(--panel-deep); }
+.rv .back .ff { margin: 12px 14px 0; font-size: 22px; line-height: 1.25; font-weight: 800; color: #333a6b; overflow: hidden; }
+/* betting cards: odds tab not clipped, clue box sized to its text */
+.rc { overflow: visible; }
+.rc .top { border-radius: 13px 13px 0 0; }
+.rc .clue { flex: 0 1 auto; font-size: 24px; max-height: 270px; }
+.rc .clue .cquote { font-size: 21px; }
+.rc .odds { top: -14px; z-index: 3; }

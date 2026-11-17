@@ -24,6 +24,7 @@ const FUN = {
   fade: ['Lap two was {d} seconds slower than lap one. The Hill sends its regards.', 'Lost {d} seconds on lap two. Second laps are hard.', 'Lap two: {d} seconds slower. Ambition, meet gravity.'],
   kudos0: ['Received zero kudos on Strava. Brutal.', 'Not a single kudos on Strava. Cold world.'],
 };
+const GENERIC_TITLE = /^(morning|afternoon|evening|lunch|night) (run|jog)$|^parkrun$|^finsbury( parkrun)?$/i;
 const pickFun = (key, used, vars = {}) => {
   const bank = FUN[key];
   const fresh = bank.filter((t) => !used.has(t));
@@ -39,38 +40,46 @@ export function revealCard(runnerId, perf, used = new Set()) {
   const desc = (act.description || '').replace(/\s+/g, ' ').trim();
   const finsPB = f.was_finsbury_pb === true;
   const parkrunPB = perf.result.pbFlag === 'PB';
-  const fun = [];
-  if (parkrunPB) fun.push(pickFun('parkrunPB', used));
-  else if (finsPB) fun.push(pickFun('finsPB', used));
+  // each fact carries an "entertainment" score; for generic Strava titles the best one goes first (the TV shows it instead)
+  const facts = [];
+  const add = (score, text) => facts.push({ score, text });
+  if (parkrunPB) add(9, pickFun('parkrunPB', used));
+  else if (finsPB) add(8.5, pickFun('finsPB', used));
   if (perf.diversions?.length) {
-    fun.push(/fun ?fair/i.test(act.name || '') || /fun ?fair/i.test(desc)
+    add(10, /fun ?fair/i.test(act.name || '') || /fun ?fair/i.test(desc)
       ? 'His GPS took a detour round the funfair (course diverted that weekend).'
       : 'Course diverted around the fairground on a bank-holiday weekend, and his GPS went the long way round.');
   }
   const hr = Array.isArray(perf.hr) ? perf.hr.filter((x) => x > 60 && x < 230) : [];
   if (hr.length > 100) {
-    const avg = Math.round(hr.reduce((a, b) => a + b, 0) / hr.length), max = Math.max(...hr);
+    const avg = Math.round(hr.reduce((a2, b2) => a2 + b2, 0) / hr.length), max = Math.max(...hr);
     // An optical sensor that reads under 170 at max on a sub-21-minute run is lying: make it a joke, never a stat.
-    if (max < 170 && perf.officialS < 1260) fun.push(`His watch claims an average of ${avg} bpm for that run. Either superhuman calm or a lying watch.`);
-    else fun.push(`Heart rate averaged ${avg} bpm and peaked at ${max}.`);
+    if (max < 170 && perf.officialS < 1260) add(8, `His watch claims an average of ${avg} bpm for that run. Either superhuman calm or a lying watch.`);
+    else add(max >= 195 ? 6.5 : 3, `Heart rate averaged ${avg} bpm and peaked at ${max}.${max >= 195 ? ' Somebody call a paramedic. Or a cardiologist.' : ''}`);
   }
   const sp = perf.splits || perf.features?.splits;
   if (Array.isArray(sp) && sp.length === 5) {
     const i = sp.indexOf(Math.min(...sp)), j = sp.indexOf(Math.max(...sp));
-    fun.push(`Quickest kilometre: the ${ordinal(i + 1)} (${fmtTime(sp[i])}). Slowest: the ${ordinal(j + 1)} (${fmtTime(sp[j])}).`);
+    add(3.5, `Quickest kilometre: the ${ordinal(i + 1)} (${fmtTime(sp[i])}). Slowest: the ${ordinal(j + 1)} (${fmtTime(sp[j])}).`);
   }
   const l1 = perf.features?.lap1_s, l2 = perf.features?.lap2_s;
   if (l1 && l2) {
     const d = Math.round(l2 - l1);
-    if (d <= -3) fun.push(pickFun('negSplit', used, { d: -d }));
-    else if (d >= 25) fun.push(pickFun('fade', used, { d }));
+    if (d <= -3) add(d <= -30 ? 7 : 5, pickFun('negSplit', used, { d: -d }));
+    else if (d >= 25) add(d >= 60 ? 6 : 4.5, pickFun('fade', used, { d }));
   }
-  if (act.cadence) fun.push(`Average cadence: ${Math.round(act.cadence * 2)} steps per minute.`);
-  if (act.relative_effort) fun.push(`Strava relative effort: ${Math.round(act.relative_effort)}.`);
-  if (act.kudos != null) fun.push(act.kudos === 0 ? pickFun('kudos0', used) : `Collected ${act.kudos} kudos on Strava.`);
+  if (act.kudos != null) add(act.kudos === 0 ? 7.5 : act.kudos >= 30 ? 4.5 : 1.5, act.kudos === 0 ? pickFun('kudos0', used) : `Collected ${act.kudos} kudos on Strava.`);
   const w = f.weather;
-  if (w?.temp_c != null) fun.push(`Conditions: ${Math.round(w.temp_c)}°C${w.wind_kmh != null ? `, wind ${Math.round(w.wind_kmh)} km/h` : ''}.`);
-  if (perf.pacingSource === 'estimated_typical') fun.push('No GPS trace that day: pacing reconstructed from his typical race shape.');
+  if (w?.temp_c != null) {
+    const t = Math.round(w.temp_c), extreme = t <= 0 || t >= 20 || (w.wind_kmh ?? 0) >= 30;
+    add(extreme ? 5.5 : 2, `Conditions: ${t}°C${w.wind_kmh != null ? `, wind ${Math.round(w.wind_kmh)} km/h` : ''}.${t <= 0 ? ' Frost on the barcode.' : t >= 20 ? ' Sun cream at a parkrun.' : (w.wind_kmh ?? 0) >= 30 ? ' Blowing a hoolie.' : ''}`);
+  }
+  if (act.cadence) add(2, `Average cadence: ${Math.round(act.cadence * 2)} steps per minute.`);
+  if (act.relative_effort) add(act.relative_effort >= 100 ? 3 : 1.8, `Strava relative effort: ${Math.round(act.relative_effort)}.`);
+  if (perf.pacingSource === 'estimated_typical') add(1, 'No GPS trace that day: pacing reconstructed from his typical race shape.');
+  const genericTitle = !act.name || GENERIC_TITLE.test(act.name.trim());
+  if (genericTitle) facts.sort((x, y) => y.score - x.score); // stable: equal scores keep their natural order
+  const fun = facts.map((x) => x.text);
   const dt = dateText(perf.date);
   const timeText = perf.result.timeText || fmtTime(perf.officialS);
   return {
@@ -90,6 +99,7 @@ export function revealCard(runnerId, perf, used = new Set()) {
     pacingSource: perf.pacingSource,
     pool: perf.pool,
     funFacts: fun.slice(0, 5),
+    genericTitle,
   };
 }
 

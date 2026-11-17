@@ -14,11 +14,11 @@ export const TIP_TYPES = {
   top3_2k: { polarity: 1, texts: ['Insider: in the top three of this field at 2 km.', 'Clocked in the front three of this lot at the 2 km cone.'] },
   even_pacer: { polarity: 1, texts: ['Insider: the most even two laps of anyone in this field.', 'Paced it like a metronome: smallest lap-two slowdown of these five.'] },
   overtaker: { polarity: 1, texts: ['Insider: made more overtakes than anyone else in this field.', 'Spent the morning passing people: most overtakes in this lot.'] },
-  ahead_hill1: { polarity: 1, pair: true, texts: ['Insider: he crested the Hill on lap one ahead of {other}.', 'A marshal saw him over the Hill on lap one before {other}.'] },
-  ahead_2k: { polarity: 1, pair: true, texts: ['Insider: he went through 2 km ahead of {other}.', 'At the 2 km cone he was in front of {other}.'] },
-  ahead_4k: { polarity: 1, pair: true, texts: ['Insider: he was ahead of {other} at 4 km.', 'With a kilometre to go, he had {other} behind him.'] },
-  behind_1k: { polarity: -1, pair: true, texts: ['Insider: he was behind {other} at 1 km.', 'At the first kilometre, {other} was ahead of him.'] },
-  behind_hill2: { polarity: -1, pair: true, texts: ['Insider: {other} climbed the Hill on lap two quicker than him.', 'Second time up the Hill, {other} outclimbed him.'] },
+  ahead_hill1: { polarity: 1, pair: true, texts: ['Insider: beat {other} to the top of the Hill on lap one.', 'A marshal saw him crest the Hill on lap one before {other}.'] },
+  ahead_2k: { polarity: 1, pair: true, texts: ['Insider: led {other} through 2 km.', 'At the 2 km cone he had {other} in his slipstream.'] },
+  ahead_4k: { polarity: 1, pair: true, texts: ['Insider: led {other} through 4 km.', 'With a kilometre to go he had {other} behind him.'] },
+  led_1k_over: { polarity: 1, pair: true, texts: ['Insider: led {other} through 1 km.', 'Away quicker than {other}: in front of him at the first kilometre.'] },
+  outclimbed_hill2: { polarity: 1, pair: true, texts: ['Insider: outclimbed {other} on the second time up the Hill.', 'Lap two, the Hill: he climbed it quicker than {other}.'] },
   dead_last_1k: { polarity: -1, texts: ['Insider: dead last of this field at 1 km.', 'At the first kilometre he was at the back of these five. Dawdling, or plotting?'] },
   hill2_slowest: { polarity: -1, texts: ['Insider: slowest up the Hill on lap two, of this field.', 'The Hill marshal says he was the slowest of these five on the second climb.'] },
   big_fade: { polarity: -1, texts: ['Insider: the biggest lap-two slowdown of anyone in this field.', 'Lap two was not kind: he slowed more than any of the others.'] },
@@ -50,8 +50,8 @@ export function fieldTips(field, analysis) {
     if (T(a, HILL_TOP[0]) < T(b, HILL_TOP[0])) out.push({ runnerId: a.id, otherId: b.id, type: 'ahead_hill1', polarity: 1 });
     if (T(a, 2000) < T(b, 2000)) out.push({ runnerId: a.id, otherId: b.id, type: 'ahead_2k', polarity: 1 });
     if (T(a, 4000) < T(b, 4000)) out.push({ runnerId: a.id, otherId: b.id, type: 'ahead_4k', polarity: 1 });
-    if (T(a, 1000) > T(b, 1000)) out.push({ runnerId: a.id, otherId: b.id, type: 'behind_1k', polarity: -1 });
-    if (T(a, HILL_TOP[1]) - T(a, HILL_M[1]) > T(b, HILL_TOP[1]) - T(b, HILL_M[1])) out.push({ runnerId: a.id, otherId: b.id, type: 'behind_hill2', polarity: -1 });
+    if (T(a, 1000) < T(b, 1000)) out.push({ runnerId: a.id, otherId: b.id, type: 'led_1k_over', polarity: 1 });
+    if (T(a, HILL_TOP[1]) - T(a, HILL_M[1]) < T(b, HILL_TOP[1]) - T(b, HILL_M[1])) out.push({ runnerId: a.id, otherId: b.id, type: 'outclimbed_hill2', polarity: 1 });
   }
   if (analysis?.events) {
     const n = {};
@@ -63,12 +63,12 @@ export function fieldTips(field, analysis) {
 }
 
 // How much each tip type tends to give away (P(tipped runner wins) in our own sims): used to keep tips informative but not decisive.
-const STRENGTH = { ahead_hill1: 0.25, ahead_2k: 0.25, ahead_4k: 0.3, behind_1k: 0.15, behind_hill2: 0.15, hill1_first: 0.45, hill2_fastest: 0.45, open_fastest: 0.4, led_1k: 0.4, last_km_fastest: 0.5, top3_2k: 0.3, even_pacer: 0.4,
+const STRENGTH = { ahead_hill1: 0.25, ahead_2k: 0.25, ahead_4k: 0.3, led_1k_over: 0.22, outclimbed_hill2: 0.27, hill1_first: 0.45, hill2_fastest: 0.45, open_fastest: 0.4, led_1k: 0.4, last_km_fastest: 0.5, top3_2k: 0.3, even_pacer: 0.4,
   overtaker: 0.35, dead_last_1k: 0.08, open_slowest: 0.08, hill2_slowest: 0.05, big_fade: 0.08, last_km_slowest: 0.06 };
 export const tipStrength = (type) => STRENGTH[type] ?? 0.3;
 // how often each type is chosen (decisive types are rare; tuned with tools/simulate.mjs for a modest hot-tip edge)
 export const TYPE_WEIGHT = { hill1_first: 0.1, hill2_fastest: 0.1, open_fastest: 0.25, last_km_fastest: 0.05, top3_2k: 0.3, even_pacer: 0.8, overtaker: 0.6,
-  ahead_hill1: 0.7, ahead_2k: 1.4, ahead_4k: 0.15, behind_1k: 1.3, behind_hill2: 0.8, dead_last_1k: 0.8, hill2_slowest: 0.7, big_fade: 1, last_km_slowest: 0.4 };
+  ahead_hill1: 0.7, ahead_2k: 1.2, ahead_4k: 0.15, led_1k_over: 1.3, outclimbed_hill2: 0.8, dead_last_1k: 0.8, hill2_slowest: 0.7, big_fade: 1, last_km_slowest: 0.4 };
 
 // Choose `counts[playerId]` hot tips per player: different runners per player where possible, mixed polarities.
 // marketProb: { runnerId: implied win probability }. Good-sounding tips lean towards runners the market already likes,
@@ -95,11 +95,28 @@ export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiv
       };
       const t = rng.weighted(pool, w);
       used.add(t.runnerId); usedTypes.add(t.type);
-      out[pid].push({ ...t, text: rng.pick(TIP_TYPES[t.type].texts) }); // {other} filled in once nicknames exist
+      let text = rng.pick(TIP_TYPES[t.type].texts).replace(/ Dawdling, or plotting\?$/, '');
+      let steer = null;
+      if (STEERED.has(t.type)) { steer = finishSteer(field.find((r) => r.id === t.runnerId)); text += rng.pick(STEER_TEXT[steer]); }
+      out[pid].push({ ...t, text, steer }); // {other} filled in once nicknames exist
     }
   }
   return out;
 }
+
+// A short steer for pacing tips, read from the run's own last kilometre vs its average kilometre. Always true.
+export function finishSteer(r) {
+  const last = r.officialS - T(r, 4000), avg = r.officialS / 5;
+  if (last <= avg * 0.985) return 'strong';
+  if (last >= avg * 1.03) return 'faded';
+  return 'steady';
+}
+const STEER_TEXT = {
+  strong: [' Strong finisher.', ' Finished like a train.', ' Kicked hard at the end.'],
+  faded: [' Faded late, mind.', ' Ran out of puff at the end.', ' Paid for it in the last kilometre.'],
+  steady: [' Steady to the line.', ' No dramatic kick, no collapse.'],
+};
+const STEERED = new Set(['even_pacer', 'big_fade', 'overtaker', 'top3_2k', 'hill2_slowest', 'dead_last_1k']);
 
 // Verify a tip against the field (used by tests): is the stated fact true?
 export function tipIsTrue(field, analysis, tip) {

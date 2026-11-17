@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   drinks: false,
   playerNames: [],
   runnerPlayerId: null,  // the player who IS Mark: everyone else gets an extra hot tip
+  trailingPlayerId: null,// final round only (set by the UI): the trailing player gets an extra hot tip
   wildcardRate: 0.08,    // chance (from round 2, max once per session) of a wildcard round with a novelty-pool run
   funfairRate: 0.16,     // chance per round (from round 3, max once per session) of The Funfair Stakes
   dataThemeRate: 0.5,    // chance (from round 2) of a data theme (Winter Warriors, Heatwave Handicap, ...)
@@ -141,7 +142,9 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   //    A hot tip replaces that player's gossip clue on the tipped runner. The bookie never prices hot tips.
   const pids = players.map((p) => p.id);
   const runnerPid = pids.includes(S.runnerPlayerId) ? S.runnerPlayerId : null;
-  const counts = Object.fromEntries(pids.map((pid) => [pid, runnerPid && pid !== runnerPid ? 2 : 1]));
+  // handicaps: the non-runner(s) get one extra hot tip; so does the trailing player in the final round (UI passes trailingPlayerId)
+  const trailPid = pids.includes(S.trailingPlayerId) ? S.trailingPlayerId : null;
+  const counts = Object.fromEntries(pids.map((pid) => [pid, 1 + (runnerPid && pid !== runnerPid ? 1 : 0) + (trailPid === pid ? 1 : 0)]));
   const preMus = perfs.map((p, i) => predict(model, p.date, assigned[ids[i]].map(({ slot, clue }) => ({ features: clue.features, weight: slot === 0 ? 1 : S.privateWeight }))));
   const marketProb = Object.fromEntries(winProbs(preMus, S.sigma).map((q, i) => [ids[i], q]));
   const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, favourBias: S.tipFavourBias ?? 3.5, positiveShare: S.tipPositiveShare ?? 0.42 });

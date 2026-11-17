@@ -316,3 +316,20 @@ test('TV role: loopback or TV key only', async () => {
   await stop(srv);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('stakes are capped at half the bankroll per round, except the double-payout finale', async () => {
+  const { stakeCap } = await import('../server/net/bets.mjs');
+  const { g, a, b } = await newGame();
+  await g.start(); await g.advance('INTRO');
+  const pub = g.s.round.public;
+  pub.payoutMultiplier = 1;
+  const r0 = pub.runners[0].id;
+  assert.equal(stakeCap(pub, 1000), 500);
+  await assert.rejects(g.lock(a.id, [{ type: 'win', runnerId: r0, stake: 600 }]), /half your bankroll/);
+  await g.lock(a.id, [{ type: 'win', runnerId: r0, stake: 500 }]);
+  assert.equal(g.phoneView(b.id).me.stakeCap, 500);
+  pub.payoutMultiplier = 2;
+  assert.equal(stakeCap(pub, 1000), 1000, 'finale: all in allowed');
+  await g.lock(b.id, [{ type: 'win', runnerId: r0, stake: 1000 }]);
+  g.dispose();
+});

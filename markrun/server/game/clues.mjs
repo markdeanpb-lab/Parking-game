@@ -412,8 +412,8 @@ const OPINIONS = {
     neg: ['Should\'ve been running instead.', 'Jack of all trades. Master of none.', 'Wrong sport, mate.'] },
 };
 const VOICE = {
-  jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker of the day:', 'Jeff is all over this one:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff has gone off him:'] },
-  pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam has a sneaky fancy:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:'] },
+  jeff: { pos: ['Jeff fancies him:', 'Jeff\'s banker of the day:', 'Jeff is all over this one:', 'Jeff can\'t see past him:'], neg: ['Jeff\'s not having it:', 'Jeff says swerve:', 'Jeff has gone off him:', 'Jeff is waving him away:'] },
+  pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam has a sneaky fancy:', 'Pam, against her better judgement:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:', 'Pam, with a sigh:'] },
 };
 
 // Give every assigned clue a style, balancing roughly thirds across the round, never repeating a wording in the
@@ -421,10 +421,12 @@ const VOICE = {
 export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
   const counts = { hedge: 0, fact: 0, tipster: 0 };
   const slotCounts = {};
+  const usedIntros = new Set(); // tipster openers never repeat within a round (so never twice on one runner)
+  const tipVoices = {}; // runnerId -> voices already used on that runner
   const usedRound = new Set();
   const last = mem?.clueSkelRound || {};
   const cooling = (sk) => last[sk] != null && roundNumber - last[sk] <= 3;
-  const all = rng.shuffle(Object.values(assigned).flat());
+  const all = rng.shuffle(Object.entries(assigned).flatMap(([rid, list]) => list.map((x) => Object.assign(x, { runnerId: rid }))));
   for (const x of all) {
     const c = x.clue;
     const opts = [];
@@ -445,8 +447,14 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
     if (o.style === 'tipster') {
       const natural = c.signal < -1.5 ? 'pos' : c.signal > 1.5 ? 'neg' : rng.chance(0.5) ? 'pos' : 'neg';
       const lean = rng.chance(0.68) ? natural : natural === 'pos' ? 'neg' : 'pos';
-      const voice = rng.chance(0.55) ? 'jeff' : 'pam';
-      const intro = rng.pick(VOICE[voice][lean]);
+      const rv = (tipVoices[x.runnerId] ||= new Set());
+      let voice = rng.chance(0.55) ? 'jeff' : 'pam';
+      if (rv.has(voice) && !rv.has(voice === 'jeff' ? 'pam' : 'jeff')) voice = voice === 'jeff' ? 'pam' : 'jeff';
+      let pool = VOICE[voice][lean].filter((t) => !usedIntros.has(t));
+      if (!pool.length) { voice = voice === 'jeff' ? 'pam' : 'jeff'; pool = VOICE[voice][lean].filter((t) => !usedIntros.has(t)); }
+      if (!pool.length) pool = VOICE[voice][lean];
+      const intro = rng.pick(pool);
+      usedIntros.add(intro); rv.add(voice);
       const op = pickOpinion(`op_${GROUP[c.cat]}_${lean}`, OPINIONS[GROUP[c.cat]][lean]);
       text = `${c.factSentence || splitFact(c.text).fact} ${intro} "${op}"`;
       x.clue = { ...c, text, style: 'tipster', voice, lean: lean === 'pos' ? 1 : -1 };

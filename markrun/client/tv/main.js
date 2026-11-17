@@ -699,12 +699,14 @@ function raceScreen(st) {
   let lastWhoosh = 0;
   let finished = 0;
   let marketState = 'idle'; // idle | waiting | open | done
+  let priceSaid = false;
   let marketResolve = null;
   let clockIv = null, mkIv = null;
   async function runMarket(v) {
     marketState = 'waiting';
     try { v.setPaused(true, { market: true, marketText: 'Bet on your phones — one bet each!' }); } catch { /* */ }
     audio.play('bell'); audio.play('crowd', { dur: 2, peak: 0.2 });
+    voice.clear(); subsEl.innerHTML = '';
     say('Halfway! The market is open. One bet each — quick!', 'jeff', 3);
     send({ t: 'marketOpen', roundId: round.roundId });
     mkLayer.innerHTML = marketHtml(S);
@@ -786,6 +788,13 @@ function raceScreen(st) {
     update(s) {
       if (marketState !== 'waiting') return;
       if (s.market && !s.market.open) { marketResolve?.(); return; }
+      if (s.market && !priceSaid) {
+        priceSaid = true;
+        const lead = s.market.standings?.find((x) => x.place === 1) || s.market.standings?.[0];
+        const sec = s.market.standings?.find((x) => x.place === 2);
+        const lr = runnerById(s.round, lead?.runnerId), sr = runnerById(s.round, sec?.runnerId);
+        if (lr) say(`${lr.nickname} leads at halfway and is now ${s.market.odds?.[lead.runnerId]?.display || 'odds-on'}.${sr ? ` ${sr.nickname}, ${Number(sec.gapS).toFixed(1)} seconds back, is ${s.market.odds?.[sec.runnerId]?.display || ''}.` : ''}`, 'jeff', 3);
+      }
       mkLayer.innerHTML = marketHtml(s);
     },
     destroy: () => { cancelToken(tok); clearInterval(clockIv); clearInterval(mkIv); marketResolve?.(); },
@@ -846,7 +855,13 @@ function resultsScreen(st) {
         <div class="face back"><div class="bh" style="background:${esc(r?.colour?.primary)}"><div class="rp">${r ? portrait(r, 74) : ''}</div><div class="n">${esc(r?.nickname || rid)}</div></div>
           <div class="date">${esc(x.dateText || x.date || x.headline || '')}</div>
           <div class="time num">${esc(f?.timeText || '')}</div>
-          ${x.stravaTitle ? `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>` : ''}
+          ${(() => {
+            const facts = (x.funFacts || []).filter(Boolean);
+            const generic = !x.stravaTitle || /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$/i.test(String(x.stravaTitle).trim()) || /^(run|parkrun)$/i.test(String(x.stravaTitle).trim());
+            const box = generic ? (facts[0] ? `<div class="strava fact"><span class="k">DID YOU KNOW?</span>${esc(facts[0])}</div>` : '') : `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>`;
+            const extra = facts[generic ? 1 : 0];
+            return box + (extra ? `<div class="ff">${esc(extra)}</div>` : '');
+          })()}
           ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'COURSE PB!' : 'PB! 🏅'}</div>` : ''}
           <div class="place">${ordinalHtml(f?.place || i + 1)}</div>
         </div></div>`;
@@ -1074,8 +1089,8 @@ function finaleScreen(st) {
   const sorted = [...st.players].sort((a, b) => b.bankroll - a.bankroll);
   const champ = sorted[0];
   const tie = sorted.length > 1 && sorted[1].bankroll === champ?.bankroll;
-  const awards = (st.history || []).flatMap((h) => (h.awards || []).map((a) => ({ title: a.title, text: `Round ${h.round}`, playerId: a.playerId })));
-  const reel = [...(st.superlatives || []), ...awards].filter((x) => x && x.title);
+  const awards = (st.history || []).flatMap((h) => (h.awards || []).filter((a) => a.text).map((a) => ({ title: a.title, text: `${a.text} (round ${h.round})`, playerId: a.playerId }))).slice(0, 3);
+  const reel = [...(st.superlatives || []).filter((x) => x && x.title && x.text), ...awards].slice(0, 7);
   const root = el(`<div class="finale"><div class="rays"></div><div class="fconf"></div>
     <div class="champ">${champ ? `<div class="h outlined">${tie ? "IT'S A DRAW!" : 'CHAMPION!'}</div>
       <div class="who"><div class="crown">👑</div>${avatarHtml(champ.avatar, 200)}<div class="nm outlined white">${esc(tie ? sorted.filter((p) => p.bankroll === champ.bankroll).map((p) => p.name).join(' & ') : champ.name)}</div><div class="bk num">${money(champ.bankroll)}</div></div>` : '<div class="h outlined">GAME OVER</div>'}

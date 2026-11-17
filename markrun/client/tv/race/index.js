@@ -205,7 +205,7 @@ export function createRaceView(container, opts = {}) {
   // ---------- name tags / HUD state ----------
   const proj = new THREE.Vector3();
   let _rects = null, _rectsAt = -1;
-  const hudRects = () => { if (_rectsAt !== wall || !_rects) { const cr = canvas.getBoundingClientRect(); _rects = [...hud.root.querySelectorAll('.mr-tower, .mr-map, .mr-top')].filter((e) => getComputedStyle(e).opacity !== '0').map((e) => {
+  const hudRects = () => { if (_rectsAt !== wall || !_rects) { const cr = canvas.getBoundingClientRect(); _rects = [...hud.root.querySelectorAll('.mr-tower, .mr-map, .mr-top')].filter((e) => !hud.root.classList.contains('mr-dim') && !(hud.root.classList.contains('mr-dimtop') && !e.classList.contains('mr-map'))).map((e) => {
         const r = e.getBoundingClientRect(); let right = r.right, bottom = r.bottom;
         if (e.classList.contains('mr-tower')) {
           // the tower element has no height (rows are absolute) and the backer badges hang off its right edge

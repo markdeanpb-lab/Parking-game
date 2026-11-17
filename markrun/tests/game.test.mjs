@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { historyDb } from '../server/db.mjs';
 import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives } from '../server/game/round.mjs';
-import { tipIsTrue } from '../server/game/hottips.mjs';
+import { tipIsTrue, finishSteer, TIP_TYPES } from '../server/game/hottips.mjs';
 import { skeleton } from '../server/game/clues.mjs';
 import { isPBDay } from '../server/game/select.mjs';
 import { revealCard } from '../server/game/settle.mjs';
@@ -238,6 +238,8 @@ test('hot tips: one per player (two for the non-runner), always true, never pric
     if (tipped.length <= 5) assert.equal(new Set(tipped.map((t) => t.runnerId)).size, tipped.length, 'different runners across players');
     for (const [pid, list] of Object.entries(r.hidden.hotTips)) for (const t of list) {
       assert.ok(tipIsTrue(plan.runners, { events: plan.events }, t), `false tip ${t.type}`);
+      if (TIP_TYPES[t.type].pair) assert.equal(t.polarity, 1, 'relational tips sit on the runner who was ahead');
+      if (t.steer) assert.equal(t.steer, finishSteer(plan.runners.find((x) => x.id === t.runnerId)), 'pacing steer is true');
       const c = r.hidden.clues[t.runnerId].private[pid];
       assert.equal(c.tier, 'hot'); assert.deepEqual(c.features, []); // the bookie cannot price it
       assert.ok(!/\{other\}/.test(c.text));
@@ -332,4 +334,30 @@ test('reveal cards: no repeated jokes on one screen; lying heart-rate monitors a
   const card = revealCard('r', fake, new Set());
   assert.ok(card.funFacts.some((f) => /lying watch/.test(f)));
   assert.ok(!card.funFacts.some((f) => /peaked at/.test(f)));
+});
+
+test('trailing player in the final round gets an extra hot tip; tipster openers never repeat in a round', () => {
+  const r = mk({ rng: 9100, settings: { trailingPlayerId: 'p2' } });
+  assert.equal(r.private.p2.filter((c) => c.tier === 'hot').length, 2);
+  assert.equal(r.private.p1.filter((c) => c.tier === 'hot').length, 1);
+  const r2 = mk({ rng: 9101, settings: { trailingPlayerId: 'p2', runnerPlayerId: 'p1' } });
+  assert.equal(r2.private.p2.filter((c) => c.tier === 'hot').length, 3);
+  for (let s2 = 0; s2 < 60; s2++) {
+    const rr = mk({ rng: 9200 + s2 });
+    const intros = Object.values(rr.hidden.clues).flatMap((c) => [c.public, ...Object.values(c.private)])
+      .filter((c) => c.style === 'tipster').map((c) => c.text.match(/((?:Jeff|Pam)[^:"]*:) "/)?.[1]);
+    assert.ok(intros.every(Boolean));
+    assert.equal(new Set(intros).size, intros.length, `repeated opener: ${intros.join(' | ')}`);
+  }
+});
+
+test('generic Strava titles lead with the most entertaining true fact', () => {
+  const data = loadData(hist);
+  for (const p of data.perfs) {
+    const c = revealCard('r', p, new Set());
+    if (!c.genericTitle) continue;
+    assert.ok(c.funFacts.length >= 1);
+    if (p.diversions?.length) assert.match(c.funFacts[0], /funfair|fairground/);
+    else if (p.result.pbFlag === 'PB') assert.match(c.funFacts[0], /PB/);
+  }
 });

@@ -220,3 +220,5 @@ body.phone input { user-select: text; -webkit-user-select: text; }
   .hero-title { font-size: 38px; }
 }
 .net-big { white-space: nowrap; max-width: 100%; overflow: hidden; }
+
+.slip-rule { margin-top: 6px; font-size: 13px; font-weight: 900; opacity: .85; text-align: center; }

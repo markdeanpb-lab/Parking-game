@@ -1,5 +1,14 @@
 // Bet validation + a fallback settlement used only when server/game/round.mjs is unavailable.
 
+// Round-1-can't-decide-the-night rule: total stakes per round are capped at 50% of the bankroll, except in the
+// DOUBLE PAYOUT finale (payoutMultiplier 2) where you can go all in. The halfway in-play bet counts within the cap.
+export function stakeCap(pub, bankroll) {
+  const b = Math.max(0, Math.floor(Number(bankroll) || 0));
+  if (Number(pub?.payoutMultiplier) >= 2) return b;
+  const minStake = pub?.rules?.minStake ?? 10;
+  return Math.min(b, Math.max(minStake, Math.floor(b / 2)));
+}
+
 export function validateBets(pub, bets, bankroll) {
   if (!Array.isArray(bets)) return { ok: false, error: 'Bets must be a list.' };
   const rules = pub.rules || {};
@@ -41,6 +50,8 @@ export function validateBets(pub, bets, bankroll) {
     total += stake;
   }
   if (total > bankroll) return { ok: false, error: `You only have ${bankroll} to bet.` };
+  const cap = stakeCap(pub, bankroll);
+  if (total > cap) return { ok: false, error: `Max ${cap} this round (half your bankroll) — save the big swing for the finale!` };
   return { ok: true, bets: out, total };
 }
 
