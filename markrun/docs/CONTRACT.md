@@ -82,3 +82,22 @@ createRaceView(container, { course, park, round: Round.public, plan: RacePlan, b
   -> { playIntro(onDone), playRace(onEvent, onDone), showPodium(results), setPaused(b), dispose() }
 ```
 `onEvent(evt)` fires as the broadcast passes each plan event / commentary line (shell uses it for subtitles + TTS).
+
+## Iteration 2 additions (frozen 2026-11-17; game module provides, server/UI consume)
+- Private clue objects gain `tier: 'hot' | 'gossip'`. Each player gets exactly ONE `hot` tip per round, a genuinely informative,
+  TRUE in-race insider fact the bookie did NOT price, e.g. "hit the Hill first on lap 1" or "quickest first km in this field". Never a time, date or result.
+  The rest are `gossip` (training/weather facts). The runner-player handicap is `settings.runnerPlayerId`: the OTHER player gets one extra hot tip.
+- `round.public.theme = { key, label, blurb }` is announced on the TV (e.g. "Winter Warriors", "The Funfair Stakes"). The archetype stays secret.
+- `round.public.payoutMultiplier`: 2 on the final round ("DOUBLE PAYOUT FINALE"), else 1.
+- `round.public.props = [{ id, text, odds: { yes, no, displayYes, displayNo } }]` (e.g. "Will anyone visit the funfair?").
+  Bet `{ type: 'prop', propId, pick: 'yes'|'no', stake }`.
+- In-play "HALFWAY MARKET": `inPlayMarket(round)` returns `{ atM: 2500, standings: [{ runnerId, place, gapS }], odds: { [runnerId]: { win, display } } }`.
+  Prices come only from the halfway standings and gaps that are on screen at that moment. At the plan's `lap` event the TV pauses the broadcast,
+  the server opens the market for ~12 s, and each player may place ONE bet `{ type: 'inplay', runnerId, stake, odds }`.
+  It's settled like a win bet at the locked-in odds.
+- `betRevealOrder(round, betsByPlayer, bankrolls, players)` returns `[{ playerId, bet, line: { speaker, text } }]`, smallest to largest bet
+  relative to bankroll. It names clashes ("they've both backed…") and head-to-head opposition. The TV reveals one at a time.
+- `sessionSuperlatives(history, players)` returns `[{ title, text, playerId? }]` for the finale reel: biggest win, worst bet, most
+  misleading clue of the night, "the real Mark of the night" (fastest actual run shown, with date), funfair moments.
+- Results: `clueReview` gains `highlight: true` on the ≤3 clues that mattered most. `reveal[].headline` is the sofa-readable
+  one-liner (date + time + Strava title). Detailed stats stay in `reveal[].funFacts`, shown on the phones, not the TV.

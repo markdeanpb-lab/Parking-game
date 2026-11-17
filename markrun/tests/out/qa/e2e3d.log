@@ -1,0 +1,8 @@
+server on http://127.0.0.1:39093
+  shot 01-tv-lobby-empty
+  shot 01b-tv-refresh-confirm
+  shot 02-phoneA-join
+  shot 03-phoneA-lobby
+  shot 04-tv-lobby-players
+round source: game
+  shot 05-tv-intro-title
