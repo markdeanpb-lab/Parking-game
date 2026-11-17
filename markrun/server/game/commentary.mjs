@@ -57,10 +57,10 @@ const B = {
     'Last race of the night, and the winnings are doubled! Go big or go home!',
   ],
   hot_callback: [
-    'Somebody\'s hot tip said {s} {tip}. And look at that!',
-    'There it is! A little insider info said {s} {tip}. Someone on the sofa is smiling.',
-    'One of you was told {s} {tip}. Well, well, well.',
-    'Hot tip alert! {s} {tip}, just as somebody was promised.',
+    'Somebody\'s hot tip said {s} {tip}. And look!',
+    'Insider info said {s} {tip}. Someone is smiling.',
+    'One of you was told {s} {tip}. Well, well.',
+    'Hot tip alert! {s} {tip}, as promised.',
   ],
   wildcard_intro: [
     'Word from the paddock: one of these five was NOT trying very hard that day. Read your clues carefully!',

@@ -83,13 +83,20 @@
 
   Its bugs (seat takeover, wall-clock timers, TV reload, net lines, TV auth, overlays) were fixed in iteration 2.
 
+## Release-candidate fixes (Fable milestone-3 review: "ship, conditional on 2 blockers") — done
+- Blocker 1: pre-race stakes capped at 50% of bankroll except in the double-payout finale (MAX chip); halfway bet counts within the cap;
+  trailing player gets an extra hot tip in the final round.
+- Blocker 2: finale reel = superlatives + ≤3 real awards, max 7 cards.
+- Hot tips sit on the runner who was ahead, phrased positively, with a true finishing steer (ROI +24%); tipster openers never repeat in a round.
+- Reveal cards: generic Strava titles replaced by "DID YOU KNOW?" + best true fun fact; extra fact line on every card.
+- Halfway market: Jeff reads prices, phone shows "left to bet", market skipped when 2nd is >20 s back.
+- TV betting card polish; 3D name tags avoid the HUD and hide in close-ups.
+- Verified after fixes: `npm test` 38/38; offline acceptance (3 rounds, host SIGKILL + resume, side + halfway bets, zero external requests) passed.
+
 ## Open issues / next priorities
-- Release-candidate fixes in progress:
-  - cap pre-race stakes at 50% outside the finale;
-  - trim the finale reel;
-  - hotter hot tips;
-  - fill reveal cards that have generic Strava titles;
-  - market polish;
-  - TV betting card polish.
-- Real-hardware frame rate is not measured: the headless renderer is software-only. Merging static props per tile is the next step if a laptop iGPU struggles.
-- The last two runs (Oct 2026) are newer than the weather archive used, so they have no weather facts until a refresh.
+- Real-hardware frame rate unmeasured (headless rendering is software-only). If a laptop iGPU struggles in wide funfair shots
+  (~1000 draw calls), merge static props per tile.
+- The 3D-mode e2e is too slow headless for the bot to hit the 12 s halfway market (the 2D e2e covers that path).
+- Pam's spoken reveal line still reads a generic Strava title ("Morning Run") even though the card shows a fun fact instead.
+- The last two parkruns (Oct 2026) post-date the weather archive used, so they have no weather facts until a refresh.
+- Hot-tip ROI (+24%) sits at the top of the target band; lower `tipPositiveShare` if tips feel too decisive in real play.
