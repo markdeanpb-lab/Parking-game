@@ -60,6 +60,11 @@ export async function createRound({ players, roundNumber, settings }) {
   return fixtureRound(players, roundNumber);
 }
 
+export function betReactionLines(round, betsByPlayer, players) {
+  if (!game || round?.source !== 'game' || typeof game.betReactionLines !== 'function') return [];
+  try { return game.betReactionLines(round, betsByPlayer, players) || []; } catch (e) { console.warn('[markrun] betReactionLines failed:', e.message); return []; }
+}
+
 export async function settleRound(round, betsByPlayer, bankrolls) {
   const g = await loadGame();
   let res = null;

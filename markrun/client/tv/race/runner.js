@@ -40,13 +40,18 @@ function drawFace(g, w, h, skin, face, expr) {
       g.stroke(); return;
     }
     if (kind === 'x') { g.strokeStyle = ink; g.lineWidth = 8; g.lineCap = 'round'; const s = w * 0.02; g.beginPath(); g.moveTo(x - s, eyeY - s); g.lineTo(x + s, eyeY + s); g.moveTo(x + s, eyeY - s); g.lineTo(x - s, eyeY + s); g.stroke(); return; }
-    const rw = w * 0.03, rh = h * 0.085;
+    if (kind === 'wink' && x > cx) kind = 'happy';
+    if (kind === 'wink') kind = 'open';
+    if (kind === 'happy') { g.strokeStyle = ink; g.lineWidth = 9; g.lineCap = 'round'; g.beginPath(); g.arc(x, eyeY + h * 0.02, w * 0.024, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); return; }
+    const big = kind === 'wide' ? 1.3 : 1;
+    const rw = w * 0.03 * big, rh = h * 0.085 * big;
     g.fillStyle = '#fff'; g.strokeStyle = ink; g.lineWidth = 6; g.beginPath(); g.ellipse(x, eyeY, rw, rh, 0, 0, 7); g.fill(); g.stroke();
-    g.fillStyle = ink; g.beginPath(); g.ellipse(x + rw * 0.15, eyeY + rh * 0.12, rw * 0.55, rh * 0.6, 0, 0, 7); g.fill();
+    const pr = kind === 'wide' ? 0.38 : 0.55;
+    g.fillStyle = ink; g.beginPath(); g.ellipse(x + rw * 0.15, eyeY + rh * 0.12, rw * pr, rh * pr * 1.1, 0, 0, 7); g.fill();
     g.fillStyle = '#fff'; g.beginPath(); g.arc(x + rw * 0.35, eyeY - rh * 0.2, rw * 0.22, 0, 7); g.fill();
     if (kind === 'half') { g.fillStyle = skin; g.fillRect(x - rw - 4, eyeY - rh - 4, rw * 2 + 8, rh * 1.05); g.strokeStyle = ink; g.lineWidth = 7; g.beginPath(); g.moveTo(x - rw - 2, eyeY - rh * 0.1); g.lineTo(x + rw + 2, eyeY - rh * 0.1); g.stroke(); }
   };
-  let eyeKind = { sleepy: 'half', smug: 'half' }[face] || 'open';
+  let eyeKind = { sleepy: 'half', smug: 'half', cheeky: 'wink', 'wide-eyed': 'wide' }[face] || 'open';
   if (expr === 'happy') eyeKind = 'happy';
   if (expr === 'love') eyeKind = 'heart';
   if (expr === 'dead') eyeKind = 'x';
@@ -54,7 +59,7 @@ function drawFace(g, w, h, skin, face, expr) {
   for (const s of [-1, 1]) eye(cx + s * ex, eyeKind);
   // brows
   g.strokeStyle = ink; g.lineWidth = 10; g.lineCap = 'round';
-  const browTilt = expr === 'effort' || face === 'determined' ? 0.35 : expr === 'sad' || face === 'worried' ? -0.35 : face === 'smug' ? 0.15 : 0;
+  const browTilt = expr === 'effort' || face === 'determined' || face === 'gritted' ? 0.35 : expr === 'sad' || face === 'worried' ? -0.35 : face === 'smug' || face === 'cheeky' ? 0.15 : face === 'wide-eyed' ? -0.2 : 0;
   for (const s of [-1, 1]) {
     const x = cx + s * ex, y = eyeY - h * 0.13, d = w * 0.026;
     const xi = x - s * d, xo = x + s * d; // inner end is towards the face centre
@@ -76,6 +81,17 @@ function drawFace(g, w, h, skin, face, expr) {
     if (m === 'dead') { g.fillStyle = '#ff7d8f'; g.beginPath(); g.ellipse(mx + w * 0.012, mouthY + h * 0.07, w * 0.012, h * 0.04, 0.2, 0, 7); g.fill(); g.stroke(); }
   } else if (m === 'love' || m === 'pant') {
     g.beginPath(); g.ellipse(mx, mouthY + h * 0.02, w * 0.022, h * 0.05, 0, 0, 7); g.fill(); g.stroke();
+  } else if (face === 'gritted') {
+    g.fillStyle = '#fff'; g.beginPath(); roundRect(g, mx - w * 0.04, mouthY - h * 0.03, w * 0.08, h * 0.06, 10); g.fill(); g.stroke();
+    g.lineWidth = 4; g.beginPath(); g.moveTo(mx - w * 0.04, mouthY); g.lineTo(mx + w * 0.04, mouthY); for (let i = -2; i <= 2; i++) { g.moveTo(mx + i * w * 0.014, mouthY - h * 0.03); g.lineTo(mx + i * w * 0.014, mouthY + h * 0.03); } g.stroke();
+  } else if (face === 'tongue-out') {
+    g.beginPath(); g.moveTo(mx - w * 0.035, mouthY); g.quadraticCurveTo(mx, mouthY + h * 0.05, mx + w * 0.035, mouthY); g.stroke();
+    g.fillStyle = '#ff6f8a'; g.beginPath(); g.ellipse(mx + w * 0.008, mouthY + h * 0.06, w * 0.016, h * 0.05, 0.15, 0, 7); g.fill(); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 3; g.beginPath(); g.moveTo(mx + w * 0.008, mouthY + h * 0.03); g.lineTo(mx + w * 0.01, mouthY + h * 0.08); g.stroke();
+  } else if (face === 'wide-eyed') {
+    g.beginPath(); g.ellipse(mx, mouthY + h * 0.02, w * 0.016, h * 0.04, 0, 0, 7); g.fill(); g.stroke();
+  } else if (face === 'cheeky') {
+    g.beginPath(); g.moveTo(mx - w * 0.04, mouthY - h * 0.01); g.quadraticCurveTo(mx, mouthY + h * 0.08, mx + w * 0.045, mouthY - h * 0.035); g.stroke();
   } else if (face === 'smug') {
     g.beginPath(); g.moveTo(mx - w * 0.03, mouthY + h * 0.01); g.quadraticCurveTo(mx + w * 0.01, mouthY + h * 0.05, mx + w * 0.04, mouthY - h * 0.03); g.stroke();
   } else if (face === 'worried') {
@@ -219,10 +235,16 @@ export function createRunner(info, opts = {}) {
     const cap = (scale = 1.07, cut = 0.48) => { const m = ink(G(`hcap${hr}${scale}${cut}`, () => new THREE.SphereGeometry(hr * scale, 24, 14, 0, Math.PI * 2, 0, Math.PI * cut)), mHair); m.position.y = hr * 0.92; m.rotation.x = -0.32; head.add(m); return m; };
     if (h === 'curly' || h === 'afro') {
       const geo = G(`curly${hr}`, () => { const r2 = mulberry(7); const gs = []; for (let i = 0; i < 26; i++) { const th = r2() * Math.PI * 0.55, ph = r2() * Math.PI * 2; const v = new THREE.Vector3(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)).multiplyScalar(hr * 1.02); if (v.z > hr * 0.55 && v.y < hr * 0.75) continue; gs.push(new THREE.IcosahedronGeometry(hr * 0.33, 1).translate(v.x, v.y, v.z - hr * 0.08)); } return mergeGeometries(gs); });
-      const m = ink(geo, mHair); m.position.y = hr * 0.98; head.add(m); return;
+      const m = ink(geo, mHair); m.position.y = hr * 0.98; if (h === 'afro') { m.scale.setScalar(1.28); m.position.y = hr * 1.05; } head.add(m); return;
     }
-    if (hat === 'beanie' || hat === 'bucket') { cap(1.05, 0.5); return; }
+    if (hat === 'beanie' || hat === 'bucket' || hat === 'bobble') { cap(1.05, 0.5); if (h === 'mullet' || h === 'long' || h === 'ponytail') { const b = ink(G(`mul${hr}`, () => new RoundedBoxGeometry(hr * 1.5, hr * 0.9, hr * 0.4, 3, hr * 0.15)), mHair); b.position.set(0, hr * 0.35, -hr * 0.78); head.add(b); } return; }
+    if (h === 'buzz') { const m = ink(G(`buzz${hr}`, () => new THREE.SphereGeometry(hr * 1.025, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.45)), mHair, 2); m.position.y = hr * 0.92; m.rotation.x = -0.32; head.add(m); return; }
     cap();
+    if (h === 'quiff' || h === 'swept') {
+      const q = ink(G(`quiff${hr}${h}`, () => new THREE.SphereGeometry(hr * 0.55, 16, 10).scale(h === 'quiff' ? 1.3 : 1.7, h === 'quiff' ? 0.75 : 0.45, 1.0)), mHair);
+      q.position.set(h === 'swept' ? hr * 0.25 : 0, hr * 1.82, hr * 0.38); q.rotation.set(-0.5, 0, h === 'swept' ? -0.35 : 0); head.add(q);
+    }
+    if (h === 'mullet') { const b = ink(G(`mul${hr}`, () => new RoundedBoxGeometry(hr * 1.5, hr * 0.9, hr * 0.4, 3, hr * 0.15)), mHair); b.position.set(0, hr * 0.35, -hr * 0.78); head.add(b); }
     if (h === 'long') { const b = ink(G(`hlong${hr}`, () => new RoundedBoxGeometry(hr * 1.8, hr * 1.6, hr * 0.5, 3, hr * 0.2)), mHair); b.position.set(0, hr * 0.4, -hr * 0.62); head.add(b); }
     if (h === 'ponytail') { const p = new THREE.Group(); p.position.set(0, hr * 1.35, -hr * 0.85); head.add(p); for (let i = 0; i < 3; i++) { const s = ink(G(`pt${hr}${i}`, () => new THREE.SphereGeometry(hr * (0.32 - i * 0.05), 12, 8)), mHair); s.position.set(0, -i * hr * 0.32, -i * hr * 0.18); p.add(s); } head.userData.pony = p; }
     if (h === 'bun') { const s = ink(G(`bun${hr}`, () => new THREE.SphereGeometry(hr * 0.38, 14, 10)), mHair); s.position.set(0, hr * 2.0, -hr * 0.2); head.add(s); }
@@ -234,7 +256,15 @@ export function createRunner(info, opts = {}) {
   function buildHat(hat) {
     if (!hat) return;
     const mA = toon(secondary === '#ffffff' || secondary === '#f8f8f8' ? primary : secondary), mB = toon(primary);
-    if (hat === 'cap' || hat === 'visor') {
+    if (hat === 'backwards-cap') {
+      const d = ink(G(`capd${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.42)), mA); d.position.y = hr * 0.98; d.rotation.x = -0.18; head.add(d);
+      const brim = ink(G(`brim${hr}`, () => new THREE.CylinderGeometry(hr * 0.75, hr * 0.75, hr * 0.08, 20, 1, false, -Math.PI / 2, Math.PI).scale(1.2, 1, 1.15)), mB);
+      brim.position.set(0, hr * 1.42, -hr * 0.62); brim.rotation.set(-0.12, Math.PI, 0); head.add(brim);
+    } else if (hat === 'bobble') {
+      const d = ink(G(`bean${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 1.15, 1)), mB); d.position.y = hr * 0.96; d.rotation.x = -0.12; head.add(d);
+      const rim = ink(G(`brim2${hr}`, () => new THREE.TorusGeometry(hr * 1.05, hr * 0.17, 8, 24)), mA); rim.rotation.x = Math.PI / 2 - 0.12; rim.position.y = hr * 1.12; head.add(rim);
+      const bob = ink(G(`bigbob${hr}`, () => new THREE.IcosahedronGeometry(hr * 0.48, 1)), mA); bob.position.y = hr * 2.45; head.add(bob); head.userData.bobble = bob;
+    } else if (hat === 'cap' || hat === 'visor') {
       if (hat === 'cap') { const d = ink(G(`capd${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.42)), mA); d.position.y = hr * 0.98; d.rotation.x = -0.18; head.add(d); }
       else { const band = ink(G(`vband${hr}`, () => new THREE.TorusGeometry(hr * 1.0, hr * 0.12, 8, 24)), mA); band.rotation.x = Math.PI / 2 - 0.25; band.position.y = hr * 1.35; head.add(band); }
       const brim = ink(G(`brim${hr}`, () => new THREE.CylinderGeometry(hr * 0.75, hr * 0.75, hr * 0.08, 20, 1, false, -Math.PI / 2, Math.PI).scale(1.2, 1, 1.15)), mB);
@@ -277,7 +307,7 @@ export function createRunner(info, opts = {}) {
     } else if (acc === 'headphones') {
       const band = ink(G(`hp${hr}`, () => new THREE.TorusGeometry(hr * 1.08, hr * 0.07, 6, 24, Math.PI)), toon('#22202c'), 2); band.position.y = hr * 0.95; head.add(band);
       for (const s of [-1, 1]) { const c = ink(G(`hpc${hr}`, () => new THREE.CylinderGeometry(hr * 0.3, hr * 0.3, hr * 0.2, 14).rotateZ(Math.PI / 2)), toon(primary), 2.5); c.position.set(s * hr * 1.02, hr * 0.92, 0); head.add(c); }
-    } else if (acc === 'sweatband' || acc === 'wristbands' || acc === 'watch') {
+    } else if (acc === 'sweatband' || acc === 'wristbands' || acc === 'watch') { /* wristbands */
       for (const a of arms) { const w = ink(G(`wb${look.build}`, () => new THREE.CylinderGeometry(B.armR * 1.3, B.armR * 1.3, 0.12, 10).translate(0, -B.arm / 2 + 0.1, 0)), toon(acc === 'watch' ? '#22202c' : secondary), 2); a.el.add(w); if (acc === 'watch') break; }
     } else if (acc === 'scarf') {
       const sc = ink(G('scarf', () => new THREE.TorusGeometry(0.22, 0.08, 8, 18)), toon(secondary)); sc.rotation.x = Math.PI / 2; sc.position.y = 0.02; neck.add(sc);
@@ -289,6 +319,16 @@ export function createRunner(info, opts = {}) {
       const bp = ink(G(`bp${look.build}`, () => new RoundedBoxGeometry(B.torso[0] * 0.7, B.torso[1] * 0.7, 0.25, 3, 0.08)), toon(secondary)); bp.position.set(0, B.torso[1] * 0.5, -B.torso[2] / 2 - 0.12); torso.add(bp);
     } else if (acc === 'moustache' || acc === 'mustache') {
       const m = ink(G(`mou${hr}`, () => new THREE.CapsuleGeometry(hr * 0.09, hr * 0.5, 4, 8).rotateZ(Math.PI / 2)), toon('#3a2616'), 2); m.position.set(0, hr * 0.7, hr * 0.98); head.add(m);
+    } else if (acc === 'beard') {
+      const b = ink(G(`beard${hr}`, () => new THREE.SphereGeometry(hr * 0.78, 18, 12, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55).scale(1.05, 1, 0.75)), mHair, 2.5); b.position.set(0, hr * 0.78, hr * 0.32); head.add(b);
+      const m = ink(G(`mou${hr}`, () => new THREE.CapsuleGeometry(hr * 0.09, hr * 0.5, 4, 8).rotateZ(Math.PI / 2)), mHair, 2); m.position.set(0, hr * 0.7, hr * 0.98); head.add(m);
+    } else if (acc === 'bumbag') {
+      const bb = ink(G(`bum${look.build}`, () => new RoundedBoxGeometry(B.torso[0] * 0.5, 0.2, 0.18, 2, 0.07)), toon(secondary === '#ffffff' || secondary === '#f8f8f8' ? '#22202c' : secondary)); bb.position.set(B.torso[0] * 0.12, 0.08, B.torso[2] / 2 + 0.08); hips.add(bb);
+      const strap = mesh(G(`strap${look.build}`, () => new THREE.TorusGeometry(B.torso[0] * 0.48, 0.025, 6, 24).scale(1, B.torso[2] / B.torso[0] * 1.05, 1).rotateX(Math.PI / 2)), toon('#22202c'), { cast: false }); strap.position.y = 0.1; hips.add(strap);
+    } else if (acc === 'bib') {
+      // vintage race number on the back too
+      const bk = new THREE.Mesh(G('bib', () => new THREE.PlaneGeometry(1, 0.78)), bib.material); bk.scale.copy(bib.scale); bk.position.set(0, B.torso[1] * 0.5, -B.torso[2] / 2 - 0.012); bk.rotation.y = Math.PI; torso.add(bk);
+      bib.scale.multiplyScalar(1.3);
     } else if (acc === 'bowtie') {
       for (const s of [-1, 1]) { const b = ink(G('bow', () => new THREE.ConeGeometry(0.08, 0.16, 4).rotateZ(Math.PI / 2)), toon(secondary), 2); b.position.set(s * 0.08, B.torso[1] - 0.06, B.torso[2] / 2 + 0.03); b.rotation.z = s > 0 ? Math.PI : 0; torso.add(b); }
     } else if (acc === 'tutu') {
@@ -390,6 +430,7 @@ export function createRunner(info, opts = {}) {
     head.rotation.set(J.headX, J.headY, 0);
     body.rotation.set(J.bodyX, J.bodyY, J.bodyZ);
     body.position.y += ((state === 'celebrate' && variant === 'collapse' ? B.torso[2] * 0.5 + 0.08 : 0) - body.position.y) * a;
+    if (head.userData.bobble) head.userData.bobble.position.y = hr * 2.45 + Math.abs(Math.sin(st.phase)) * 0.04;
     if (head.userData.pony) head.userData.pony.rotation.x = 0.4 + Math.sin(st.phase * 2) * 0.35;
     if (head.userData.tail) head.userData.tail.rotation.x = 0.6 + Math.sin(st.phase * 2) * 0.3;
     if (head.userData.cape) head.userData.cape.rotation.x = -0.3 - Math.min(1.1, (p.speed ?? 0) * 0.15) + Math.sin(t * 8) * 0.08;

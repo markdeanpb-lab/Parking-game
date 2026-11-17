@@ -144,6 +144,14 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {} } = {
       case 'kick': return game.kick(m.playerId);
       case 'newGame': return game.newGame();
       case 'forceLock': return game.forceLock();
+      case 'refresh': {
+        const toTvs = (msg) => { const s = JSON.stringify(msg); for (const o of clients) if (o.role === 'tv') send(o, s); };
+        toTvs({ t: 'refresh', step: 'start', msg: 'Starting refresh (this uses the internet)…' });
+        game.refreshData((step, msg) => toTvs({ t: 'refresh', step, msg: String(msg) }))
+          .then((rep) => toTvs({ t: 'refreshDone', ok: rep?.ok !== false }))
+          .catch((e) => toTvs({ t: 'refreshDone', ok: false, msg: e.message }));
+        return undefined;
+      }
       default: return undefined;
     }
   }

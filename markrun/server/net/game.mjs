@@ -13,7 +13,7 @@ export const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '�
 export const AVATAR_COLOURS = ['#ff4d5a', '#ffb000', '#2ec27e', '#2f8cff', '#9b5cff', '#ff6fb5', '#13c4c4', '#ff7a1a'];
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  startingBankroll: 500,
+  startingBankroll: 1000,
   roundsPerGame: 5,
   drinkingMode: false,
   voice: true,
@@ -49,6 +49,8 @@ export function newSessionState(settings = {}) {
     deadline: null,
     carryReady: false,
     gameNumber: 1,
+    gameSessionId: crypto.randomBytes(6).toString('hex'), // new id per game (passed to createRound as settings.sessionId)
+    refreshing: false,
     updatedAt: Date.now(),
   };
 }
@@ -70,7 +72,7 @@ export class Game extends EventEmitter {
   // ---- helpers ------------------------------------------------------------------------------------
   run(fn) { // serialise all actions
     const p = this.queue.then(() => fn());
-    this.queue = p.catch((e) => { console.error('[markrun] action failed:', e.stack || e.message); });
+    this.queue = p.catch((e) => { if (!(e instanceof GameError)) console.error('[markrun] action failed:', e.stack || e.message); });
     return p;
   }
   changed() { this.s.updatedAt = this.now(); this.emit('change'); }
@@ -196,6 +198,7 @@ export class Game extends EventEmitter {
   start() {
     return this.run(async () => {
       if (this.s.phase !== 'LOBBY') return;
+      if (this.s.refreshing) throw new GameError('Hang on — the historical data is still refreshing.');
       if (!this.s.players.length) throw new GameError('Nobody has joined yet!');
       await this.nextRound();
     });
@@ -208,7 +211,7 @@ export class Game extends EventEmitter {
     try {
       const number = this.s.roundNumber + 1;
       const bailouts = [];
-      const minStake = 10;
+      const minStake = this.s.round?.public?.rules?.minStake ?? 10;
       for (const p of this.s.players) {
         if (p.bankroll < minStake) {
           const amt = Math.max(minStake * 5, Math.round(this.s.settings.startingBankroll / 5 / 10) * 10);
@@ -216,7 +219,10 @@ export class Game extends EventEmitter {
           p.bankroll = amt;
         }
       }
-      const round = await this.rounds.createRound({ players: this.s.players, roundNumber: number, settings: { ...this.s.settings } });
+      this.s.gameSessionId ||= crypto.randomBytes(6).toString('hex');
+      const st = this.s.settings;
+      const round = await this.rounds.createRound({ players: this.s.players, roundNumber: number,
+        settings: { ...st, rounds: st.roundsPerGame, drinks: st.drinkingMode, sessionId: `${this.s.sessionId}-${this.s.gameSessionId}` } });
       this.s.round = round;
       this.s.roundNumber = number;
       this.s.phase = 'INTRO';
@@ -291,6 +297,8 @@ export class Game extends EventEmitter {
   }
   reveal() {
     this.s.revealed = true;
+    this.s.betLines = [];
+    try { this.s.betLines = this.rounds.betReactionLines?.(this.s.round, this.s.bets, this.s.players.map((p) => ({ id: p.id, name: p.name }))) || []; } catch (e) { console.warn('[markrun] betReactionLines failed:', e.message); }
     const n = Object.values(this.s.bets).reduce((a, b) => a + b.length, 0);
     this.setDeadline(Math.min(40_000, T.REVEAL_BASE + n * T.REVEAL_PER_BET));
   }
@@ -373,7 +381,7 @@ export class Game extends EventEmitter {
       p.ready = !!value;
       const ph = this.s.phase;
       if (this.allReady()) {
-        if (ph === 'LOBBY') return this.nextRound();
+        if (ph === 'LOBBY' && !this.s.refreshing) return this.nextRound();
         if (ph === 'RESULTS' && this.s.resultsStage >= RESULT_STAGES.indexOf('payouts')) return this.toScoreboard();
         if (ph === 'SCOREBOARD') { this.setDeadline(this.s.carryReady ? T.SCOREBOARD_ALL_READY : T.SCOREBOARD_READY_NOW); }
         if (ph === 'FINALE') { this.changed(); return this.newGameInner(); }
@@ -385,6 +393,7 @@ export class Game extends EventEmitter {
     this.s.phase = 'LOBBY'; this.s.roundNumber = 0; this.s.round = null; this.s.results = null; this.s.history = [];
     this.s.bets = {}; this.s.drafts = {}; this.s.locked = {}; this.s.revealed = false;
     this.s.gameNumber = (this.s.gameNumber || 1) + 1;
+    this.s.gameSessionId = crypto.randomBytes(6).toString('hex');
     for (const p of this.s.players) p.bankroll = this.s.settings.startingBankroll;
     this.clearReady(); this.setDeadline(null); this.changed();
   }
@@ -394,7 +403,7 @@ export class Game extends EventEmitter {
     return this.run(async () => {
       if (from && from !== this.s.phase) return;
       switch (this.s.phase) {
-        case 'LOBBY': if (this.s.players.length) await this.nextRound(); return;
+        case 'LOBBY': if (this.s.refreshing) throw new GameError('Hang on — the historical data is still refreshing.'); if (this.s.players.length) await this.nextRound(); return;
         case 'INTRO': return this.toBetting();
         case 'BETTING': if (this.s.revealed) return this.toRace(); return undefined;
         case 'RACE': return this.toResults();
@@ -405,6 +414,23 @@ export class Game extends EventEmitter {
       }
     });
   }
+  // "Refresh Historical Data" (TV lobby only). The ONLY path that may touch the internet; never called by gameplay.
+  refreshData(onProgress) {
+    if (this.s.phase !== 'LOBBY') return Promise.reject(new GameError('Refreshing is only allowed in the lobby.'));
+    if (this.s.refreshing) return Promise.reject(new GameError('A refresh is already running.'));
+    this.s.refreshing = true;
+    this.changed();
+    return (async () => {
+      try {
+        const run = this.rounds.runRefresh || (await import('../import/refresh.mjs')).runRefresh;
+        return await run({ onProgress });
+      } finally {
+        this.s.refreshing = false;
+        this.changed();
+      }
+    })();
+  }
+
   forceLock() { // TV: lock everyone who hasn't (with their current valid draft)
     return this.run(() => { if (this.s.phase === 'BETTING' && !this.s.revealed) this.autoLockAll(); });
   }
@@ -451,6 +477,8 @@ export class Game extends EventEmitter {
       roundSource: s.round?.source || null,
       revealed: !!s.revealed,
       bets: s.revealed ? Object.fromEntries(s.players.map((p) => [p.id, s.bets[p.id] || []])) : null,
+      betLines: s.revealed && s.phase === 'BETTING' ? (s.betLines || []) : [],
+      refreshing: !!s.refreshing,
       results: showResults ? s.results : null,
       clues: showResults ? this.allClues() : null, // after the race every clue (incl. private ones) can be reviewed
       resultsStage: s.phase === 'RESULTS' ? s.resultsStage : RESULT_STAGES.length,

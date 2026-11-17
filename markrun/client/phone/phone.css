@@ -145,7 +145,7 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 .order-mini .om .ordinal { font-size: 26px; width: 48px; }
 .order-mini .om .t { margin-left: auto; font-family: var(--font-display); }
 .order-mini .om .dot { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--ink); flex: none; }
-.drink-chip { display: inline-block; margin-top: 10px; padding: 6px 14px; background: var(--sun); border: 3px solid var(--ink); border-radius: 12px; font-family: var(--font-display); font-size: 20px; }
+.drink-chip { display: inline-block; line-height: 1.25; margin-top: 10px; padding: 6px 14px; background: var(--sun); border: 3px solid var(--ink); border-radius: 12px; font-family: var(--font-display); font-size: 20px; }
 .stand { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .stand .sr { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 3px solid var(--ink); border-radius: 14px; color: #fff; font-weight: 900; font-size: 18px; }
 .stand .sr .ordinal { font-size: 30px; width: 54px; }

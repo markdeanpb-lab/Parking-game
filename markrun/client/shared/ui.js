@@ -12,15 +12,22 @@ export function el(html) {
   return t.content.firstElementChild;
 }
 
-export const CURRENCY = '£';
+// Fictional currency: Parkpounds (shown as "pp"; the game module's ℙ symbol isn't in the display font)
+export const CURRENCY = 'pp';
 export function money(n) {
   const v = Math.round(Number(n) || 0);
-  return `${v < 0 ? '−' : ''}${CURRENCY}${Math.abs(v).toLocaleString('en-GB')}`;
+  return `${v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('en-GB')}${CURRENCY}`;
 }
 export function signedMoney(n) {
   const v = Math.round(Number(n) || 0);
-  return `${v > 0 ? '+' : v < 0 ? '−' : '±'}${CURRENCY}${Math.abs(v).toLocaleString('en-GB')}`;
+  return `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toLocaleString('en-GB')}${CURRENCY}`;
 }
+// for speech: "250 Parkpounds"
+export function moneySay(n) {
+  const v = Math.abs(Math.round(Number(n) || 0));
+  return `${v.toLocaleString('en-GB')} Parkpound${v === 1 ? '' : 's'}`;
+}
+export const runnerShort = (r) => r?.shortName || r?.nickname || '';
 
 export function ordinalSuffix(n) {
   const v = n % 100;
@@ -64,10 +71,11 @@ export function runnerById(round, id) { return round?.runners?.find((r) => r.id 
 export function betLabel(round, b) {
   if (!round || !b) return '';
   if (b.type === 'win') return `${runnerById(round, b.runnerId)?.nickname || b.runnerId} to WIN`;
+  // head-to-heads use short names so the line fits a phone
   const m = round.matchups?.find((x) => x.id === b.matchupId);
   if (!m) return 'Head-to-head';
-  const pick = runnerById(round, b.pick)?.nickname || b.pick;
-  const other = runnerById(round, b.pick === m.a ? m.b : m.a)?.nickname || '';
+  const pick = runnerShort(runnerById(round, b.pick)) || b.pick;
+  const other = runnerShort(runnerById(round, b.pick === m.a ? m.b : m.a));
   return `${pick} to beat ${other}`;
 }
 export function betOdds(round, b) {

@@ -1,6 +1,6 @@
 // MARKRUN phone controller: join, private clues, bet slip, lock-in, race reactions, results, ready-up.
 import { connect } from '../shared/net.js';
-import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, betLabel, betOdds, confetti } from '../shared/ui.js';
+import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, confetti } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 
 const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '🐼', '🦖', '🐧', '🐝', '🦩', '🐶'];
@@ -262,6 +262,7 @@ function renderBetting() {
   const runners = [...round.runners].sort((a, b) => a.lane - b.lane);
   const priv = new Map((me.privateClues || []).map((c) => [c.runnerId, c]));
   app.innerHTML = `${topbar()}
+    ${round.notice ? `<div class="card center" style="background:var(--grape);color:#fff;padding:12px"><b>🃏 ${esc(round.notice)}</b></div>` : ''}
     <div class="section-title">The field <small>swipe for all ${runners.length} →</small></div>
     <div class="carousel" id="car">${runners.map((r) => {
       const pc = priv.get(r.id);
@@ -269,12 +270,12 @@ function renderBetting() {
         <div class="head stripe" style="--c1:${esc(r.colour.primary)};--c2:${esc(r.colour.secondary || '#fff')}">
           <div class="rp">${portrait(r, 108)}</div>
           <div class="who"><div class="nick">${esc(r.nickname)}</div><span class="lane">LANE ${r.lane}</span></div>
-          <div class="odds"><div class="o">${esc(r.odds?.display || '')}</div><div class="l">TO WIN</div></div>
+          <div class="odds"><div class="o">${esc(r.odds?.display || '')}</div><div class="l">${r.odds?.decimalText ? `PAYS ×${esc(r.odds.decimalText)}` : 'TO WIN'}</div></div>
         </div>
         <div class="body">
           <div class="tagl">${esc(r.tagline || '')}</div>
-          <div class="clue-box"><span class="k">📺 PUBLIC CLUE</span>${esc(r.publicClue?.text || '')}</div>
-          ${pc ? `<div class="clue-box secret"><span class="k">🤫 ONLY YOU CAN SEE THIS</span>${esc(pc.text)}</div>` : ''}
+          <div class="clue-box"><span class="k">📺 PUBLIC CLUE${r.publicClue?.label ? ` · ${esc(r.publicClue.label.toUpperCase())}` : ''}</span>${esc(r.publicClue?.text || '')}</div>
+          ${pc ? `<div class="clue-box secret"><span class="k">🤫 ONLY YOU CAN SEE THIS${pc.label ? ` · ${esc(pc.label.toUpperCase())}` : ''}</span>${esc(pc.text)}</div>` : ''}
           <div class="actions"><button class="btn" data-win="${r.id}">Back to WIN</button></div>
         </div></div>`;
     }).join('')}</div>
@@ -283,9 +284,9 @@ function renderBetting() {
       const a = runnerById(round, m.a), b = runnerById(round, m.b);
       if (!a || !b) return '';
       return `<div class="mu" data-mid="${m.id}"><div class="ml">HEAD-TO-HEAD</div><div class="row">
-        <button class="pick" data-mid="${m.id}" data-pick="${a.id}"><span class="rp">${portrait(a, 44)}</span>${esc(a.nickname)}<span class="x">×${m.odds.a}</span></button>
+        <button class="pick" data-mid="${m.id}" data-pick="${a.id}"><span class="rp">${portrait(a, 44)}</span>${esc(runnerShort(a))}<span class="x">${esc(m.odds.displayA || `×${m.odds.a}`)}</span></button>
         <span class="vs">VS</span>
-        <button class="pick" data-mid="${m.id}" data-pick="${b.id}"><span class="rp">${portrait(b, 44)}</span>${esc(b.nickname)}<span class="x">×${m.odds.b}</span></button></div></div>`;
+        <button class="pick" data-mid="${m.id}" data-pick="${b.id}"><span class="rp">${portrait(b, 44)}</span>${esc(runnerShort(b))}<span class="x">${esc(m.odds.displayB || `×${m.odds.b}`)}</span></button></div></div>`;
     }).join('')}</div>` : ''}
     <div class="section-title">Your bet slip <small id="slipcount"></small></div>
     <div class="slip" id="slip"></div>
@@ -336,7 +337,7 @@ function renderSlip() {
   el.innerHTML = slip.map((b, i) => {
     const r = runnerById(S.round, b.type === 'win' ? b.runnerId : b.pick);
     const odds = betOdds(S.round, b);
-    return `<div class="sbet"><div class="r1"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${b.type === 'win' ? `WIN · ${esc(r?.odds?.display || '')}` : `HEAD-TO-HEAD · ×${odds}`}</small></div><button class="x" data-rm="${i}" aria-label="Remove bet">✕</button></div>
+    return `<div class="sbet"><div class="r1"><span class="rp">${r ? portrait(r, 40) : ''}</span><div class="lb">${esc(betLabel(S.round, b))}<small>${b.type === 'win' ? `WIN · ${esc(r?.odds?.display || '')}` : `HEAD-TO-HEAD · ${esc((() => { const m = S.round.matchups?.find((x) => x.id === b.matchupId); return (b.pick === m?.a ? m?.odds?.displayA : m?.odds?.displayB) || `×${odds}`; })())}`}</small></div><button class="x" data-rm="${i}" aria-label="Remove bet">✕</button></div>
       <div class="r2"><span class="stake num">${money(b.stake)}</span><span class="pays">returns<b>${money(b.stake * odds)}</b></span></div>
       <div class="chips"><button class="chip minus" data-i="${i}" data-chip="minus">−10</button><button class="chip" data-i="${i}" data-chip="10" ${room < 1 ? 'disabled' : ''}>+10</button><button class="chip" data-i="${i}" data-chip="50" ${room < 1 ? 'disabled' : ''}>+50</button><button class="chip" data-i="${i}" data-chip="100" ${room < 1 ? 'disabled' : ''}>+100</button><button class="chip allin" data-i="${i}" data-chip="all" ${room < 1 ? 'disabled' : ''}>ALL IN</button></div></div>`;
   }).join('') + `<div class="slip-meta"><span>Staked ${money(staked())}</span><span>Left ${money(room)}</span></div>`;
@@ -425,7 +426,8 @@ function renderResults() {
   }
   const pay = res.payouts?.[me.id] || { net: 0, bankroll: me.bankroll, bets: [] };
   const drinking = S.settings.drinkingMode;
-  const drink = !drinking ? '' : pay.net < 0 ? `🍺 Take ${Math.min(5, Math.max(1, Math.ceil(-pay.net / 100)))} sips` : pay.net > 0 ? `👉 Hand out ${Math.min(5, Math.max(1, Math.ceil(pay.net / 150)))} sips` : '🥤 Water break';
+  const gameDrinks = Array.isArray(res.drinks) ? res.drinks.filter((d) => d.playerId === me.id || !d.playerId).map((d) => `🍺 ${d.text}`).join(' · ') : null;
+  const drink = !drinking ? '' : gameDrinks != null ? gameDrinks : pay.net < 0 ? `🍺 Take ${Math.min(5, Math.max(1, Math.ceil(-pay.net / 100)))} sips` : pay.net > 0 ? `👉 Hand out ${Math.min(5, Math.max(1, Math.ceil(pay.net / 150)))} sips` : '🥤 Water break';
   const mood = pay.net > 0 ? '🤑' : pay.net < 0 ? '😭' : '😐';
   const awards = (res.awards || []).filter((a) => a.playerId === me.id);
   app.innerHTML = `${topbar()}

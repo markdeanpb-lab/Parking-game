@@ -1,4 +1,19 @@
-// MARKRUN 3D race broadcast (three.js). See README notes at the bottom of this file for the shell-facing API.
+// MARKRUN 3D race broadcast (three.js).
+//
+// createRaceView(container, { course, park, round: Round.public, plan: RacePlan, backedBy: {runnerId: [playerName]},
+//                             onIntroRunner?(runnerId, index) -> void | Promise, introPerRunnerS?=4.2, photoFreezeS?=2.8,
+//                             maxPixelRatio?=1.5, introCards?=true, podiumCard?=true })
+//  -> { playIntro(onDone, {perRunnerS, flyoverS}?) -> {flyoverS, perRunnerS, runners},
+//       playRace(onEvent, onDone), showPodium(results|null), setPaused(bool), dispose(),
+//       hudRoot, broadcastTime, durationS, preRollS }
+// Intro: ~7 s helicopter flyover, then each runner in lane order gets a close-up + pose + name card; onIntroRunner(id)
+//   fires at the start of each runner's turn. Return a Promise to hold the camera on that runner until it resolves
+//   (e.g. TTS finished; minimum 2.5 s), otherwise each turn lasts perRunnerS. Then a 3 s group shot -> onDone().
+// Race: playRace starts PRE_ROLL (8.5 s) before the gun (flyover + start line, countdown). onEvent receives
+//   {kind:'countdown', n, text}, every plan event as {kind:'event', ...event}, every commentary line as
+//   {kind:'commentary', ...line}, and {kind:'photo_finish', ids} when the top two finish within 1.5 s (the broadcast
+//   freezes for photoFreezeS; commentary timing simply resumes after). onDone fires 3.5 s after the last finisher.
+// HUD: DOM overlay inside `container`; the bottom 15% is left clear for the shell's subtitles.
 import * as THREE from 'three';
 import { buildCourse, PATH_W } from './course.js';
 import { buildWorld, mulberry } from './world.js';

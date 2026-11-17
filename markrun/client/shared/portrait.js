@@ -76,6 +76,9 @@ export function runnerPortrait(runner, { size = 120, idSuffix = '' } = {}) {
     bald: '',
   };
   hairTop.ponytail = hairTop.long; hairTop.bob = hairTop.long;
+  hairTop.spiky = `<path d="M${cx - headR + 2} ${cy - 6} L${cx - headR + 2} ${top + 2} L${cx - 14} ${top - 12} L${cx - 8} ${top - 2} L${cx} ${top - 16} L${cx + 6} ${top - 2} L${cx + 15} ${top - 12} L${cx + headR - 2} ${top + 2} L${cx + headR - 2} ${cy - 6} Q${cx} ${cy - 18} ${cx - headR + 2} ${cy - 6}Z"/>`;
+  hairTop.mullet = `<g><path d="M${cx + headR - 6} ${cy} Q${cx + headR + 10} ${cy + 22} ${cx + headR - 2} ${cy + 34} L${cx + headR - 14} ${cy + 20}Z"/><path d="M${cx - headR + 6} ${cy} Q${cx - headR - 10} ${cy + 22} ${cx - headR + 2} ${cy + 34} L${cx - headR + 14} ${cy + 20}Z"/>${hairTop.short}</g>`;
+  hairTop.swept = `<path d="M${cx - headR + 2} ${cy - 4} Q${cx - headR - 4} ${top - 6} ${cx + 6} ${top - 6} Q${cx + headR + 8} ${top} ${cx + headR - 1} ${cy - 2} Q${cx + 4} ${cy - 22} ${cx - headR + 2} ${cy - 4}Z"/>`;
   const ht = hairTop[hair] ?? hairTop.short;
   if (ht) parts.push(`<g fill="${hairCol}" stroke="${INK}" stroke-width="${SW}" stroke-linejoin="round">${ht}</g>`);
 
@@ -108,6 +111,18 @@ export function runnerPortrait(runner, { size = 120, idSuffix = '' } = {}) {
       eyes = eye(cx - 11, true) + eye(cx + 11);
       mouth = `<path d="M${cx - 11} ${cy + 12} Q${cx} ${cy + 24} ${cx + 11} ${cy + 12}Z" fill="#fff" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>`;
       break;
+    case 'gritted':
+      brows = `<path d="M${cx - 18} ${ey - 11} L${cx - 5} ${ey - 7} M${cx + 18} ${ey - 11} L${cx + 5} ${ey - 7}" stroke="${INK}" stroke-width="4" stroke-linecap="round"/>`;
+      mouth = `<rect x="${cx - 12}" y="${cy + 11}" width="24" height="10" rx="3" fill="#fff" stroke="${INK}" stroke-width="3.5"/><path d="M${cx - 4} ${cy + 11} v10 M${cx + 4} ${cy + 11} v10 M${cx - 12} ${cy + 16} h24" stroke="${INK}" stroke-width="2"/>`;
+      break;
+    case 'tongue-out':
+      eyes = eye(cx - 11, true) + eye(cx + 11);
+      mouth = `<path d="M${cx - 11} ${cy + 12} Q${cx} ${cy + 20} ${cx + 11} ${cy + 12}" fill="none" stroke="${INK}" stroke-width="3.5" stroke-linecap="round"/><path d="M${cx - 2} ${cy + 15} q4 14 10 0z" fill="#ff6b7a" stroke="${INK}" stroke-width="3"/>`;
+      break;
+    case 'wide-eyed':
+      eyes = `<circle cx="${cx - 11}" cy="${ey}" r="7.5" fill="#fff" stroke="${INK}" stroke-width="3"/><circle cx="${cx - 11}" cy="${ey}" r="3.2" fill="${INK}"/><circle cx="${cx + 11}" cy="${ey}" r="7.5" fill="#fff" stroke="${INK}" stroke-width="3"/><circle cx="${cx + 11}" cy="${ey}" r="3.2" fill="${INK}"/>`;
+      mouth = `<ellipse cx="${cx}" cy="${cy + 17}" rx="5" ry="6" fill="${INK}"/>`;
+      break;
     case 'shocked': case 'surprised':
       mouth = `<ellipse cx="${cx}" cy="${cy + 17}" rx="6" ry="8" fill="${INK}"/>`;
       brows = `<path d="M${cx - 17} ${ey - 13} Q${cx - 11} ${ey - 17} ${cx - 5} ${ey - 13} M${cx + 17} ${ey - 13} Q${cx + 11} ${ey - 17} ${cx + 5} ${ey - 13}" fill="none" stroke="${INK}" stroke-width="3.5" stroke-linecap="round"/>`;
@@ -129,13 +144,24 @@ export function runnerPortrait(runner, { size = 120, idSuffix = '' } = {}) {
     parts.push(`<path d="M${cx} ${cy + 12} q-8 -6 -16 0 q6 6 16 0 q8 -6 16 0 q-6 6 -16 0z" fill="${hairCol}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`);
   } else if (acc === 'headphones' || acc === 'earbuds') {
     parts.push(`<path d="M${cx - headR - 2} ${cy + 2} Q${cx} ${top - 22} ${cx + headR + 2} ${cy + 2}" fill="none" stroke="${INK}" stroke-width="7"/><rect x="${cx - headR - 8}" y="${cy - 6}" width="12" height="20" rx="5" fill="${c2}" stroke="${INK}" stroke-width="4"/><rect x="${cx + headR - 4}" y="${cy - 6}" width="12" height="20" rx="5" fill="${c2}" stroke="${INK}" stroke-width="4"/>`);
+  } else if (acc === 'beard') {
+    parts.push(`<path d="M${cx - headR + 4} ${cy + 4} Q${cx - headR + 6} ${cy + headR + 6} ${cx} ${cy + headR + 8} Q${cx + headR - 6} ${cy + headR + 6} ${cx + headR - 4} ${cy + 4} Q${cx + 14} ${cy + 18} ${cx} ${cy + 22} Q${cx - 14} ${cy + 18} ${cx - headR + 4} ${cy + 4}Z" fill="${hairCol}" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>`);
+  } else if (acc === 'scarf') {
+    parts.push(`<path d="M${cx - 20} ${sy - 4} Q${cx} ${sy + 8} ${cx + 20} ${sy - 4} L${cx + 22} ${sy + 6} Q${cx} ${sy + 18} ${cx - 22} ${sy + 6}Z" fill="${c2}" stroke="${INK}" stroke-width="3.5"/><rect x="${cx + 8}" y="${sy + 6}" width="9" height="22" rx="2" fill="${c2}" stroke="${INK}" stroke-width="3"/>`);
+  } else if (acc === 'cape') {
+    parts.push(`<path d="M${cx - 22} ${sy} L${cx - 46} 124 M${cx + 22} ${sy} L${cx + 46} 124" stroke="${c2}" stroke-width="8" stroke-linecap="round"/>`);
+  } else if (acc === 'wristbands' || acc === 'bumbag') {
+    parts.push(`<rect x="${cx - 26}" y="${sy + 30}" width="${acc === 'bumbag' ? 30 : 14}" height="${acc === 'bumbag' ? 14 : 10}" rx="5" fill="${c2}" stroke="${INK}" stroke-width="3.5"/>`);
   } else if (acc === 'whistle') {
     parts.push(`<path d="M${cx - 10} ${sy} Q${cx} ${sy + 18} ${cx + 10} ${sy}" fill="none" stroke="${c2}" stroke-width="3"/><rect x="${cx - 6}" y="${sy + 12}" width="14" height="8" rx="3" fill="#cfd8e8" stroke="${INK}" stroke-width="3"/>`);
   }
 
   // hats
   const hat = look.hat;
-  if (hat === 'cap' || hat === 'baseball cap' || hat === 'trucker') {
+  if (hat === 'backwards-cap') {
+    parts.push(`<path d="M${cx - headR + 1} ${cy - 8} Q${cx - headR + 2} ${top - 10} ${cx} ${top - 10} Q${cx + headR - 2} ${top - 10} ${cx + headR - 1} ${cy - 8}Z" fill="${c1}" stroke="${INK}" stroke-width="${SW}" stroke-linejoin="round"/>`);
+    parts.push(`<path d="M${cx - headR + 4} ${cy - 12} Q${cx - headR - 14} ${cy - 14} ${cx - headR - 18} ${cy - 4} L${cx - headR + 2} ${cy - 4}Z" fill="${shade(c1, -0.2)}" stroke="${INK}" stroke-width="${SW}" stroke-linejoin="round"/>`);
+  } else if (hat === 'cap' || hat === 'baseball cap' || hat === 'trucker') {
     parts.push(`<path d="M${cx - headR + 1} ${cy - 8} Q${cx - headR + 2} ${top - 10} ${cx} ${top - 10} Q${cx + headR - 2} ${top - 10} ${cx + headR - 1} ${cy - 8}Z" fill="${c1}" stroke="${INK}" stroke-width="${SW}" stroke-linejoin="round"/>`);
     parts.push(`<path d="M${cx - 6} ${cy - 10} Q${cx + 24} ${cy - 18} ${cx + headR + 16} ${cy - 6} L${cx + headR - 2} ${cy - 4}Z" fill="${shade(c1, -0.2)}" stroke="${INK}" stroke-width="${SW}" stroke-linejoin="round"/>`);
     parts.push(`<circle cx="${cx}" cy="${top - 10}" r="3.5" fill="${c2}" stroke="${INK}" stroke-width="2.5"/>`);

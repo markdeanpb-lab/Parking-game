@@ -124,6 +124,16 @@ body.phase-LOBBY .sub { font-size: 32px; }
 .settings .toggle.off { background: #fff; }
 .start-wrap { position: absolute; right: 90px; bottom: 40px; width: 600px; }
 .start-wrap .btn { width: 100%; font-size: 52px; min-height: 120px; padding: 0 30px; white-space: nowrap; }
+.start-wrap .refresh-btn { display: flex; margin: 12px auto 0; font-size: 18px; }
+#tvmodal { position: absolute; inset: 0; z-index: 40; background: rgba(20,24,60,.6); display: grid; place-items: center; }
+.tvm { width: 1100px; padding: 34px 44px; font-size: 30px; line-height: 1.35; font-weight: 800; }
+.tvm h2 { margin: 0 0 14px; font-size: 64px; font-weight: 400; color: var(--panel); }
+.tvm p { margin: 10px 0; }
+.tvm .row { display: flex; gap: 20px; justify-content: flex-end; margin-top: 24px; }
+.tvm .row .btn { font-size: 30px; }
+.tvm .row small { font-size: .55em; opacity: .7; }
+.tvm .rlog { font-size: 22px; background: #f4f6ff; border: 3px solid var(--ink); border-radius: 12px; padding: 12px 16px; min-height: 260px; font-family: ui-monospace, monospace; }
+.tvm .rl b { color: var(--panel-deep); text-transform: uppercase; margin-right: 8px; }
 .start-wrap .hint { text-align: center; color: #fff; font-weight: 900; font-size: 22px; margin-top: 10px; text-shadow: 0 2px 0 var(--ink); }
 .start-wrap .btn.pulse { animation: pulse 1.4s ease-in-out infinite; }
 
@@ -170,7 +180,14 @@ body.phase-LOBBY .sub { font-size: 32px; }
 .rc .top .rp svg { width: 100%; height: 100%; filter: drop-shadow(0 6px 0 rgba(20,24,60,.5)); }
 .rc .lane { position: absolute; left: 12px; top: 10px; width: 54px; height: 54px; border-radius: 50%; background: #fff; border: 4px solid var(--ink); display: grid; place-items: center; font-family: var(--font-display); font-size: 32px; }
 .rc .odds { position: absolute; right: -14px; top: -20px; padding: 6px 16px 8px; background: var(--sun); border: 4px solid var(--ink); border-radius: 16px; box-shadow: 0 5px 0 var(--ink); transform: rotate(6deg); font-size: 46px; }
-.rc .odds .num { color: var(--ink); -webkit-text-stroke: 0; text-shadow: none; }
+.rc .odds .num { color: var(--ink); -webkit-text-stroke: 0; text-shadow: none; display: block; }
+.rc .odds small { display: block; font-family: var(--font-body); font-weight: 900; font-size: 15px; text-align: center; margin-top: -2px; }
+.notice { position: absolute; left: 50%; top: 900px; transform: translateX(-50%); padding: 10px 26px; color: #fff; font-size: 26px; font-weight: 900; white-space: nowrap; }
+.orow .tm { display: flex; flex-direction: column; align-items: flex-end; font-size: 70px; }
+.orow .tm .gap { font-family: var(--font-display); font-size: 26px; color: #fff; text-shadow: 0 3px 0 var(--ink); }
+.orow.first .tm .gap { color: var(--ink); text-shadow: none; }
+.orow .fav { display: inline-block; vertical-align: middle; font-family: var(--font-display); font-size: 22px; padding: 2px 10px; border-radius: 8px; border: 3px solid var(--ink); background: #fff; color: var(--ink); -webkit-text-stroke: 0; text-shadow: none; transform: rotate(-4deg); }
+.drink-all { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); padding: 10px 26px; font-family: var(--font-display); font-size: 30px; white-space: nowrap; }
 .rc .nick { margin-top: 56px; padding: 0 16px; font-family: var(--font-display); font-size: 40px; line-height: 1; text-align: center; }
 .rc .tagl { padding: 6px 16px 0; font-size: 22px; text-align: center; color: #4a5080; font-weight: 800; line-height: 1.15; }
 .rc .clue { margin: 14px 14px 0; padding: 12px 14px; background: var(--cream); border: 3px solid var(--ink); border-radius: 12px; font-size: 25px; line-height: 1.22; font-weight: 800; flex: 1; }

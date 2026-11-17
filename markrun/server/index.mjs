@@ -1,7 +1,8 @@
 // MARKRUN host: static web server for the TV + phones, WebSocket game hub, persistent session.
 // Usage: npm start [-- --port 8080 --host 192.168.1.20 --fresh]
 // Env: PORT, MARKRUN_HOST (address advertised to phones), MARKRUN_SESSION_DB, MARKRUN_ROUND_SOURCE=fixture
-// Never makes outbound internet requests.
+// Never makes outbound internet requests — except the explicit "Refresh Historical Data" button in the TV lobby
+// (server/import/refresh.mjs, loaded lazily only when that button is pressed).
 import http from 'node:http';
 import QRCode from 'qrcode';
 import { serveStatic, notFound } from './net/static.mjs';

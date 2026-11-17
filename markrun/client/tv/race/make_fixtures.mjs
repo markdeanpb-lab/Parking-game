@@ -43,3 +43,34 @@ for (let i = 0; i < main.length && !pf; i++) {
   }
 }
 if (pf) { fs.writeFileSync('client/tv/race/fixtures/photo.json', JSON.stringify(round('fixture-photo', 'The Photo Finish Plate', pf))); console.log('photo', pf.map((f) => `${f.id}:${f.officialS}`).join(' ')); }
+
+// 3) real rounds from the game module (createRound); keep the first one that has a funfair diversion + one ordinary
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const { createRound } = await import('../../../server/game/round.mjs');
+  const players = [{ id: 'p1', name: 'Mark' }, { id: 'p2', name: 'Mrs M' }];
+  let gotDiv = false, gotPlain = false;
+  for (let k = 1; k <= 400 && !(gotDiv && gotPlain); k++) {
+    const sess = new DatabaseSync(':memory:');
+    let r;
+    try { r = createRound({ hist: db, sess, players, roundNumber: 1, settings: { sessionId: `fx${k}` }, rng: 4242 + k }); } catch (e) { if (k === 1) console.log('createRound failed:', e.message); continue; }
+    const out = { id: r.id, number: r.number, public: r.public, racePlan: r.racePlan };
+    const hasDiv = r.racePlan.runners.some((x) => x.diversions?.length);
+    if (hasDiv && !gotDiv) { gotDiv = true; fs.writeFileSync('client/tv/race/fixtures/real-funfair.json', JSON.stringify(out)); console.log('real-funfair', k, r.public.title); }
+    if (!hasDiv && !gotPlain) { gotPlain = true; fs.writeFileSync('client/tv/race/fixtures/real.json', JSON.stringify(out)); console.log('real', k, r.public.title); }
+  }
+}
+
+// 4) look-book: the real round with looks overridden to cover the remaining LOOK_OPTIONS values (visual QA only)
+{
+  const r = JSON.parse(fs.readFileSync('client/tv/race/fixtures/real.json'));
+  const L = [
+    { build: 'stocky', hat: 'visor', hair: 'quiff', accessory: 'beard', face: 'wide-eyed', skin: '#e0ac69' },
+    { build: 'lanky', hat: null, hair: 'afro', accessory: 'headphones', face: 'tongue-out', skin: '#5c3a21' },
+    { build: 'compact', hat: null, hair: 'mohawk', accessory: 'bumbag', face: 'grin', skin: '#ffdbc4' },
+    { build: 'tall', hat: 'bobble', hair: 'buzz', accessory: 'scarf', face: 'gritted', skin: '#c68642' },
+    { build: 'stocky', hat: null, hair: 'swept', accessory: 'bib', face: 'cheeky', skin: '#f1c6a5' },
+  ];
+  r.public.runners.forEach((x, i) => (x.look = L[i]));
+  fs.writeFileSync('client/tv/race/fixtures/looks.json', JSON.stringify(r));
+}

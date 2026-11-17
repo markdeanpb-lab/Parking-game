@@ -3,7 +3,7 @@
 // "press any key" overlay), ?mute.
 import { connect } from '../shared/net.js';
 import { createAudio } from '../shared/sfx.js';
-import { $, $$, esc, el, money, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, betLabel, betOdds, confetti, fmtTime } from '../shared/ui.js';
+import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, confetti, fmtTime } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
@@ -55,6 +55,8 @@ const net = connect({
   onState: (st) => onState(st),
   onMessage: (m) => {
     if (m.t === 'react') spawnReaction(m.playerId, m.emoji);
+    else if (m.t === 'refresh') refreshLog(m.step, m.msg);
+    else if (m.t === 'refreshDone') refreshFinished(m.ok, m.msg);
     else if (m.t === 'error') toast(m.msg, 'red');
   },
 });
@@ -94,6 +96,7 @@ window.addEventListener('mousemove', () => { document.body.classList.remove('hid
 window.addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, textarea')) return;
   if (!gestureDone) { unlockAll(); return; }
+  if (modalOpen()) { if (e.key === 'Escape') closeModal(); else if (e.key === 'Enter') $('#tvmodal [data-ok]')?.click(); return; }
   if (!audio.ready()) audio.unlock();
   const k = e.key;
   if (k === 'm' || k === 'M') { localMute = !localMute; applyAudioSettings(); toast(localMute ? 'Muted' : 'Sound on'); return; }
@@ -318,7 +321,8 @@ function lobbyScreen(st) {
     ].join('');
     const allReady = s.players.length && s.players.every((p) => p.ready);
     $('.start-wrap', root).innerHTML = `<button class="btn green ${s.players.length ? 'pulse' : ''}" data-start ${s.players.length ? '' : 'disabled'}>${s.players.length ? (s.players.length === 1 ? 'START SOLO ▶' : "LET'S RACE ▶") : 'Waiting for players…'}</button>
-      <div class="hint">${s.players.length ? (allReady ? 'Everyone is ready!' : 'Press SPACE — or everyone taps READY on their phone') : 'Up to 4 players · best with 2'}</div>`;
+      <div class="hint">${s.refreshing ? '⏳ Refreshing historical data…' : s.players.length ? (allReady ? 'Everyone is ready!' : 'Press SPACE — or everyone taps READY on their phone') : 'Up to 4 players · best with 2'}</div>
+      <button class="btn small white refresh-btn" data-refresh ${s.refreshing ? 'disabled' : ''}>⟳ Refresh Historical Data</button>`;
   }
   let prevLobby = new Set(st.players.map((p) => p.id));
   render(st);
@@ -328,6 +332,7 @@ function lobbyScreen(st) {
     if (!b) return;
     audio.play('tick');
     if (b.dataset.start !== undefined) return advance();
+    if (b.dataset.refresh !== undefined) return confirmRefresh();
     if (b.dataset.kick) return send({ t: 'kick', playerId: b.dataset.kick });
     const k = b.closest('[data-k]')?.dataset.k;
     if (!k) return;
@@ -342,6 +347,41 @@ function lobbyScreen(st) {
     send({ t: 'settings', settings: { [k]: v } });
   });
   return { update: (s) => render(s) };
+}
+
+// ---------- "Refresh Historical Data" (lobby only; the only feature that touches the internet) ----------
+const modalOpen = () => !!$('#tvmodal');
+function closeModal() { $('#tvmodal')?.remove(); }
+function openModal(html) {
+  closeModal();
+  const m = el(`<div id="tvmodal"><div class="tvm panel white anim-pop">${html}</div></div>`);
+  stage.appendChild(m);
+  m.addEventListener('click', (e) => { if (e.target === m) closeModal(); });
+  return m;
+}
+function confirmRefresh() {
+  if (S?.phase !== 'LOBBY') return;
+  const m = openModal(`<h2 class="outlined white thin">⟳ Refresh Historical Data</h2>
+    <p><b>This uses the internet.</b> It contacts parkrun, Strava (if set up) and the weather archive to fetch any new runs since the last refresh, then rebuilds the local database.</p>
+    <p>It can take a few minutes. The game itself never goes online — this is the only button that does.</p>
+    <div class="row"><button class="btn white" data-cancel>Cancel <small>ESC</small></button><button class="btn green" data-ok>Refresh now <small>ENTER</small></button></div>`);
+  $('[data-cancel]', m).onclick = closeModal;
+  $('[data-ok]', m).onclick = () => {
+    send({ t: 'refresh' });
+    openModal(`<h2 class="outlined white thin">⟳ Refreshing…</h2><div class="rlog"></div><div class="row"><button class="btn white" data-cancel disabled>Working…</button></div>`);
+  };
+}
+function refreshLog(step, msg) {
+  let m = $('#tvmodal .rlog');
+  if (!m) { openModal(`<h2 class="outlined white thin">⟳ Refreshing…</h2><div class="rlog"></div><div class="row"><button class="btn white" data-cancel disabled>Working…</button></div>`); m = $('#tvmodal .rlog'); }
+  m.appendChild(el(`<div class="rl"><b>${esc(step)}</b> ${esc(msg)}</div>`));
+  while (m.children.length > 9) m.firstElementChild.remove();
+}
+function refreshFinished(ok, msg) {
+  if (msg) refreshLog('error', msg);
+  const b = $('#tvmodal [data-cancel]');
+  if (b) { b.disabled = false; b.textContent = ok ? 'Done ✓' : 'Close'; b.onclick = closeModal; }
+  toast(ok ? 'Historical data refreshed!' : 'Refresh had problems — existing data kept', ok ? '' : 'red');
 }
 
 // =====================================================================================================
@@ -381,6 +421,10 @@ async function makeRaceView(opts, { allow2d = true } = {}) {
   return raceView;
 }
 
+function sayIntroLines(round) {
+  const lines = round.introLines?.length ? round.introLines : [{ speaker: 'jeff', text: `Welcome to Finsbury Park for round ${round.number}: ${round.title}!` }];
+  lines.slice(0, 2).forEach((l) => say(l.text, l.speaker, 3));
+}
 function introScreen(st) {
   const tok = makeToken();
   const round = st.round;
@@ -390,7 +434,7 @@ function introScreen(st) {
   const box = $('.stagebox', root);
   const bail = (st.bailouts || []).map((b) => `${esc(st.players.find((p) => p.id === b.playerId)?.name || '')} got a ${money(b.amount)} bailout from the Bank of Mum &amp; Dad`).join('<br>');
 
-  const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
+  const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${round.notice ? `<div class="bail panel grape" style="color:#fff">🃏 ${esc(round.notice)}</div><br>` : ''}${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
   const cardHtml = (r) => `<div class="rcard-wrap anim-left"><div class="rcard panel slant" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 300)}</div><div class="unslant">
         <div class="nick outlined">${esc(r.nickname)}</div>
         <div class="tagl">${esc(r.tagline || '')}</div>
@@ -429,7 +473,7 @@ function introScreen(st) {
         root.querySelector('.clouds')?.remove(); root.querySelector('.hills')?.remove();
         box.innerHTML = titleHtml;
         audio.play('fanfare');
-        say(`Welcome to Finsbury Park for round ${round.number}: ${round.title}!`, 'jeff', 3);
+        sayIntroLines(round);
         let done = false;
         const guard = setTimeout(() => { if (!done) { done = true; finish(); } }, T(150000));
         tok.timers.push(guard);
@@ -440,8 +484,8 @@ function introScreen(st) {
     if (tok.cancelled) return;
     box.innerHTML = titleHtml;
     audio.play('fanfare');
-    say(`Welcome to Finsbury Park for round ${round.number}: ${round.title}!`, 'jeff', 3);
-    await waitVoice(tok, 4200, 7000);
+    sayIntroLines(round);
+    await waitVoice(tok, 4200, 14000);
     for (let i = 0; i < runners.length && !tok.cancelled; i++) { await showRunner(i); if (!tok.cancelled) await sleepT(700, tok); }
     await finish();
   })();
@@ -454,10 +498,10 @@ function introScreen(st) {
 function runnerCardHtml(r, backers = []) {
   return `<div class="rc panel" data-rid="${r.id}">
     <div class="top stripe" style="--c1:${esc(r.colour.primary)};--c2:${esc(shadeHex(r.colour.primary))}"><div class="lane">${r.lane}</div><div class="rp">${portrait(r, 170)}</div></div>
-    <div class="odds"><span class="num">${esc(r.odds?.display || '')}</span></div>
+    <div class="odds"><span class="num">${esc(r.odds?.display || '')}</span>${r.odds?.decimalText ? `<small>pays ×${esc(r.odds.decimalText)}</small>` : ''}</div>
     <div class="nick">${esc(r.nickname)}</div>
     <div class="tagl">${esc(r.tagline || '')}</div>
-    <div class="clue"><span class="k">PUBLIC CLUE</span>${esc(r.publicClue?.text || '')}</div>
+    <div class="clue"><span class="k">${esc((r.publicClue?.label || 'Public clue').toUpperCase())} · PUBLIC CLUE</span>${esc(r.publicClue?.text || '')}</div>
     ${backers.length ? `<div class="backers">${backers.join('')}</div>` : ''}
   </div>`;
 }
@@ -471,9 +515,9 @@ function matchupsHtml(round) {
     const a = runnerById(round, m.a), b = runnerById(round, m.b);
     if (!a || !b) return '';
     return `<div class="mu panel slant dark"><div class="unslant" style="display:flex;align-items:center;gap:18px"><span class="lbl">HEAD-TO-HEAD</span>
-      <span class="side"><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(a.nickname)} <span class="od">×${m.odds.a}</span></span>
+      <span class="side"><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(a.nickname)} <span class="od">${esc(m.odds.displayA || `×${m.odds.a}`)}</span></span>
       <span class="vs">VS</span>
-      <span class="side"><i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(b.nickname)} <span class="od">×${m.odds.b}</span></span></div></div>`;
+      <span class="side"><i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(b.nickname)} <span class="od">${esc(m.odds.displayB || `×${m.odds.b}`)}</span></span></div></div>`;
   }).join('');
 }
 
@@ -484,6 +528,7 @@ function bettingScreen(st) {
     <div class="bet-head"><div class="h outlined">PLACE YOUR BETS!</div><div class="rt">Round ${round.number}/${st.roundsPerGame} · ${esc(round.title)}</div><div class="timer num hidden"></div></div>
     <div class="runner-grid n${runners.length}">${runners.map((r) => runnerCardHtml(r)).join('')}</div>
     <div class="matchups">${matchupsHtml(round)}</div>
+    ${round.notice ? `<div class="notice panel grape">🃏 ${esc(round.notice)}</div>` : ''}
   </div>`);
   screenEl.appendChild(root);
   $$('.rc', root).forEach((c, i) => { c.style.animation = `slide-up .5s ${i * 0.08}s cubic-bezier(.2,1.3,.4,1) both`; });
@@ -529,10 +574,12 @@ function revealScreen(st) {
   }).join('');
   (async () => {
     audio.play('drumroll', { dur: 1.8 / SPEED + 0.2 });
-    say("Right then. Let's see who's backed what!", 'jeff', 3);
+    const betLines = (st.betLines || []).slice();
+    if (!betLines.length) say("Right then. Let's see who's backed what!", 'jeff', 3);
     await sleepT(2000, tok);
     const lines = $$('.betline', root);
-    for (const l of lines) { if (tok.cancelled) return; l.classList.add('show'); audio.play('pop'); await sleepT(1100, tok); }
+    for (const l of lines) { if (tok.cancelled) return; l.classList.add('show'); audio.play('pop'); if (betLines.length) { const bl = betLines.shift(); say(bl.text, bl.speaker, 3); } await sleepT(1100, tok); }
+    for (const bl of betLines.splice(0, 3)) say(bl.text, bl.speaker, 2);
     // same pick banter
     const picks = st.players.map((p) => new Set((st.bets?.[p.id] || []).filter((b) => b.type === 'win').map((b) => b.runnerId)));
     let shared = null;
@@ -540,14 +587,14 @@ function revealScreen(st) {
     if (shared) {
       root.appendChild(el(`<div class="same panel yellow anim-pop">Great minds… both backing ${esc(shared.nickname)}! 🤝</div>`));
       say(`They've both gone for ${shared.nickname}. Either genius, or a shared delusion.`, 'pam', 3);
-    } else {
+    } else if (!(st.betLines || []).length) {
       const total = st.players.reduce((a, p) => a + (st.bets?.[p.id] || []).reduce((x, b) => x + b.stake, 0), 0);
-      say(total ? `That's ${money(total)} riding on this one. Pressure!` : 'Nobody has bet a penny. Cowards, the lot of them.', 'pam', 2);
+      say(total ? `That's ${moneySay(total)} riding on this one. Pressure!` : 'Nobody has bet a penny. Cowards, the lot of them.', 'pam', 2);
     }
-    await waitVoice(tok, 2600, 7000);
+    await waitVoice(tok, 2600, 14000);
     if (tok.cancelled) return;
-    // 3-2-1
-    for (const n of ['3', '2', '1']) {
+    // 3-2-1 (the 3D broadcast has its own countdown on the start line)
+    for (const n of (Race3D?.createRaceView && !FORCE_2D ? [] : ['3', '2', '1'])) {
       if (tok.cancelled) return;
       const c = el(`<div class="countdown outlined anim-pop">${n}</div>`);
       root.appendChild(c); audio.play('beep');
@@ -628,9 +675,9 @@ function resultsScreen(st) {
       const r = runnerById(round, f.runnerId);
       return `<div class="orow panel slant ${f.place === 1 ? 'first' : ''}" style="${f.place === 1 ? '' : `background:${esc(r?.colour?.primary || '#2a62e0')}`}"><div class="unslant" style="display:flex;align-items:center;gap:26px;width:100%">
         ${ordinalHtml(f.place)}<div class="rp">${r ? portrait(r, 112) : ''}</div>
-        <div class="nm ${f.place === 1 ? '' : 'outlined white thin'}">${esc(r?.nickname || f.runnerId)}<small>${esc(r?.tagline || '')}</small></div>
+        <div class="nm ${f.place === 1 ? '' : 'outlined white thin'}">${esc(r?.nickname || f.runnerId)}${res.favouriteId === f.runnerId ? ' <span class="fav">FAV</span>' : ''}<small>${esc(r?.tagline || '')}</small></div>
         <div class="bk">${backersFor(f.runnerId, s).join('')}</div>
-        <div class="tm num">${esc(f.timeText || fmtTime(f.officialS))}</div></div></div>`;
+        <div class="tm"><span class="num">${esc(f.timeText || fmtTime(f.officialS))}</span>${f.place > 1 && f.gapS != null ? `<span class="gap">+${Math.round(f.gapS)}s</span>` : ''}</div></div></div>`;
     });
     root.innerHTML = head('THE RESULT', 'Official times, as recorded by the volunteers 📋') + `<div class="order">${rows.join('')}</div>`;
     const els = $$('.orow', root);
@@ -663,7 +710,7 @@ function resultsScreen(st) {
           <div class="meta">${esc(meta)}${x.finsburyNumber ? ` · Finsbury run #${x.finsburyNumber}` : ''}</div>
           ${x.stravaTitle ? `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>` : ''}
           <div class="facts">${facts}</div>
-          ${x.wasPB ? '<div class="pb">PB! 🏅</div>' : ''}
+          ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'FINSBURY PB! 🏅' : 'PB! 🏅'}</div>` : ''}
           <div class="place">${ordinalHtml(f?.place || i + 1)}</div>
         </div></div>`;
     }).join('')}</div>`;
@@ -693,9 +740,9 @@ function resultsScreen(st) {
     root.innerHTML = head('CLUE POST-MORTEM', 'Useful… or a red herring? 🐟') + `<div class="clue-list">${items.map((c) => {
       const r = runnerById(round, c.runnerId);
       const ct = clueText.get(c.clueId);
-      const owner = c.owner === 'public' ? 'PUBLIC CLUE' : `${esc(s.players.find((p) => p.id === c.owner)?.name || 'Secret')}'S SECRET CLUE 🤫`;
+      const owner = c.owner === 'public' ? `PUBLIC CLUE${ct?.label ? ` · ${esc(ct.label.toUpperCase())}` : ''}` : `${esc(s.players.find((p) => p.id === c.owner)?.name || 'Secret')}'S SECRET CLUE 🤫`;
       const verdict = { useful: 'USEFUL ✓', red_herring: 'RED HERRING 🐟', neutral: 'MEH' }[c.verdict] || esc(c.verdict);
-      return `<div class="cl panel"><div class="rp">${r ? portrait(r, 74) : ''}</div><div class="txt"><div class="own">${owner} · ${esc(r?.nickname || '')}</div>${esc(ct?.text || '')}${c.quip ? `<div class="quip">${esc(c.quip)}</div>` : ''}</div><div class="verdict ${esc(c.verdict)}">${verdict}</div></div>`;
+      return `<div class="cl panel"><div class="rp">${r ? portrait(r, 74) : ''}</div><div class="txt"><div class="own">${owner} · ${esc(r?.nickname || '')}</div>${esc(c.text || ct?.text || '')}${c.quip ? `<div class="quip">${esc(c.quip)}</div>` : ''}</div><div class="verdict ${esc(c.verdict)}">${verdict}</div></div>`;
     }).join('')}</div>`;
     const els = $$('.cl', root);
     for (const e of els) { if (t.cancelled) return; e.classList.add('show'); setTimeout(() => audio.play('stamp'), T(250)); await sleepT(1300, t); }
@@ -716,7 +763,7 @@ function resultsScreen(st) {
         <div class="lines">${lines}</div>
         <div class="net num" data-net="${pay.net}">${signedMoney(0)}</div>
         <div class="bank">Bankroll: <span data-bank>${money(pay.bankroll - pay.net)}</span></div>
-        ${drinking ? drinkHtml(pay.net) : ''}
+        ${drinking ? drinkHtml(pay.net, p.id) : ''}
       </div></div>`;
     }).join('')}</div>`;
     await sleepT(600, t);
@@ -737,6 +784,8 @@ function resultsScreen(st) {
     }
     await sleepT(1900, t);
     if (t.cancelled) return;
+    const everyone = s.settings.drinkingMode ? (res.drinks || []).filter((d) => !d.playerId) : [];
+    if (everyone.length) root.appendChild(el(`<div class="drink-all panel yellow anim-pop">🍻 ${everyone.map((d) => esc(d.text)).join(' · ')}</div>`));
     if (best && best.net > 0) {
       audio.play('kaching'); confetti(document.body, { count: 140 });
       best.panel.classList.add('big-win');
@@ -753,7 +802,11 @@ function resultsScreen(st) {
     await waitVoice(t, 7000, 14000);
     done(3);
   }
-  function drinkHtml(net) {
+  function drinkHtml(net, pid) {
+    if (Array.isArray(res.drinks)) {
+      const mine = res.drinks.filter((d) => d.playerId === pid);
+      return mine.map((d) => `<div class="drink panel yellow">🍺 ${esc(d.text)}</div>`).join('');
+    }
     if (net < 0) { const n = Math.min(5, Math.max(1, Math.ceil(-net / 100))); return `<div class="drink panel yellow">🍺 Take ${n} sip${n > 1 ? 's' : ''}!</div>`; }
     if (net > 0) { const n = Math.min(5, Math.max(1, Math.ceil(net / 150))); return `<div class="drink panel yellow">👉 Hand out ${n} sip${n > 1 ? 's' : ''}</div>`; }
     return '<div class="drink panel yellow">🥤 Water break</div>';
@@ -792,11 +845,11 @@ function resultsScreen(st) {
   return { update: (s) => { if (s.results) runStage(s); }, destroy: () => { if (tok) cancelToken(tok); disposeRaceView(); } };
 }
 function winLine(name, net) {
-  const l = [`${name} cleans up! ${signedMoney(net)}. Insufferable for the rest of the evening.`, `Kerching! ${name} is ${money(net)} richer and won't let anyone forget it.`, `${name} read that race like a book.`];
+  const l = [`${name} cleans up! Up ${moneySay(net)}. Insufferable for the rest of the evening.`, `Kerching! ${name} is ${moneySay(net)} richer and won't let anyone forget it.`, `${name} read that race like a book.`];
   return l[Math.floor(Math.random() * l.length)];
 }
 function loseLine(name, net) {
-  const l = [`Oh dear. ${name} is down ${money(-net)}. The bank of Mark is not sympathetic.`, `${name} backed the wrong Mark. It happens to the best of us. Mostly to ${name}.`, `That's ${money(-net)} gone, ${name}. Thoughts and prayers.`];
+  const l = [`Oh dear. ${name} is down ${moneySay(-net)}. The bank of Mark is not sympathetic.`, `${name} backed the wrong Mark. It happens to the best of us. Mostly to ${name}.`, `That's ${moneySay(-net)} gone, ${name}. Thoughts and prayers.`];
   return l[Math.floor(Math.random() * l.length)];
 }
 
@@ -848,8 +901,8 @@ function scoreScreen(st) {
   const s0 = [...st.players].sort((a, b) => b.bankroll - a.bankroll);
   if (s0.length >= 2) {
     const gap = s0[0].bankroll - s0[1].bankroll;
-    say(gap === 0 ? "It's dead level at the top!" : `${s0[0].name} leads by ${money(gap)}.`, 'jeff', 2);
-  } else if (s0[0]) say(`${s0[0].name} is on ${money(s0[0].bankroll)}.`, 'jeff', 2);
+    say(gap === 0 ? "It's dead level at the top!" : `${s0[0].name} leads by ${moneySay(gap)}.`, 'jeff', 2);
+  } else if (s0[0]) say(`${s0[0].name} is on ${moneySay(s0[0].bankroll)}.`, 'jeff', 2);
   iv = setInterval(() => {
     const cd = root.querySelector('.cd');
     if (!cd || !S) return;
@@ -875,7 +928,7 @@ function finaleScreen(st) {
   audio.play('drumroll', { dur: 1.6 });
   setTimeout(() => { audio.play('fanfare'); audio.play('crowd', { dur: 5, peak: 0.45 }); confetti(document.body, { count: 200, duration: 4500 }); }, T(1700));
   const again = setInterval(() => confetti(document.body, { count: 60, duration: 3500 }), T(6000));
-  if (champ) say(tie ? 'We have a dead heat! Nobody wins, which is very British.' : `Ladies and gentlemen, your MARKRUN champion: ${champ.name}, with ${money(champ.bankroll)}!`, 'jeff', 3);
+  if (champ) say(tie ? 'We have a dead heat! Nobody wins, which is very British.' : `Ladies and gentlemen, your MARKRUN champion: ${champ.name}, with ${moneySay(champ.bankroll)}!`, 'jeff', 3);
   setTimeout(() => say('Press space, or tap ready on your phones, to go again.', 'pam', 1), T(7000));
   return { destroy: () => clearInterval(again) };
 }
