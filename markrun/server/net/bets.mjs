@@ -9,7 +9,8 @@ export function stakeCap(pub, bankroll) {
   return Math.min(b, Math.max(minStake, Math.floor(b / 2)));
 }
 
-export function validateBets(pub, bets, bankroll) {
+// playerId: who is betting (the Underdog Special belongs to one player only, at most one boosted pick)
+export function validateBets(pub, bets, bankroll, playerId = null) {
   if (!Array.isArray(bets)) return { ok: false, error: 'Bets must be a list.' };
   const rules = pub.rules || {};
   const minStake = rules.minStake ?? 10;
@@ -20,16 +21,21 @@ export function validateBets(pub, bets, bankroll) {
   const out = [];
   const seen = new Set();
   let total = 0;
+  let boosted = 0;
+  const special = pub.underdogSpecial && playerId && pub.underdogSpecial.playerId === playerId;
   for (const b of bets) {
     if (!b || typeof b !== 'object') return { ok: false, error: 'Bad bet.' };
     const stake = Math.floor(Number(b.stake));
     if (!Number.isFinite(stake) || stake < minStake) return { ok: false, error: `Minimum stake is ${minStake}.` };
-    if (b.type === 'win') {
+    if (b.type === 'win' || b.type === 'special') {
       if (!runners.has(b.runnerId)) return { ok: false, error: 'Unknown runner.' };
       const k = `win:${b.runnerId}`;
       if (seen.has(k)) return { ok: false, error: 'Duplicate bet.' };
       seen.add(k);
-      out.push({ type: 'win', runnerId: b.runnerId, stake });
+      const boost = b.type === 'special' || b.boost === true;
+      if (boost && !special) return { ok: false, error: 'The Underdog Special is not yours to play.' };
+      if (boost && ++boosted > 1) return { ok: false, error: 'Only one Underdog Special pick.' };
+      out.push(b.type === 'special' ? { type: 'special', runnerId: b.runnerId, stake } : { type: 'win', runnerId: b.runnerId, stake, ...(boost ? { boost: true } : {}) });
     } else if (b.type === 'h2h') {
       const m = matchups.get(b.matchupId);
       if (!m) return { ok: false, error: 'Unknown matchup.' };

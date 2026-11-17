@@ -272,7 +272,7 @@ export class Game extends EventEmitter {
     return this.run(() => {
       if (!['INTRO', 'BETTING'].includes(this.s.phase) || this.s.locked[playerId] || !this.player(playerId)) return;
       if (!Array.isArray(bets)) return;
-      this.s.drafts[playerId] = bets.slice(0, 10).map((b) => ({ type: b?.type, runnerId: b?.runnerId, matchupId: b?.matchupId, pick: b?.pick, stake: Math.floor(Number(b?.stake) || 0) }));
+      this.s.drafts[playerId] = bets.slice(0, 10).map((b) => ({ type: b?.type, runnerId: b?.runnerId, matchupId: b?.matchupId, propId: b?.propId, pick: b?.pick, stake: Math.floor(Number(b?.stake) || 0), ...(b?.boost === true ? { boost: true } : {}) }));
       this.emit('persist');
     });
   }
@@ -282,7 +282,7 @@ export class Game extends EventEmitter {
       if (this.s.phase !== 'BETTING' || this.s.revealed) throw new GameError('Betting is not open.');
       const p = this.player(playerId);
       if (!p) throw new GameError('Unknown player.');
-      const v = validateBets(this.s.round.public, bets || [], p.bankroll);
+      const v = validateBets(this.s.round.public, bets || [], p.bankroll, p.id);
       if (!v.ok) throw new GameError(v.error, 'bad_bets');
       this.s.bets[playerId] = v.bets;
       this.s.drafts[playerId] = v.bets;
@@ -302,11 +302,11 @@ export class Game extends EventEmitter {
   autoLockAll() { // betting countdown expired: lock everyone with their valid draft (or nothing)
     for (const p of this.s.players) {
       if (this.s.locked[p.id]) continue;
-      const v = validateBets(this.s.round.public, this.s.drafts[p.id] || [], p.bankroll);
+      const v = validateBets(this.s.round.public, this.s.drafts[p.id] || [], p.bankroll, p.id);
       let bets = v.ok ? v.bets : [];
       if (!v.ok) { // keep every bet that is valid on its own, in order, while it fits the bankroll and the bet limit
         for (const b of this.s.drafts[p.id] || []) {
-          const t = validateBets(this.s.round.public, [...bets, b], p.bankroll);
+          const t = validateBets(this.s.round.public, [...bets, b], p.bankroll, p.id);
           if (t.ok) bets = t.bets;
         }
       }
@@ -615,7 +615,7 @@ export class Game extends EventEmitter {
         id: p.id, name: p.name, avatar: p.avatar, bankroll: p.bankroll, ready: !!p.ready,
         connected: this.isConnected(p.id), locked: !!s.locked[p.id],
       })),
-      round: showRound ? s.round.public : null,
+      round: showRound ? s.round.public : null, // (phones: underdogSpecial is filtered per player in phoneView)
       roundSource: s.round?.source || null,
       revealed: !!s.revealed,
       bets: s.revealed || ['RACE', 'RESULTS', 'SCOREBOARD'].includes(s.phase) ? Object.fromEntries(s.players.map((p) => [p.id, s.bets[p.id] || []])) : null,
@@ -651,6 +651,9 @@ export class Game extends EventEmitter {
 
   phoneView(playerId) {
     const v = this.commonView();
+    if (v.round?.underdogSpecial && v.round.underdogSpecial.playerId !== playerId && !this.s.revealed) {
+      const { underdogSpecial, ...rest } = v.round; void underdogSpecial; v.round = rest;
+    }
     const p = this.player(playerId);
     if (!p) return { ...v, role: 'phone', me: null };
     v.me = {

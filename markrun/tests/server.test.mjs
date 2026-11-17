@@ -333,3 +333,15 @@ test('stakes are capped at half the bankroll per round, except the double-payout
   await g.lock(b.id, [{ type: 'win', runnerId: r0, stake: 1000 }]);
   g.dispose();
 });
+
+test('Underdog Special: only its owner may boost, at most one pick', async () => {
+  const pub = { runners: [{ id: 'r1', odds: { win: 3 } }, { id: 'r2', odds: { win: 5 } }], matchups: [], rules: { minStake: 10, maxBetsPerPlayer: 4 }, payoutMultiplier: 2,
+    underdogSpecial: { playerId: 'p2', boost: 1.5, label: 'UNDERDOG SPECIAL' } };
+  const ok = validateBets(pub, [{ type: 'win', runnerId: 'r1', stake: 50, boost: true }], 500, 'p2');
+  assert.equal(ok.ok, true); assert.equal(ok.bets[0].boost, true, 'boost preserved');
+  assert.equal(validateBets(pub, [{ type: 'special', runnerId: 'r2', stake: 50 }], 500, 'p2').bets[0].type, 'special');
+  assert.equal(validateBets(pub, [{ type: 'win', runnerId: 'r1', stake: 50, boost: true }], 500, 'p1').ok, false, 'not the owner');
+  assert.equal(validateBets(pub, [{ type: 'special', runnerId: 'r1', stake: 50 }], 500, 'p1').ok, false);
+  assert.equal(validateBets(pub, [{ type: 'win', runnerId: 'r1', stake: 50, boost: true }, { type: 'special', runnerId: 'r2', stake: 50 }], 500, 'p2').ok, false, 'one boosted pick only');
+  assert.equal(validateBets(pub, [{ type: 'win', runnerId: 'r1', stake: 50 }], 500, 'p1').bets[0].boost, undefined);
+});
