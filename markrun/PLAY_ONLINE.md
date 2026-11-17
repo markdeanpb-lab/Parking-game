@@ -15,6 +15,7 @@ GitHub lends you a small computer in the cloud (a "codespace"). It's free for pe
    ```
    markrun/play-online.sh
    ```
+   **Important, every time:** open the **PORTS** tab (next to TERMINAL), right-click port **8080**, and choose **Port Visibility → Public**. Without this, the phones get a **404** page. The script tries to do it for you and tells you whether phones can join (✅ or ⚠️).
 6. After a few seconds it prints a line starting **`TV: https://…`**. Hold **⌘ Command** and click that link. It opens in a new tab.
    - If GitHub shows a page saying you're about to access a development port, click **Continue**.
 7. That new tab is the **TV screen**:
@@ -28,7 +29,7 @@ Keep the codespace tab open while you play. The phones and the TV can be on any 
 ## If something goes wrong
 | Problem | Fix |
 |---|---|
-| A phone shows a **GitHub sign-in** page | Go back to the codespace tab and open the **PORTS** tab next to Terminal. Right-click port **8080**, choose **Port Visibility → Public**, then scan the QR code again. |
+| A phone shows a **404** or a **GitHub sign-in** page | Go back to the codespace tab and open the **PORTS** tab next to Terminal. Right-click port **8080**, choose **Port Visibility → Public**, then scan the QR code again. |
 | A phone shows "about to access a development port" | Tap **Continue**. GitHub shows this once. |
 | Nothing happens when the script runs | Wait a minute, because the first start can still be setting up. Then run `markrun/play-online.sh` again. |
 | The TV tab says it's reconnecting | Check the codespace tab is still open, then press **Enter** in the Terminal to see if the game stopped. If it did, run the script again. Scores are saved, and the game carries on where it left off. |
@@ -40,4 +41,4 @@ Just close the tabs. The codespace switches itself off after about 30 minutes of
 ## Good to know
 - This way needs the internet. The home-computer setup in README.md works with no internet at all.
 - The game link is public, so anyone who has it could open it. Only share it with the person you're playing with. The TV controls are protected by a secret key in your TV link.
-- Your running history is in your private GitHub repository. The codespace is yours alone.
+- Keep the repository **private**: it holds your running history, including route outlines that can reveal where you live. Codespaces work fine with private repositories.
