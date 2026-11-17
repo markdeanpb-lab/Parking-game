@@ -172,7 +172,12 @@ export function createRaceView(container, opts = {}) {
       t.tw = tw;
       placed.push(t);
     }
-    if (!st) return { tags };
+    if (!st) {
+      if (mode !== 'race') return { tags };
+      // pre-race: tower in lane order, dots on the start line
+      return { tags, raceS: 0, leaderM: 0, order: ids.map((id) => ({ id, gapText: '', finished: false })),
+        dots: ids.map((id) => ({ x: startSlots[id].x, z: startSlots[id].z, colour: pubById[id].colour.primary })) };
+    }
     return {
       raceS: st.raceS, leaderM: st.leader.m, tags,
       order: st.order.map((id) => ({ id, gapText: st.byId[id].gapText, finished: st.byId[id].finished })),

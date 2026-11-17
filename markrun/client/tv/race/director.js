@@ -186,8 +186,8 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         const c = new THREE.Vector3(); for (const r of act.length ? act : [lead]) c.add(new THREE.Vector3(r.x, r.y, r.z)); c.divideScalar(Math.max(1, act.length));
         const spread = act.length ? act[0].m - act.at(-1).m : 0;
         const f = focus([st.order[0]], b);
-        const hgt = s.type === 'blimp' ? 60 + Math.min(110, spread * 0.5) : 22 + Math.min(60, spread * 0.35);
-        const back = s.type === 'blimp' ? 70 : 32 + Math.min(50, spread * 0.3);
+        const hgt = s.type === 'blimp' ? 38 + Math.min(50, spread * 0.25) : 20 + Math.min(40, spread * 0.25);
+        const back = s.type === 'blimp' ? 48 : 30 + Math.min(40, spread * 0.25);
         const tgt = c.clone().lerp(new THREE.Vector3(lead.x, lead.y, lead.z), 0.5);
         pos = tgt.clone().addScaledVector(f.h, -back).addScaledVector(right(f.h), back * 0.6).add(up.clone().multiplyScalar(hgt));
         look = tgt; fov = 46; break;
