@@ -116,7 +116,7 @@ const STEER_TEXT = {
   faded: [' Faded late, mind.', ' Ran out of puff at the end.', ' Paid for it in the last kilometre.'],
   steady: [' Steady to the line.', ' No dramatic kick, no collapse.'],
 };
-const STEERED = new Set(['even_pacer', 'big_fade', 'overtaker', 'top3_2k', 'hill2_slowest', 'dead_last_1k']);
+const STEERED = new Set(['even_pacer', 'big_fade', 'overtaker', 'top3_2k']);
 
 // Verify a tip against the field (used by tests): is the stated fact true?
 export function tipIsTrue(field, analysis, tip) {

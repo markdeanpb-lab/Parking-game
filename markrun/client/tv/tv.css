@@ -503,3 +503,8 @@ body.phase-FINALE #subs { left: 40px; transform: none; width: 1540px; align-item
 .rc .clue { flex: 0 1 auto; font-size: 24px; max-height: 270px; }
 .rc .clue .cquote { font-size: 21px; }
 .rc .odds { top: -14px; z-index: 3; }
+
+.bet-head { flex-wrap: nowrap; }
+.bet-head .h { flex: none; white-space: nowrap; }
+.bet-head .rt { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bet-head .theme-badge { flex: none; }
