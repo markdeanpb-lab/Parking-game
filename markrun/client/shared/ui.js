@@ -116,3 +116,18 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function betRunnerId(b) { return b?.type === 'prop' ? null : (b?.runnerId || b?.pick || null); }
 export function betKind(b) { return { win: 'WIN', h2h: 'HEAD-TO-HEAD', prop: 'SIDE BET', inplay: 'HALFWAY' }[b?.type] || ''; }
+
+// Clue text, styled by the game module's clue `style`: tipster clues end with a commentator's quoted opinion.
+export function clueHtml(c) {
+  const text = String(c?.text || '');
+  if (c?.style === 'tipster') {
+    const i = text.indexOf('"');
+    if (i > 0) {
+      const head = text.slice(0, i).trim();
+      const quote = text.slice(i).replace(/^"|"$/g, '').replace(/"/g, '');
+      const voice = c.voice || (/\bpam\b/i.test(head) ? 'pam' : /\bjeff\b/i.test(head) ? 'jeff' : '');
+      return `<span class="cfact">${esc(head)}</span> <span class="cquote ${voice}">${voice ? `<b>${voice === 'pam' ? 'PAM' : 'JEFF'}</b>` : ''}“${esc(quote)}”</span>`;
+    }
+  }
+  return esc(text);
+}

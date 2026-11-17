@@ -3,7 +3,7 @@
 // "press any key" overlay), ?mute.
 import { connect } from '../shared/net.js';
 import { createAudio } from '../shared/sfx.js';
-import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, confetti, fmtTime } from '../shared/ui.js';
+import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, confetti, fmtTime } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
@@ -440,7 +440,7 @@ function introScreen(st) {
         <div class="nick outlined">${esc(r.nickname)}</div>
         <div class="tagl">${esc(r.tagline || '')}</div>
         ${r.intro ? `<div class="introline">“${esc(r.intro)}”</div>` : ''}
-        ${r.publicClue ? `<div class="clue"><span class="k">CLUE</span><span>${esc(r.publicClue.text)}</span></div>` : ''}
+        ${r.publicClue ? `<div class="clue"><span class="k">CLUE</span><span>${clueHtml(r.publicClue)}</span></div>` : ''}
       </div><div class="lane">LANE ${r.lane}</div><div class="odds-badge"><div class="ol">ODDS</div><div class="ov outlined">${esc(r.odds?.display || '')}</div></div></div></div>`;
   async function showRunner(i) {
     const r = runners[i];
@@ -502,7 +502,7 @@ function runnerCardHtml(r, backers = []) {
     <div class="odds"><span class="num">${esc(r.odds?.display || '')}</span>${r.odds?.decimalText ? `<small>pays ×${esc(r.odds.decimalText)}</small>` : ''}</div>
     <div class="nick">${esc(r.nickname)}</div>
     <div class="tagl">${esc(r.tagline || '')}</div>
-    <div class="clue"><span class="k">${esc((r.publicClue?.label || 'Public clue').toUpperCase())} · PUBLIC CLUE</span>${esc(r.publicClue?.text || '')}</div>
+    <div class="clue"><span class="k">${esc((r.publicClue?.label || 'Public clue').toUpperCase())} · PUBLIC CLUE</span>${clueHtml(r.publicClue)}</div>
     ${backers.length ? `<div class="backers">${backers.join('')}</div>` : ''}
   </div>`;
 }

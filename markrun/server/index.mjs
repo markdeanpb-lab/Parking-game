@@ -71,12 +71,13 @@ server.listen(PORT, LISTEN, async () => {
   console.log(`MARKRUN_READY port=${port}`);
 });
 
-function shutdown() {
+function shutdown(sig) {
+  console.log(`[markrun] ${sig || 'shutdown'} received - session saved, exiting`);
   save();
   game.dispose();
   server.close();
   closeAll();
   process.exit(0);
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

@@ -1,6 +1,6 @@
 // MARKRUN phone controller: join, private clues, bet slip, lock-in, race reactions, results, ready-up.
 import { connect } from '../shared/net.js';
-import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, confetti } from '../shared/ui.js';
+import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, confetti } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 
 const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '🐼', '🦖', '🐧', '🐝', '🦩', '🐶'];
@@ -306,10 +306,10 @@ function renderBetting() {
         </div>
         <div class="body">
           <div class="tagl">${esc(r.tagline || '')}</div>
-          <div class="clue-box"><span class="k">📺 PUBLIC CLUE${r.publicClue?.label ? ` · ${esc(r.publicClue.label.toUpperCase())}` : ''}</span>${esc(r.publicClue?.text || '')}</div>
+          <div class="clue-box"><span class="k">📺 PUBLIC CLUE${r.publicClue?.label ? ` · ${esc(r.publicClue.label.toUpperCase())}` : ''}</span>${clueHtml(r.publicClue)}</div>
           ${pcs.map((pc) => (pc.tier === 'hot'
-    ? `<div class="clue-box hot"><span class="k">🔥 HOT TIP · ONLY YOU CAN SEE THIS</span>${esc(pc.text)}</div>`
-    : `<div class="clue-box secret"><span class="k">🤫 GOSSIP · ONLY YOU CAN SEE THIS${pc.label ? ` · ${esc(pc.label.toUpperCase())}` : ''}</span>${esc(pc.text)}</div>`)).join('')}
+    ? `<div class="clue-box hot"><span class="k">🔥 HOT TIP · ONLY YOU CAN SEE THIS</span>${clueHtml(pc)}</div>`
+    : `<div class="clue-box secret"><span class="k">🤫 GOSSIP · ONLY YOU CAN SEE THIS${pc.label && pc.label.toLowerCase() !== 'gossip' ? ` · ${esc(pc.label.toUpperCase())}` : ''}</span>${clueHtml(pc)}</div>`)).join('')}
           <div class="actions"><button class="btn" data-win="${r.id}">Back to WIN</button></div>
         </div></div>`;
     }).join('')}</div>
