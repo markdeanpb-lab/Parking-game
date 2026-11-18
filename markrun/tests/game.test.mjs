@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { historyDb } from '../server/db.mjs';
-import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives, provisionalNet, coldOpenLines, lockLine, stampLine, rematchLine, awardLines } from '../server/game/round.mjs';
+import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives, provisionalNet, personaliseCommentary, coldOpenLines, lockLine, stampLine, rematchLine, awardLines } from '../server/game/round.mjs';
 import { tipIsTrue, finishSteer, TIP_TYPES } from '../server/game/hottips.mjs';
 import { skeleton } from '../server/game/clues.mjs';
 import { isPBDay } from '../server/game/select.mjs';
@@ -209,7 +209,9 @@ test('commentary: spaced out, short, never repeated within a session', () => {
   for (let k = 1; k <= 8; k++) {
     const r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: 'comm' }, rng: 500 + k });
     const c = r.racePlan.commentary;
-    for (let i = 1; i < c.length; i++) assert.ok(c[i].broadcastS - c[i - 1].broadcastS >= 4.5, `gap ${c[i].broadcastS - c[i - 1].broadcastS}`);
+    for (let i = 1; i < c.length; i++) assert.ok(c[i].broadcastS - c[i - 1].broadcastS >= 9, `gap ${c[i].broadcastS - c[i - 1].broadcastS}`);
+    assert.ok(c.length >= 7 && c.length <= 16, `lines per race ${c.length}`);
+    for (const l of c) assert.ok(!/Here we go! Here we go|They'll be fine\. Probably/.test(l.text), l.text);
     for (const l of [...c, ...r.public.introLines]) {
       assert.ok(countWords(l.text) <= 22, `too long: ${l.text}`);
       assert.ok(!seen.has(l.text), `repeated: ${l.text}`);
@@ -438,4 +440,57 @@ test('premium moment lines name the players and stay short', () => {
     }
   }
   assert.equal(awardLines([{ title: 'Biggest Win', text: 'x' }, { title: 'B', text: 'y' }]).length, 2);
+});
+
+test('clues worth arguing about: extreme weather only, a directional clue per runner, opposing clues per round', () => {
+  let runners = 0, dir = 0, rounds = 0, argue = 0;
+  for (let s2 = 0; s2 < 80; s2++) {
+    const r = mk({ rng: 12000 + s2 });
+    rounds++;
+    let ar = false;
+    for (const C of Object.values(r.hidden.clues)) {
+      runners++;
+      const all = [C.public, ...Object.values(C.private)].filter((c) => c.tier !== 'hot');
+      if (all.some((c) => Math.abs(c.signal) >= 1.5)) dir++;
+      const pub = C.public;
+      if (Math.abs(pub.signal) >= 1.5 && Object.values(C.private).some((c) => Math.abs(c.signal) >= 1.5 && Math.sign(c.signal) !== Math.sign(pub.signal))) ar = true;
+      for (const c of all) {
+        if (c.category === 'temp') { const t = Number(c.headline.match(/-?\d+/)[0]); assert.ok(t >= 20 || t <= 2, c.headline); }
+        assert.ok(!/humidity/.test(c.headline), c.headline);
+      }
+    }
+    if (ar) argue++;
+  }
+  assert.ok(dir / runners >= 0.95, `directional ${dir}/${runners}`);
+  assert.ok(argue / rounds >= 0.9, `argue ${argue}/${rounds}`);
+});
+
+test('personaliseCommentary: names, stakes, short lines, calm spacing, must-say lines kept', () => {
+  const P = [{ id: 'p1', name: 'Mark' }, { id: 'p2', name: 'Jo' }];
+  let named = 0;
+  for (let s2 = 0; s2 < 30; s2++) {
+    const r = mk({ rng: 13000 + s2 });
+    const fav = [...r.public.runners].sort((a, b) => a.odds.win - b.odds.win);
+    const before = r.racePlan.commentary.filter((x) => x.priority === 1).map((x) => x.text);
+    const out = personaliseCommentary(r, { p1: [{ type: 'win', runnerId: fav[0].id, stake: 300 }], p2: [{ type: 'win', runnerId: fav[4].id, stake: 500 }] }, P, r.racePlan);
+    assert.equal(r.racePlan.commentary, out);
+    for (const t of before) assert.ok(out.some((x) => x.text === t), 'priority-1 line kept');
+    for (let i = 1; i < out.length; i++) assert.ok(out[i].broadcastS - out[i - 1].broadcastS >= 9, 'spacing');
+    for (const l of out) { assert.ok(countWords(l.text) <= 18, l.text); assert.ok(['jeff', 'pam'].includes(l.speaker)); }
+    if (out.some((l) => /Mark|Jo/.test(l.text))) named++;
+  }
+  assert.ok(named >= 25, `personal lines in ${named}/30 races`);
+});
+
+test('reveal context and the Real Mark fact come only from the data', () => {
+  const r = mk({ rng: 14001 });
+  const res = settleRound(r, {}, { p1: 1000, p2: 1000 });
+  for (const rv of res.reveal) {
+    assert.ok(rv.context.length >= 2 && /morning/.test(rv.context[0]));
+    assert.match(rv.contextLine, /Finsbury parkrun/);
+    const perf = r.hidden.perfs[rv.runnerId];
+    assert.ok(rv.contextLine.includes(`of ${perf.of} here`));
+  }
+  assert.ok(typeof res.realMarkFact === 'string' && res.realMarkFact.length > 10);
+  assert.ok(!/\bage\b|years old|born/i.test(res.realMarkFact));
 });

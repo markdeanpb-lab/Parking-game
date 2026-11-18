@@ -490,7 +490,7 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
 }
 
 // Assign clues to slots: slots[0] = 'public', then one per player. Returns { [runnerId]: [{slot, clue}] }.
-export const DIR_MIN = 3;
+export const DIR_MIN = 1.5;
 const PRICED = (model, c) => c.family === 'fitness' && c.features.some((k) => model.features.includes(k));
 export function assignClues(entries, slots, rng, model, { boost, publicPricedBonus } = {}) {
   // entries: [{ runnerId, perf, cands: {cat: clue} }]
@@ -518,7 +518,9 @@ export function assignClues(entries, slots, rng, model, { boost, publicPricedBon
         const hasFitness = chosen.some((c) => c.clue.family === 'fitness');
         const hasDir = chosen.some((c) => isDir(c.clue));
         let opts = Object.values(e.cands).filter((c) => !chosen.some((x) => x.clue.cat === c.cat || (c.group && x.clue.group === c.group) || (c.cat === 'rest' && x.clue.cat === 'day_before') || (c.cat === 'day_before' && x.clue.cat === 'rest')));
-        if (!hasDir && remaining === 1) { const d = opts.filter(isDir); if (d.length) opts = d; } // every runner gets a directional clue
+        // every runner gets a directional clue, and it goes in the PUBLIC slot (never replaced by a hot tip, seen by all)
+        if (s === 0) { const d = opts.filter(isDir); if (d.length) opts = d; }
+        else if (!hasDir && remaining === 1) { const d = opts.filter(isDir); if (d.length) opts = d; }
         else if (!hasFitness && remaining === 1) { const fo = opts.filter((c) => c.family === 'fitness'); if (fo.length) opts = fo; }
         // same-family pairs (week_km + week_rel + month_km) are redundant on one runner
         opts = opts.filter((c) => !(['week_km', 'week_rel', 'month_km'].includes(c.cat) && chosen.some((x) => ['week_km', 'week_rel', 'month_km'].includes(x.clue.cat))) || opts.length <= 1);
@@ -543,7 +545,7 @@ export function assignClues(entries, slots, rng, model, { boost, publicPricedBon
     // variety bonus: each slot should mix families (some red herrings by nature)
     for (const fs of famSlot) score += (fs.fitness > 0 ? 0.5 : 0) + ((fs.day + fs.fluff) > 0 ? 0.5 : 0);
     // something to argue about: at least one runner whose public clue and a private clue point opposite ways
-    const argue = Object.values(res).some((list) => { const pub = list.find((x) => x.slot === 0)?.clue; return pub && Math.abs(pub.dir) >= 2 && list.some((x) => x.slot > 0 && Math.abs(x.clue.dir) >= 2 && Math.sign(x.clue.dir) !== Math.sign(pub.dir)); });
+    const argue = Object.values(res).some((list) => { const pub = list.find((x) => x.slot === 0)?.clue; return pub && Math.abs(pub.dir) >= DIR_MIN && list.some((x) => x.slot > 0 && Math.abs(x.clue.dir) >= DIR_MIN && Math.sign(x.clue.dir) !== Math.sign(pub.dir)); });
     const allDir = Object.values(res).every((list) => list.some((x) => isDir(x.clue)));
     score += (argue ? 4 : 0) + (allDir ? 3 : 0);
     if (!best || score > best.score) best = { score, res };

@@ -74,7 +74,8 @@ export const TYPE_WEIGHT = { hill1_first: 0.12, hill2_fastest: 0.1, open_fastest
 // Choose `counts[playerId]` hot tips per player: different runners per player where possible, mixed polarities.
 // marketProb: { runnerId: implied win probability }. Good-sounding tips lean towards runners the market already likes,
 // so a tip is an edge, not a lottery ticket: following tips sensibly should pay, but modestly.
-export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiveShare = 0.55, marketProb = {}, favourBias = 1.5 } = {}) {
+export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiveShare = 0.55, marketProb = {}, favourBias = 1.5, rivalBias = 2, decisiveDamp = 0.6 } = {}) {
+  const finishOrder = [...field].sort((a, b) => a.officialS - b.officialS).map((r) => r.id);
   const all = fieldTips(field, analysis);
   const used = new Set();
   const usedTypes = new Set();
@@ -91,8 +92,14 @@ export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiv
       const w = (x) => {
         const base = TYPE_WEIGHT[x.type] ?? 1;
         const lean = x.polarity > 0 ? Math.pow((marketProb[x.runnerId] ?? 0.2) / 0.2, favourBias) : 1;
-        const pairW = x.otherId ? 1 / (field.length - 1) : 1; // pair facts come in bunches: weight per runner, not per pair
-        return base * lean * pairW;
+        // pair facts come in bunches: weight per runner, not per pair; and prefer rivals the market rates lower
+        // (beating an outsider to 1 km is true, useful for a head-to-head, and not a giveaway)
+        const pairW = x.otherId ? Math.pow(0.2 / Math.max(0.02, marketProb[x.otherId] ?? 0.2), rivalBias) / (field.length - 1) : 1;
+        // edge control: a tip must inform, not decide. Tips that would point straight at the winner (or the
+        // last-placed runner) are chosen a little less often; every tip is still a true fact.
+        const place = finishOrder ? finishOrder.indexOf(x.runnerId) + 1 : 0;
+        const damp = (x.polarity > 0 && place === 1) || (x.polarity < 0 && place === field.length) ? decisiveDamp : 1;
+        return base * lean * pairW * damp;
       };
       const t = rng.weighted(pool, w);
       used.add(t.runnerId); usedTypes.add(t.type);

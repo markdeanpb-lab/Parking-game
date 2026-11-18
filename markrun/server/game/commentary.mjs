@@ -1006,7 +1006,8 @@ export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
       const clash = out.filter((x) => Math.abs(x.broadcastS - tt) < MIN_GAP);
       if (clash.some(protectedLine) || clash.some((x) => x.personal)) continue;
       for (const x of clash) { // personal beats generic; drop a replaced line's follow-up too (no orphan reactions)
-        for (const y of out.filter((z) => z === x || (x.eventRef && z.eventRef && z.eventRef.type === x.eventRef.type && z.eventRef.raceS === x.eventRef.raceS))) out.splice(out.indexOf(y), 1);
+        const sib = (z) => z !== x && x.speaker === 'jeff' && z.speaker === 'pam' && !protectedLine(z) && x.eventRef && z.eventRef && z.eventRef.type === x.eventRef.type && z.eventRef.raceS === x.eventRef.raceS;
+        for (const y of out.filter((z) => z === x || sib(z))) out.splice(out.indexOf(y), 1);
       }
       out.push({ broadcastS: Math.round(tt * 100) / 100, text: l.text, speaker: l.speaker, priority: 2, personal: true });
       placed = true;
