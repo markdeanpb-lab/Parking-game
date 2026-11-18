@@ -177,7 +177,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   const LIVE_KINDS = new Set(['cannonball', 'raincloud', 'mirror_signal', 'photographer', 'sore_loser_var']);
   const freshness = (kind) => { if (CUTSCENE_KINDS[kind]?.story) return 1; const l = cm.last?.[kind]; if (l == null) return 1; const ago = raceNo - l; return ago >= (LIVE_KINDS.has(kind) ? RULES.cooldownLiveRaces : RULES.cooldownRaces) ? 0.6 : -1; };
   if (raceNo <= 1 || raceNo < (cm.races || 0)) { cm.night = {}; cm.lines = []; cm.variants = {}; cm.wall = { shown: 0, holes: 0 }; cm.bell = 0; cm.road = []; }
-  cm.night ||= {}; cm.lines ||= []; cm.variants ||= {};
+  cm.night ||= {}; cm.lines ||= []; cm.variants ||= {}; cm.last ||= {}; cm.funfairSigs ||= [];
   const capped = (kind) => !CUTSCENE_KINDS[kind]?.story && (cm.night[kind] || 0) >= PER_NIGHT_CAP; // storylines have their own night caps
   const gateRoll = {}; // one roll per kind per race
   const gate = (kind) => GATE[kind] == null || (gateRoll[kind] ??= R.next()) < GATE[kind];
@@ -435,7 +435,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     if (wu && !capped('breakfast') && (wu.km >= 8 || gate('breakfast')) || (force === 'breakfast')) {
       const x = wu || { r: order[0], km: 2.1 };
       const big = x.km >= 8;
-      C.push(mk('breakfast', x.r.id, 'pre', big ? -8.2 : -6.5, { durationS: big ? 6 : 4.2, params: { km: Math.round(x.km * 10) / 10, variant: big ? 'big' : 'standard' }, score: big ? 9 : 4,
+      C.push(mk('breakfast', x.r.id, 'pre', -8.4, { durationS: big ? 5.4 : 4.1, // before the race title card (-4.2) params: { km: Math.round(x.km * 10) / 10, variant: big ? 'big' : 'standard' }, score: big ? 9 : 4,
         truth: big ? `He really had run ${x.km.toFixed(1)} km earlier that morning before running this one.` : `He really had jogged ${x.km.toFixed(1)} km earlier that morning to warm up. The others, on their Saturdays, did not.` }));
     }
   }

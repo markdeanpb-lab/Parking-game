@@ -322,3 +322,15 @@ body.phone input { user-select: text; -webkit-user-select: text; }
   .tray { gap: 6px; }
   .tray .tb2 .btn { min-height: 50px; }
 }
+
+/* "Remember this one?" (results reveal, phase 3) */
+.mk-time { position: relative; height: 12px; margin: 0 12px 8px; border-radius: 8px; background: rgba(255,255,255,.3); border: 2px solid var(--ink); overflow: visible; }
+.mk-time i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p, 1) * 100%); background: var(--sun); border-radius: 6px; transition: width .25s linear; }
+.mk-time span { position: absolute; right: 0; top: -26px; font-family: var(--font-display); font-size: 18px; color: #fff; text-shadow: 0 2px 0 var(--ink); }
+.mk-run { margin: 12px 8px 0; padding: 14px 16px; background: #fff; color: var(--ink); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 var(--ink); text-align: center; }
+.mk-run .mk-date { font-family: var(--font-display); font-size: 22px; color: var(--panel-deep); }
+.mk-run .mk-title { font-family: var(--font-display); font-size: 28px; line-height: 1.08; margin: 6px 0; overflow-wrap: anywhere; }
+.mk-run .mk-meta .num { font-size: 30px; }
+.mk-run .mk-meta small { display: block; font-size: 14px; font-weight: 800; color: #4a5080; line-height: 1.25; margin-top: 4px; }
+.mk-done { flex: 1; text-align: center; font-family: var(--font-display); font-size: 22px; color: #fff; text-shadow: 0 2px 0 var(--ink); padding: 14px 0; }
+.scr.markq .acts { gap: 10px; }

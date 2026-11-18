@@ -299,6 +299,17 @@ try {
         await sleep(150);
       }
       if ((await health()).phase !== 'RESULTS') break;
+      if (stages[i] === 'reveal') { // "Remember this one?": phone A is Mark, phone B believes or doubts
+        const asked = await pa.waitForSelector('.markq [data-mk]', { timeout: 8000 }).then(() => true).catch(() => false);
+        if (!asked) throw new Error('Mark was never asked "Remember this one?"');
+        if (round === 1) { await pb.waitForSelector('.markq [data-mk]', { timeout: 3000 }).catch(() => {}); await Promise.all([shot(pa, '20b-phoneA-remember'), shot(pb, '20c-phoneB-doeshe')]); }
+        await pa.click('.markq [data-mk="yes"]', { timeout: 3000 }).catch(() => {});
+        await pb.click('.markq [data-mk="believe"]', { timeout: 3000 }).catch(() => {});
+        await tv.waitForSelector('.rvc.flip .mk-verdict', { timeout: 8000 }).catch(() => console.log('  (no verdict chip seen on the TV)'));
+        if (round === 1) { await sleep(400); await shot(tv, '20d-tv-reveal-card-verdict'); }
+        const bonus = await health();
+        console.log(`  memory moment: scores now ${JSON.stringify(bonus.scores)}`);
+      }
       if (round === 1 && stages[i] === 'payouts') {
         await pa.waitForSelector('.net-big', { timeout: 10000 });
         await Promise.all([shot(pa, '21-phoneA-payout'), shot(pb, '22-phoneB-payout')]);

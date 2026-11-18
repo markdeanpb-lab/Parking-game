@@ -12,12 +12,15 @@ async function j(u) { const r = await fetch(u); if (!r.ok) throw new Error(`${u}
 const FUN = new Set(['hook_a_duck', 'test_strength', 'funfair']);
 async function main() {
   const kind = qs.get('cutscene') || 'all';
+  const cfx = qs.get('cfx'); // a real-data field where this batch-2 gag's trigger really fires (cutscenes/fixtures/<kind>.json)
   const fx = qs.get('fixture') || (FUN.has(kind) ? 'funfair' : 'real');
-  const [course, park, round] = await Promise.all([j('/data/course/course.json'), j('/data/course/park.json'), j(`/client/tv/race/fixtures/${fx}.json`)]);
+  const [course, park, round] = await Promise.all([j('/data/course/course.json'), j('/data/course/park.json'), j(cfx ? `/client/tv/race/cutscenes/fixtures/${cfx}.json` : `/client/tv/race/fixtures/${fx}.json`)]);
   if (qs.get('shot')) document.body.classList.add('shot');
   const plan = round.racePlan;
-  const force = kind === 'all' || kind === 'funfair' ? null : kind;
-  let cs = planCutscenes({ racePlan: plan, runners: round.public.runners, rng: Number(qs.get('seed') || 7), force, roundNumber: Number(qs.get('round') || 3) });
+  const force = kind === 'all' || kind === 'funfair' || cfx ? null : kind;
+  const mem = qs.get('night') ? JSON.parse(qs.get('night')) : null; // e.g. {"cutscenes":{"bell":2,"wall":{"shown":2,"holes":3}}}
+  let cs = planCutscenes({ racePlan: plan, runners: round.csRunners || round.public.runners, rng: cfx ? round.seed : Number(qs.get('seed') || 7), force, roundNumber: Number(qs.get('round') || 3), sessionMemory: mem });
+  if (cfx) cs = cs.filter((c) => c.kind === (kind === 'all' ? cfx : kind));
   if (force && !['hook_a_duck', 'test_strength'].includes(force)) cs = cs.filter((c) => c.kind === force);
   if (kind === 'funfair' || ['hook_a_duck', 'test_strength'].includes(force)) cs = cs.filter((c) => c.group?.startsWith('funfair'));
   if (qs.get('variant')) for (const c of cs) if (c.kind === force) c.params.variant = qs.get('variant');

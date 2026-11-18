@@ -133,7 +133,10 @@ Ownership this iteration (new agents). Keep to your area, and use a small hook (
   - Each cutscene carries `lines: [{ speaker, text }]` (≤2 short lines) for the commentators. The reveal includes "What really happened".
   - **Planner API (cutscene engineer, agreed signature):**
     `planCutscenes({ racePlan, runners, theme, rng, sessionMemory, backedBy?, roundNumber? }) -> cutscenes[]` from `server/game/cutscenes.mjs`.
-    - `runners`: `[{ id, nickname?, shortName?, personality?, perf: { facts, features } }]` (e.g. the public runner + `hidden.perfs[id]`); pacing is read from `racePlan.runners[].progress`.
+    - `runners`: `[{ id, nickname?, shortName?, personality?, date?, perf: { facts, features } }]` (e.g. the public runner + `hidden.perfs[id]`); pacing is read from `racePlan.runners[].progress`.
+      `date` (server-only, never sent to the TV) enables the era gag The Mirror Routine (runs 3+ years apart); without it that gag is skipped.
+      Batch 2 reads `facts` keys `warmup_km.km`, `treadmill_7d`, `cross_training_7d`, `race_upcoming`/`race_recent` (names compared, never shown), `hr_mean`, `was_finsbury_pb` (post-race only), `finsbury_number` (post-race only); a missing fact skips its gag.
+      Rules now: at most ONE pausing cutscene per race; Mirror, Signal, Manoeuvre is benched; storylines (Sub-20 Wall, PB Bell, Road to 100) keep night state in `mem.cutscenes`.
     - `rng`: the round's `makeRng` object (or a seed). `sessionMemory`: the session `mem` object (the planner keeps `mem.cutscenes` for cooldowns / rotation).
     - `backedBy` is optional (`{ runnerId: [names] }` or `[ids]`): when re-planned at race start it tilts which runner is featured. Feature-detect the import.
     - Call site (round.mjs, after `plan.commentary`): `plan.cutscenes = planCutscenes({ racePlan: plan, runners: ids.map((id, i) => ({ id, shortName: runners[i].shortName, personality: runners[i].personality, perf: perfs[i] })), theme: thInfo, rng: R, sessionMemory: mem, roundNumber })`.
@@ -142,3 +145,19 @@ Ownership this iteration (new agents). Keep to your area, and use a small hook (
   - **TV events:** the race view's `onEvent` also receives `{ kind: 'cutscene', phase: 'start'|'end', id, cutscene, mode, who, durationS }` (no `text`)
     and each cutscene line as `{ kind: 'commentary', text, speaker, priority: 3, cutscene: id }`. Shell: pause/duck live calls while a pausing cutscene plays.
 - **Commentary voice (phase 3):** commentary lines are known when the race starts. The TV pre-renders them with Kokoro neural voices while bets are placed, and falls back to speechSynthesis if not ready.
+
+### Phase 3 additions (audio + reveal; 2026-11-18)
+- **Settings:** `premiumVoices: true` (TV Options "Premium voices"). Off = speechSynthesis only, and the server sends no voice prefetch.
+- **Voice prefetch (TV only):** in BETTING, `tvView().voicePrefetch = { roundId, personalised, lines: [{ text, speaker, b /* broadcast s */, priority }] }`
+  (race commentary + cutscene lines) when `premiumVoices` is on. Phones never receive it; nothing is shown on screen. `personaliseCommentary`
+  now runs once at the bet reveal (`reveal()`, flag `round.personalised`), so the personalised lines can be rendered during the reveal.
+- **"Remember this one?" (results reveal, only when `settings.runnerPlayerId` is a player):**
+  - TV -> server `{ t: 'markAsk', roundId, runnerId, index }` before each card flips (opens a ≤7 s window; `MARKRUN_MARK_ASK_MS`).
+  - phone -> server `{ t: 'markAnswer', runnerId, answer }`: Mark answers `'yes'|'no'`, everyone else `'believe'|'doubt'`.
+  - The window closes when every connected player answered, on timeout, on the next `markAsk`, or when the stage ends.
+  - State: `markMoment = { markId, open: { runnerId, index, closesAt, answered: [playerId] } | null, log: [{ runnerId, mark, guesses, bonus }] }` (RESULTS only);
+    phones get `me.markPrompt = { runnerId, index, closesAt, role: 'mark'|'guess', answer, markAnswered }`.
+  - Scoring: a believe/doubt that matches Mark's answer scores `MARK_BONUS` (25pp), banked into the score, `payouts[pid].bonus`/`net`/`score` and the history row.
+- **Reveal cards:** `reveal[]` also carries `rank`, `of` and `weather: { tempC, windKmh, prcpMm, coco }` (Meteostat condition code) for the TV badges.
+- **Static (Node host):** `/voices/*` serves `data/voices/` (`npm run voices:download`). The TV page is sent with COOP/COEP (cross-origin isolated on localhost) so the voice engine can use threads.
+- **Audio files:** `client/assets/audio/` (original, CC0, rendered by `tools/compose_audio.mjs`; `manifest.json` lists cues and looping stems). The web build copies them and `client/dist/tts-worker.js`.

@@ -106,7 +106,7 @@ export function board(bag, tex, w, h, edge = '#1a1420', thick = 0.12) {
 }
 
 // ---------------- props ----------------
-export function makeGoose(bag, { costume = false, plush = false, scale = 1 } = {}) {
+export function makeGoose(bag, { costume = false, plush = false, scale = 1, bellHat = false } = {}) {
   const root = new THREE.Group(); root.scale.setScalar(scale);
   const W = plush ? '#fffaf2' : '#ffffff', O = '#ff9a1f';
   const bodyG = new THREE.Group(); root.add(bodyG);
@@ -138,6 +138,11 @@ export function makeGoose(bag, { costume = false, plush = false, scale = 1 } = {
     legs.push(leg);
   }
   if (plush) { body.position.y = 0.42; neck.position.y = 0.6; for (const w of wings) w.position.y = 0.5; tail.position.y = 0.55; }
+  if (bellHat) {
+    // the PB bell, worn as a hat ever since it went in the lake
+    const hat = bag.M(new THREE.SphereGeometry(0.2, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), '#ffd23f', 2.5); hat.position.y = 0.08; head.add(hat);
+    const knob = bag.M(new THREE.SphereGeometry(0.05, 8, 6), '#ffd23f', 1.5); knob.position.y = 0.3; head.add(knob);
+  }
   if (costume) {
     // a yellow duck costume hood with a little orange bill on top: fooling nobody
     const hood = bag.M(new THREE.SphereGeometry(0.2, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), '#ffd23f', 2.5); hood.position.y = 0.01; hood.scale.set(1.05, 1.05, 1.15); head.add(hood);

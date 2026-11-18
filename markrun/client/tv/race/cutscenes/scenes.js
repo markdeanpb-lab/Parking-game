@@ -422,7 +422,7 @@ SCENES.hook_a_duck = (K, cs) => {
       K.ov.caption(t < 1.3 ? (t > 0.3 ? 'SWAP?' : null) : 'TRADED UP!', { yellow: t >= 1.3 });
       // side-on two-shot across the counter: the small prize and the giant one in the same frame
       const mid = markPos.clone().lerp(stallPos, 0.5);
-      if (!walking) shot(mid.clone().addScaledVector(V(f.tx, 0, f.tz), -7.2).add(V(0, 2.3, 0)), mid.clone().add(V(0, 1.5, 0)), 46);
+      if (!walking) shot(f.p(-2.2, -s2 * 4.6, 2.4), mid.clone().add(V(0, 1.5, 0)), 48);
       else { const ap = A.root.position; shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 6).add(V(-f.rx * s2 * 2.5, 2.4, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.8, 0)), 46); }
       if (t > 3.6 && !I._carry) { I._carry = true; carryPlush(K, cs.who, 2.0, prizeKind); }
     }
@@ -569,7 +569,7 @@ SCENES.test_strength = (K, cs) => {
       if (t < 1.2) { shot(f.p(-6.4, -s2 * 2.0, 2.0), towerPos.clone().add(V(0, 2.2, 0)), 52); K.ov.caption(t > 0.3 ? 'TEST YOUR STRENGTH' : null, { yellow: true }); }
       else if (t < 3.6) {
         const py = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 5.0).addScaledVector(V(f.tx, 0, f.tz), 3.6).add(V(0, Math.max(4.6, py.y - towerPos.y + 1.6), 0)), py.clone().add(V(0, 0.1, 0)), 40);
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 3.0).addScaledVector(V(f.tx, 0, f.tz), -1.2).add(V(0, py.y - towerPos.y + 2.6, 0)), py.clone().add(V(0, 0.1, 0)), 46);
         K.ov.caption(t > 2.8 ? 'PARKRUNNER.' : t > 1.9 ? 'WOBBLY…' : t > 1.3 ? 'FEEBLE…' : null, { yellow: t > 2.8 });
       } else { shot(f.p(-6, -s2 * 2.2, 2.0), A.root.position.clone().add(V(0, 1.3, 0)), 42); K.ov.caption(null); }
     }
@@ -606,7 +606,7 @@ SCENES.goose_toll = (K, cs) => {
   armT.colorSpace = THREE.SRGBColorSpace;
   const arm = I.bag.M(new THREE.BoxGeometry(PATH_W + 0.4, 0.16, 0.16).translate((PATH_W + 0.4) / 2, 0, 0), I.bag.mat('#ffffff', { map: armT }), 2.5);
   const lift = new THREE.Group(); piv.add(lift); lift.add(arm);
-  const goose = makeGoose(I.bag, { scale: 1.25 }); root.add(goose.root);
+  const goose = makeGoose(I.bag, { scale: 1.25, bellHat: !!cs.params.gooseBell }); root.add(goose.root);
   const pub = K.pub(cs.who);
   const A = actor(K, I, pub);
   const jelly = I.bag.M(new THREE.CapsuleGeometry(0.11, 0.2, 4, 10), '#ff2d55', 2.5); root.add(jelly); jelly.visible = false;
@@ -672,7 +672,7 @@ SCENES.treadmill_hill = (K, cs) => {
   const A = actor(K, I, pub);
   const tree = makeTree(I.bag, 1.35), bench = makeBench(I.bag);
   bench.scale.setScalar(1.6);
-  const goose = makeGoose(I.bag, { scale: 1.7 });
+  const goose = makeGoose(I.bag, { scale: 1.7, bellHat: !!cs.params.gooseBell });
   root.add(tree, bench, goose.root);
   let third = goose.root, M = null, nearly = null;
   if (marshal) {
@@ -941,7 +941,7 @@ SCENES.cannonball = (K, cs) => {
       if (cata) { A.root.position.copy(muzzle).add(V(0, -0.85, 0)); A.root.rotation.set(0, Math.atan2(-side * right.x, -side * right.z), 0); drive(A, dt, 'wave', null, { expr: 'happy' }); }
       else {
         // lying along the barrel, head out of the muzzle, facing the camera side
-        A.root.position.copy(muzzle).addScaledVector(dir, -(A.r.height - 0.45));
+        A.root.position.copy(muzzle).addScaledVector(dir, -(A.r.height - 0.85));
         A.root.quaternion.setFromUnitVectors(V(0, 1, 0), dir); A.root.rotateY(side > 0 ? -Math.PI / 2 : Math.PI / 2);
         drive(A, dt, 'idle', null, { expr: bb > -1.0 ? 'effort' : 'happy' });
         A.rig.arms[1].sh.rotation.set(-2.9 + Math.sin(t * 9) * 0.3, 0, 0);
@@ -966,7 +966,7 @@ SCENES.cannonball = (K, cs) => {
       // side-on, wide: the cannon at left, his arc across the frame
       // loaded: close on the cannon and his face; then follow him up and over
       const cpos = C0.g.position;
-      if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 6.5).addScaledVector(fwd, 1.2).add(V(0, 3.0, 0)), muzzle.clone().add(V(0, 0.2, 0)), 42);
+      if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 5.5).addScaledVector(fwd, 2.4).add(V(0, 2.6, 0)), muzzle.clone().addScaledVector(fwd, -1.0).add(V(0, -0.6, 0)), 44);
       else { const target = A.root.visible ? A.root.position.clone() : land.clone(); K.cam(cpos.clone().addScaledVector(right, side * 11).addScaledVector(fwd, 2.5 + flyU * 5).add(V(0, 3.4, 0)), target.add(V(0, 1.2, 0)), 50); }
     }
   };
@@ -1020,7 +1020,7 @@ SCENES.raincloud = (K, cs) => {
     cue('line', t > 0.4, () => K.say(cs.lines?.[0]));
     K.ov.caption(t > 0.4 ? (t > 3.0 ? (zap ? 'ZAP.' : 'NICE TRY') : 'HIS OWN WEATHER') : null, { yellow: t > 3.0 });
     const ap = r.root.position;
-    K.cam(ap.clone().addScaledVector(right, 2.4).addScaledVector(fwd, 5.2).add(V(0, 2.4, 0)), ap.clone().add(V(0, 2.5, 0)), 50, 0, { sun: 30 });
+    K.cam(ap.clone().addScaledVector(right, 3.4).addScaledVector(fwd, 2.4).add(V(0, 2.2, 0)), ap.clone().add(V(0, 2.4, 0)), 52, 0, { sun: 30 });
   };
   return I;
 };
@@ -1349,3 +1349,6 @@ SCENES.sore_loser_var = (K, cs) => {
   };
   return I;
 };
+
+// shared with scenes2.js (batch 2)
+export { base, cues, yawTo, drive, actor, place, wp, tscale, shooter, asInset, noteSprites, rigFor, renderToCanvas, finishFrame, makeMallet };

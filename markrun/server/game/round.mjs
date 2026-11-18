@@ -230,7 +230,8 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
       const csRunners = plan.runners.map((pr) => {
         const i = ids.indexOf(pr.id), rr = runners[i];
         return { id: pr.id, progress: pr.progress, diversions: pr.diversions ?? null, officialS: pr.officialS, facts: perfs[i].facts, features: perfs[i].features,
-          nickname: rr.nickname, shortName: rr.shortName, personality: rr.personality };
+          nickname: rr.nickname, shortName: rr.shortName, personality: rr.personality,
+          date: perfs[i].date }; // server-only: lets era/pair gags compare runs; never sent to clients or shown
       });
       const cs = CUTSCENES.planCutscenes({ racePlan: plan, runners: csRunners, theme, rng: makeRng(csSeed), sessionMemory: mem, roundNumber });
       if (Array.isArray(cs)) plan.cutscenes = cs;

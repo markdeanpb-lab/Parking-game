@@ -34,6 +34,15 @@ Useful start options:
 - `npm start -- --host 192.168.1.23` (choose the LAN address yourself)
 - `npm start -- --fresh` (forget the saved session)
 
+### Premium commentary voices (optional, recommended)
+Jeff and Pam can speak with natural neural voices (Kokoro) instead of the computer's built-in ones. Download them once, while you have internet:
+
+```bash
+npm run voices:download   # ~100 MB into data/voices/ (not in git)
+```
+
+Then `npm start` as usual: the TV loads the voices from the host computer, so play stays fully offline. ⚙ Options has **Premium voices** (on by default) and shows their status. Open the TV at `http://localhost:8080/` on the host computer for the fastest voices (the browser can use several CPU cores there). The TV renders each line a little ahead of time (race commentary while you bet), and any line that isn't ready in time is spoken by the built-in voice instead. Without the download, everything works as before with the built-in voices.
+
 ### Troubleshooting
 - **Phones can't connect:** check they're on the same Wi-Fi and not on a guest network. On Windows, allow Node.js through the firewall when asked, choosing *Private networks*. If the wrong address appears in the QR code, restart with `--host <your computer's Wi-Fi IP>`.
 - **No voice:** click the TV page once. Browsers need a click before they can speak. Subtitles always show.
@@ -68,6 +77,7 @@ The whole game can also run in the browser: the TV page is the host, and the pho
 - Build: `npm install`, then `npm run build:web`. Upload **`dist-web/markrun-itch.zip`** to itch.io: Kind of project **HTML**, tick **"This file will be played in the browser"**, viewport **1280 × 720**, tick **Mobile friendly** (orientation **Portrait**), **Fullscreen button** and **Automatically start on page load**. Set visibility to **Restricted** or **Draft** to keep it private.
 - Play: on the MacBook, open the game page and click **📺 This is the TV**. The TV shows a 4-letter room code and a QR code. On each phone, scan the QR or open the game page and tap **📱 Join on my phone**, then enter the code. In ⚙ Options you can set the **Game page link** for the QR code to open. Leave it empty and the QR opens the game directly with the code filled in.
 - Keep the TV tab open and visible. Same Wi-Fi is best. Reloading the TV or a phone resumes the game.
+- Premium voices: the first time, the TV downloads the voice model (~90 MB) from Hugging Face and the browser keeps it, so later visits start quickly. On itch.io, ticking **SharedArrayBuffer support** in the embed options lets the voices use several CPU cores (faster); without it they still work on one core. Music and sound effects are inside the zip.
 - New parkruns: refresh the data in the home-computer edition, run `npm run build:web` again and re-upload the zip. The web edition can't refresh by itself, so its Options show "Data last updated".
 - Tests: `npm run test:web` uses a local signalling server and cross-origin iframes. `npm run test:web:cloud` does a quick check against the real PeerJS cloud.
 
@@ -76,6 +86,7 @@ The whole game can also run in the browser: the TV page is the host, and the pho
 - `node tools/e2e.mjs` plays full rounds with a TV and two phones in headless Chromium and blocks all non-local network access.
 - `node tools/simulate.mjs --sessions 150` gives balance statistics: favourite win rate, archetype mix and repetition.
 - `npm run audit` reports data coverage and quality.
+- Audio: `npm run build:audio` re-renders the music and stings into `client/assets/audio/` (needs ffmpeg; see its CREDITS.md). `npm run build:voices` rebuilds the voice engine bundle `client/dist/tts-worker.js`. `node tools/voice_check.mjs` measures the premium voices in a headless TV and writes sample WAVs to `tests/out/audio/`.
 - `node client/tv/race/devserver.mjs` serves a standalone 3D race preview at `/client/tv/race/preview.html`.
 - Docs: `docs/CONTRACT.md` covers architecture and ownership, `docs/BRIEF.md` the art direction, and `docs/PROGRESS.md` the status record.
 

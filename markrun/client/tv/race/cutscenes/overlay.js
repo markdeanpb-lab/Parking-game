@@ -123,7 +123,7 @@ export function createOverlay(container, hudRoot) {
   // greyed HUD while the race is paused (positions stay visible, per the catalogue)
   if (!document.getElementById('mrc-style2')) {
     const s2 = document.createElement('style'); s2.id = 'mrc-style2';
-    s2.textContent = '.mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner{opacity:0!important}' +
+    s2.textContent = '.mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner,.mrc-cut .mr-title{opacity:0!important}' +
       // sofa legibility while a cutscene plays: one big outlined commentary plate, low, never under the caption
       'body.mrc-active #subs{bottom:14px!important}body.mrc-active #subs .sub:not(:last-child){display:none}' +
       'body.mrc-active #subs .sub{font-size:48px;padding:12px 34px 14px 18px;border-width:5px;background:rgba(20,24,60,.94);text-shadow:0 3px 0 #000}' +

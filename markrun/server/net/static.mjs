@@ -13,7 +13,10 @@ const TYPES = {
   '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8', '.map': 'application/json', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json',
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.webmanifest': 'application/manifest+json',
+  '.wasm': 'application/wasm', '.onnx': 'application/octet-stream', '.bin': 'application/octet-stream',
 };
+// Premium voices (npm run voices:download) live in data/voices/ and are served at /voices/ to the TV.
+const VOICES_DIR = path.resolve(process.env.MARKRUN_VOICES_DIR || path.join(DATA, 'voices'));
 const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.txt', '.map', '.gltf']);
 
 // Fixed routes (url path -> file)
@@ -36,6 +39,10 @@ function resolveFile(urlPath) {
   let p;
   try { p = decodeURIComponent(urlPath); } catch { return null; }
   if (p.includes('\0')) return null;
+  if (p.startsWith('/voices/')) {
+    const full = path.normalize(path.join(VOICES_DIR, p.slice('/voices/'.length)));
+    return full.startsWith(VOICES_DIR + path.sep) ? full : null;
+  }
   // /dist/* -> client/dist/*, everything else maps into client/
   const full = path.normalize(path.join(CLIENT, p));
   if (!full.startsWith(CLIENT + path.sep)) return null;
@@ -55,9 +62,13 @@ export function serveStatic(req, res) {
   const ext = path.extname(file).toLowerCase();
   const headers = {
     'Content-Type': TYPES[ext] || 'application/octet-stream',
-    'Cache-Control': ext === '.ttf' || ext === '.woff2' ? 'public, max-age=86400' : 'no-cache',
+    'Cache-Control': ext === '.ttf' || ext === '.woff2' || url.pathname.startsWith('/voices/') ? 'public, max-age=86400' : 'no-cache',
     'X-Content-Type-Options': 'nosniff',
   };
+  // The TV page is cross-origin isolated when the browser allows it (http://localhost), so the voice engine can use
+  // several threads; everything it loads is same-origin, and workers/modules carry the matching header.
+  if (file.endsWith(`${path.sep}tv${path.sep}index.html`)) { headers['Cross-Origin-Opener-Policy'] = 'same-origin'; headers['Cross-Origin-Embedder-Policy'] = 'require-corp'; }
+  else if (ext === '.js' || ext === '.mjs') headers['Cross-Origin-Embedder-Policy'] = 'require-corp';
   const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
   headers.ETag = etag;
   if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }

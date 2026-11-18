@@ -10,6 +10,9 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/index.mjs",
     "build": "node tools/build.mjs",
+    "voices:download": "node tools/voices_download.mjs",
+    "build:voices": "node tools/build_tts.mjs",
+    "build:audio": "node tools/compose_audio.mjs",
     "ingest": "node --disable-warning=ExperimentalWarning server/import/ingest.mjs",
     "refresh": "node --disable-warning=ExperimentalWarning server/import/refresh.mjs",
     "audit": "node --disable-warning=ExperimentalWarning tools/audit.mjs",

@@ -9,6 +9,7 @@ export async function startTv({ params, onStatus = () => {} }) {
   onStatus('Opening the room…');
   await mountShell('tv');
   decorateTv(web);
+  globalThis.MARKRUN_VOICE_SOURCE = 'remote'; // premium voices: Hugging Face CDN once, then the browser cache
   await import('../client/tv/main.js');
   // keep the MacBook awake while it's the TV (not allowed in some iframes: ignore)
   let lock = null;

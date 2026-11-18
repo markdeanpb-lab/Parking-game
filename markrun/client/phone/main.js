@@ -126,6 +126,7 @@ function key() {
   if (!me) return `join|${lobby?.canJoin}|${(lobby?.players || []).map((p) => p.id + p.connected).join()}`;
   const ph = S.phase;
   if (ph === 'INTRO' || ph === 'BETTING') return `bet|${S.round?.roundId}|${me.locked ? 'L' : 'O'}|${S.revealed}`;
+  if (ph === 'RESULTS' && me.markPrompt) return `res|${S.round?.roundId}|mark|${me.markPrompt.runnerId}|${me.markPrompt.answer || ''}`;
   if (ph === 'RESULTS') return `res|${S.round?.roundId}|${S.resultsStage >= 3 ? 'pay' : S.resultsStage >= 2 ? 'who' : 'wait'}`;
   return `${ph}|${S.round?.roundId || ''}|${S.gameNumber}`;
 }
@@ -514,7 +515,47 @@ setInterval(() => { if (S?.phase === 'RACE' && S.market?.open) { const el2 = $('
 
 // ---------------------------------------------------------------------------------------------------
 // RESULTS: one card per screen
-function renderResults() {
+// "Remember this one?" (the TV's reveal, when someone ticked "I'm Mark"): Mark sees the run privately and says if he
+// remembers it; everyone else bets on his answer (believe / doubt) for a small bonus. A few seconds, then the TV flips.
+function renderMarkPrompt(fresh) {
+  const mp = me.markPrompt;
+  const res = S.results;
+  const r = runnerById(S.round, mp.runnerId);
+  const x = (res?.reveal || []).find((v) => v.runnerId === mp.runnerId) || {};
+  const f = (res?.finishOrder || []).find((v) => v.runnerId === mp.runnerId) || {};
+  const mark = S.players.find((p) => p.id === S.settings.runnerPlayerId);
+  const left = Math.max(0, Math.ceil((mp.closesAt - net.serverNow()) / 1000));
+  const head = `<div class="mk-time"><i style="--p:${Math.min(1, left / 7)}"></i><span id="mkleft">${left}s</span></div>`;
+  let main, acts;
+  if (mp.role === 'mark') {
+    const title = x.stravaTitle && !x.genericTitle ? `“${esc(x.stravaTitle)}”` : esc(x.punchline || '');
+    main = `${head}<div class="kick">ONLY YOU CAN SEE THIS</div><h1 class="h">Remember this one?</h1>
+      <div class="mk-run"><div class="mk-date">${esc(x.dateText || '')}</div><div class="mk-title">${title}</div><div class="mk-meta"><span class="num">${esc(f.timeText || '')}</span>${x.contextLine ? `<small>${esc(x.contextLine)}</small>` : ''}</div></div>`;
+    acts = mp.answer ? `<div class="mk-done">${mp.answer === 'yes' ? '🧠 You remember it' : '🤷 Not a clue'}: watch the TV!</div>`
+      : '<button class="btn green grow mk-a" data-mk="yes">🧠 Yes, I remember</button><button class="btn white grow mk-a" data-mk="no">🤷 No idea</button>';
+  } else {
+    main = `${head}<div class="kick">DOES HE REALLY?</div><div class="rhead small"><div class="rp">${portrait(r, 72)}</div><div class="rn">${ordinalHtml(f.place || 0)}<b>${esc(runnerShort(r))}</b></div></div>
+      <h1 class="h">Will ${esc(mark?.name || 'Mark')} say he remembers this run?</h1><p class="sub">He's looking at it on his phone right now.${mp.markAnswered ? ' <b>He has answered!</b>' : ''}</p><p class="sub small">Call it right: +25pp</p>`;
+    acts = mp.answer ? `<div class="mk-done">${mp.answer === 'believe' ? '👍 You believe him' : '🤨 You doubt it'}: watch the TV!</div>`
+      : '<button class="btn green grow mk-a" data-mk="believe">👍 Believe</button><button class="btn red grow mk-a" data-mk="doubt">🤨 Doubt</button>';
+  }
+  app.innerHTML = screen(topbar(), main, acts, { cls: 'results markq' });
+  if (fresh && !mp.answer) vibrate([40, 60, 40]);
+  app.onclick = (e) => {
+    const b = e.target.closest('[data-mk]'); if (!b) return;
+    send({ t: 'markAnswer', runnerId: mp.runnerId, answer: b.dataset.mk }); vibrate(25); audio.play('pop');
+    app.querySelectorAll('[data-mk]').forEach((x) => { x.disabled = true; });
+  };
+  clearInterval(renderMarkPrompt.iv);
+  renderMarkPrompt.iv = setInterval(() => {
+    const el2 = document.getElementById('mkleft');
+    if (!el2 || !me?.markPrompt) { clearInterval(renderMarkPrompt.iv); return; }
+    const l = Math.max(0, Math.ceil((me.markPrompt.closesAt - net.serverNow()) / 1000));
+    el2.textContent = `${l}s`; el2.previousElementSibling?.style.setProperty('--p', String(Math.min(1, l / 7)));
+  }, 250);
+}
+function renderResults(fresh) {
+  if (me.markPrompt) return renderMarkPrompt(fresh);
   const res = S.results;
   const skip = '<button class="btn blue grow" id="nextbtn">Skip ahead on the TV ▶</button>';
   if (!res || S.resultsStage < 2) {
@@ -537,7 +578,7 @@ function renderResults() {
     const awards = (res.awards || []).filter((a) => a.playerId === me.id);
     const score = Number.isFinite(pay.score) ? pay.score : me.score;
     cards = [
-      `<div class="big-emoji">${pay.net > 0 ? '🤑' : pay.net < 0 ? '😭' : '😐'}</div><div class="kick">THIS ROUND</div><div class="net-big outlined ${pay.net > 0 ? 'green' : pay.net < 0 ? 'red' : 'white'}">${signedMoney(pay.net)}</div><p class="sub big">Score ${scoreText(score)}</p>${drinks ? `<p class="drink">${drinks}</p>` : ''}`,
+      `<div class="big-emoji">${pay.net > 0 ? '🤑' : pay.net < 0 ? '😭' : '😐'}</div><div class="kick">THIS ROUND</div><div class="net-big outlined ${pay.net > 0 ? 'green' : pay.net < 0 ? 'red' : 'white'}">${signedMoney(pay.net)}</div><p class="sub big">Score ${scoreText(score)}</p>${pay.bonus ? `<p class="sub">🧠 incl. memory bonus ${signedMoney(pay.bonus)}</p>` : ''}${drinks ? `<p class="drink">${drinks}</p>` : ''}`,
       `<div class="kick">YOUR BETS</div><div class="review">${lines || '<p class="sub">No bets this round.</p>'}</div>`,
       ...awards.map((a) => `<div class="big-emoji">🏆</div><h1 class="h">${esc(a.title)}</h1><p class="sub">${esc(a.text || '')}</p>`),
     ];

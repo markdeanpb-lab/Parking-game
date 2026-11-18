@@ -118,7 +118,7 @@ export function createPremiumVoices({ source = 'local', localBase = '/voices/', 
       if (j) {
         j.state = 'done';
         const durMs = Math.round((m.pcm.length / m.sampleRate) * 1000);
-        cache.set(j.key, { pcm: m.pcm, sampleRate: m.sampleRate, durMs, used: now(), group: j.group });
+        cache.set(j.key, { pcm: m.pcm, sampleRate: m.sampleRate, durMs, used: now(), doneAt: now(), group: j.group });
         st.rendered++;
         st.renderMs.push(m.ms); if (st.renderMs.length > 40) st.renderMs.shift();
         st.rtf = 0.6 * st.rtf + 0.4 * (m.ms / Math.max(300, durMs));
@@ -196,6 +196,7 @@ export function createPremiumVoices({ source = 'local', localBase = '/voices/', 
     const g = groups.get(group) || {};
     g.startAt = startAt;
     groups.set(group, g);
+    for (const j of jobs.values()) if (j.group === group && j.state === 'late' && !cache.has(j.key)) j.state = 'queued'; // re-judged on the new clock
     pump();
   }
   function forget(prefix) { // a finished phase: its queued lines are no use any more
@@ -208,7 +209,7 @@ export function createPremiumVoices({ source = 'local', localBase = '/voices/', 
     const c = cache.get(key);
     if (c) { c.used = now(); return c; }
     const j = jobs.get(key);
-    if (j && j.state === 'queued') { j.state = 'late'; st.missed++; } else if (!j || j.state !== 'rendering') st.missed++;
+    if (j && j.state === 'queued') { j.state = 'missed'; st.missed++; } else if (!j || j.state !== 'rendering') st.missed++;
     return null;
   }
   // ms until a line is likely ready (Infinity if it isn't being rendered right now)
@@ -220,9 +221,10 @@ export function createPremiumVoices({ source = 'local', localBase = '/voices/', 
     return Math.max(0, j.startedAt + spokenS(j.text) * 1000 * st.rtf - now());
   }
   function has(text, speaker) { return cache.has(keyOf(text, speaker)); }
+  function peek(text, speaker) { return cache.get(keyOf(text, speaker)) || null; }
 
   return {
-    start, stop, want, setGroupStart, forget, take, eta, has,
+    start, stop, want, setGroupStart, forget, take, eta, has, peek,
     get ready() { return st.status === 'ready'; },
     get status() { return { ...st }; },
     get queued() { return [...jobs.values()].filter((j) => j.state === 'queued').length; },

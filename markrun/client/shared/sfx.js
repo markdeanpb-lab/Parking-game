@@ -241,7 +241,7 @@ export function createAudio({ assetBase = DEFAULT_BASE } = {}) {
     const a = assetFor(name, opts || {});
     const file = a && cueFile(a.cue);
     const buf = file && buffers.get(file);
-    if (buf) { try { playBuffer(buf, ctx.currentTime + 0.01, a); return; } catch (e) { console.warn('sfx asset', name, e); } }
+    if (buf) { try { playBuffer(buf, ctx.currentTime + 0.01, { ...a, gain: a.gain * (opts?.gain ?? 1) }); return; } catch (e) { console.warn('sfx asset', name, e); } }
     if (file && !buffers.has(file)) loadFile(file); // next time
     const fn = SFX[name] || SFX[SYNTH_STANDIN[name]];
     if (!fn) return;

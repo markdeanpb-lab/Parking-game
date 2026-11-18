@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { createOverlay } from './overlay.js';
 import { Bag, stageAt, setCam } from './kit.js';
 import { SCENES } from './scenes.js';
+import './scenes2.js'; // batch 2 (docs/CUTSCENE_IDEAS_2.md) registers into SCENES
 import { slowRate, clampStep } from './clock.js';
 
 const INTRO = 0.55, OUTRO = 0.35;

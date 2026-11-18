@@ -35671,9 +35671,9 @@ function createSim(plan, C, publicRunners) {
         distToFinish: Math.max(0, 5e3 - s.m)
       });
     }
-    const fin = R.filter((r) => st.byId[r.id].finished).sort((a, b2) => a.officialS - b2.officialS);
+    const fin2 = R.filter((r) => st.byId[r.id].finished).sort((a, b2) => a.officialS - b2.officialS);
     const run = R.filter((r) => !st.byId[r.id].finished).sort((a, b2) => st.byId[b2.id].m - st.byId[a.id].m || a.officialS - b2.officialS);
-    st.order = [...fin, ...run].map((r) => r.id);
+    st.order = [...fin2, ...run].map((r) => r.id);
     st.leader = st.byId[st.order[0]];
     const lead = byId[st.order[0]];
     for (const [i, id] of st.order.entries()) {
@@ -36079,7 +36079,7 @@ function createDirector({ camera, C, sim, world, funfair }) {
     return { pos, look };
   }
   function evaluate(s, b) {
-    const fin = world.anchors.finish, start = world.anchors.start;
+    const fin2 = world.anchors.finish, start = world.anchors.start;
     let pos, look, fov2 = 40;
     const w = s.rate > 8 ? 2.2 : 1.2;
     switch (s.type) {
@@ -36155,9 +36155,9 @@ function createDirector({ camera, C, sim, world, funfair }) {
         const sub = (s.ids || []).map((id) => st.byId[id]);
         const next = sub.find((x) => !x.finished) || null;
         const fresh = sub.filter((x) => x.finished).sort((a, c) => a.post - c.post)[0];
-        const h = new Vector3(fin.tx, 0, fin.tz), r = new Vector3(-h.z, 0, h.x);
-        if (!s.fside) s.fside = world.inPark(fin.x + r.x * 16, fin.z + r.z * 16) ? 1 : -1;
-        const line = new Vector3(fin.x, fin.y + 1, fin.z);
+        const h = new Vector3(fin2.tx, 0, fin2.tz), r = new Vector3(-h.z, 0, h.x);
+        if (!s.fside) s.fside = world.inPark(fin2.x + r.x * 16, fin2.z + r.z * 16) ? 1 : -1;
+        const line = new Vector3(fin2.x, fin2.y + 1, fin2.z);
         const sidePos = line.clone().addScaledVector(r, s.fside * 13).addScaledVector(h, -1.5).add(up.clone().multiplyScalar(2.6));
         let sideLook;
         if (fresh && (!next || next.distToFinish > 40)) sideLook = new Vector3(fresh.x, fresh.y + 1.1, fresh.z);
@@ -36185,7 +36185,7 @@ function createDirector({ camera, C, sim, world, funfair }) {
         const c = new Vector3();
         for (const id of st.order) c.add(new Vector3(st.byId[id].x, st.byId[id].y, st.byId[id].z));
         c.divideScalar(st.order.length);
-        const fh = new Vector3(fin.tx, 0, fin.tz), fr = new Vector3(-fh.z, 0, fh.x);
+        const fh = new Vector3(fin2.tx, 0, fin2.tz), fr = new Vector3(-fh.z, 0, fh.x);
         const a = Math.sin((b - s.a) * 0.08) * 0.5;
         pos = c.clone().addScaledVector(fh, 11 * Math.cos(a)).addScaledVector(fr, 11 * Math.sin(a)).add(up.clone().multiplyScalar(2.6));
         look = c.clone().add(up.clone().multiplyScalar(1.2));
@@ -37309,9 +37309,9 @@ function buildPodium(scene, C, world, runners, order, { camera, offsetX = 3.2 })
   const group = new Group();
   scene.add(group);
   const disposables = [];
-  const fin = C.sample(C.finishM + 28);
-  const h = new Vector3(fin.tx, 0, fin.tz), r = new Vector3(fin.rx, 0, fin.rz);
-  const center = new Vector3(fin.x, C.heightAt(fin.x, fin.z), fin.z);
+  const fin2 = C.sample(C.finishM + 28);
+  const h = new Vector3(fin2.tx, 0, fin2.tz), r = new Vector3(fin2.rx, 0, fin2.rz);
+  const center = new Vector3(fin2.x, C.heightAt(fin2.x, fin2.z), fin2.z);
   const yaw = Math.atan2(h.x, h.z);
   group.position.copy(center);
   group.rotation.y = yaw;
@@ -38033,7 +38033,7 @@ function createOverlay(container, hudRoot) {
   if (!document.getElementById("mrc-style2")) {
     const s2 = document.createElement("style");
     s2.id = "mrc-style2";
-    s2.textContent = ".mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner{opacity:0!important}body.mrc-active #subs{bottom:14px!important}body.mrc-active #subs .sub:not(:last-child){display:none}body.mrc-active #subs .sub{font-size:48px;padding:12px 34px 14px 18px;border-width:5px;background:rgba(20,24,60,.94);text-shadow:0 3px 0 #000}body.mrc-active #subs .sub .who{font-size:30px}";
+    s2.textContent = ".mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner,.mrc-cut .mr-title{opacity:0!important}body.mrc-active #subs{bottom:14px!important}body.mrc-active #subs .sub:not(:last-child){display:none}body.mrc-active #subs .sub{font-size:48px;padding:12px 34px 14px 18px;border-width:5px;background:rgba(20,24,60,.94);text-shadow:0 3px 0 #000}body.mrc-active #subs .sub .who{font-size:30px}";
     document.head.appendChild(s2);
   }
   void flashT;
@@ -38222,7 +38222,7 @@ function board(bag, tex, w, h, edge = "#1a1420", thick = 0.12) {
   m.castShadow = true;
   return m;
 }
-function makeGoose(bag, { costume = false, plush = false, scale = 1 } = {}) {
+function makeGoose(bag, { costume = false, plush = false, scale = 1, bellHat = false } = {}) {
   const root = new Group();
   root.scale.setScalar(scale);
   const W = plush ? "#fffaf2" : "#ffffff", O = "#ff9a1f";
@@ -38287,6 +38287,14 @@ function makeGoose(bag, { costume = false, plush = false, scale = 1 } = {}) {
     neck.position.y = 0.6;
     for (const w of wings) w.position.y = 0.5;
     tail.position.y = 0.55;
+  }
+  if (bellHat) {
+    const hat = bag.M(new SphereGeometry(0.2, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), "#ffd23f", 2.5);
+    hat.position.y = 0.08;
+    head.add(hat);
+    const knob = bag.M(new SphereGeometry(0.05, 8, 6), "#ffd23f", 1.5);
+    knob.position.y = 0.3;
+    head.add(knob);
   }
   if (costume) {
     const hood = bag.M(new SphereGeometry(0.2, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), "#ffd23f", 2.5);
@@ -39276,7 +39284,7 @@ SCENES.hook_a_duck = (K, cs) => {
       cue("line", t > 1.6, () => K.say(cs.lines?.[0]));
       K.ov.caption(t < 1.3 ? t > 0.3 ? "SWAP?" : null : "TRADED UP!", { yellow: t >= 1.3 });
       const mid = markPos.clone().lerp(stallPos, 0.5);
-      if (!walking) shot(mid.clone().addScaledVector(V(f.tx, 0, f.tz), -7.2).add(V(0, 2.3, 0)), mid.clone().add(V(0, 1.5, 0)), 46);
+      if (!walking) shot(f.p(-2.2, -s2 * 4.6, 2.4), mid.clone().add(V(0, 1.5, 0)), 48);
       else {
         const ap = A.root.position;
         shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 6).add(V(-f.rx * s2 * 2.5, 2.4, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.8, 0)), 46);
@@ -39546,7 +39554,7 @@ SCENES.test_strength = (K, cs) => {
         K.ov.caption(t > 0.3 ? "TEST YOUR STRENGTH" : null, { yellow: true });
       } else if (t < 3.6) {
         const py2 = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 5).addScaledVector(V(f.tx, 0, f.tz), 3.6).add(V(0, Math.max(4.6, py2.y - towerPos.y + 1.6), 0)), py2.clone().add(V(0, 0.1, 0)), 40);
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 3).addScaledVector(V(f.tx, 0, f.tz), -1.2).add(V(0, py2.y - towerPos.y + 2.6, 0)), py2.clone().add(V(0, 0.1, 0)), 46);
         K.ov.caption(t > 2.8 ? "PARKRUNNER." : t > 1.9 ? "WOBBLY\u2026" : t > 1.3 ? "FEEBLE\u2026" : null, { yellow: t > 2.8 });
       } else {
         shot(f.p(-6, -s2 * 2.2, 2), A.root.position.clone().add(V(0, 1.3, 0)), 42);
@@ -39623,7 +39631,7 @@ SCENES.goose_toll = (K, cs) => {
   const lift = new Group();
   piv.add(lift);
   lift.add(arm);
-  const goose = makeGoose(I.bag, { scale: 1.25 });
+  const goose = makeGoose(I.bag, { scale: 1.25, bellHat: !!cs.params.gooseBell });
   root.add(goose.root);
   const pub = K.pub(cs.who);
   const A = actor(K, I, pub);
@@ -39731,7 +39739,7 @@ SCENES.treadmill_hill = (K, cs) => {
   const A = actor(K, I, pub);
   const tree = makeTree(I.bag, 1.35), bench = makeBench(I.bag);
   bench.scale.setScalar(1.6);
-  const goose = makeGoose(I.bag, { scale: 1.7 });
+  const goose = makeGoose(I.bag, { scale: 1.7, bellHat: !!cs.params.gooseBell });
   root.add(tree, bench, goose.root);
   let third = goose.root, M = null, nearly = null;
   if (marshal) {
@@ -40119,7 +40127,7 @@ SCENES.cannonball = (K, cs) => {
         A.root.rotation.set(0, Math.atan2(-side * right.x, -side * right.z), 0);
         drive(A, dt, "wave", null, { expr: "happy" });
       } else {
-        A.root.position.copy(muzzle).addScaledVector(dir, -(A.r.height - 0.45));
+        A.root.position.copy(muzzle).addScaledVector(dir, -(A.r.height - 0.85));
         A.root.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
         A.root.rotateY(side > 0 ? -Math.PI / 2 : Math.PI / 2);
         drive(A, dt, "idle", null, { expr: bb > -1 ? "effort" : "happy" });
@@ -40154,7 +40162,7 @@ SCENES.cannonball = (K, cs) => {
     K.ov.caption(bb < -0.25 ? "LOADED\u2026" : bb > 0.85 && bb < 2 ? "HUMAN CANNONBALL!" : null, { yellow: bb > 0 });
     if (I.camera) {
       const cpos = C0.g.position;
-      if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 6.5).addScaledVector(fwd, 1.2).add(V(0, 3, 0)), muzzle.clone().add(V(0, 0.2, 0)), 42);
+      if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 5.5).addScaledVector(fwd, 2.4).add(V(0, 2.6, 0)), muzzle.clone().addScaledVector(fwd, -1).add(V(0, -0.6, 0)), 44);
       else {
         const target = A.root.visible ? A.root.position.clone() : land.clone();
         K.cam(cpos.clone().addScaledVector(right, side * 11).addScaledVector(fwd, 2.5 + flyU * 5).add(V(0, 3.4, 0)), target.add(V(0, 1.2, 0)), 50);
@@ -40239,7 +40247,7 @@ SCENES.raincloud = (K, cs) => {
     cue("line", t > 0.4, () => K.say(cs.lines?.[0]));
     K.ov.caption(t > 0.4 ? t > 3 ? zap ? "ZAP." : "NICE TRY" : "HIS OWN WEATHER" : null, { yellow: t > 3 });
     const ap = r.root.position;
-    K.cam(ap.clone().addScaledVector(right, 2.4).addScaledVector(fwd, 5.2).add(V(0, 2.4, 0)), ap.clone().add(V(0, 2.5, 0)), 50, 0, { sun: 30 });
+    K.cam(ap.clone().addScaledVector(right, 3.4).addScaledVector(fwd, 2.4).add(V(0, 2.2, 0)), ap.clone().add(V(0, 2.4, 0)), 52, 0, { sun: 30 });
   };
   return I;
 };
@@ -40478,13 +40486,13 @@ function renderToCanvas(K, cam, w, h, prep) {
   return c;
 }
 function finishFrame(K, raceS, w = 960, h = 540, side = 1, extra = null) {
-  const fin = K.world.anchors.finish;
+  const fin2 = K.world.anchors.finish;
   const bF = raceToBroadcast(K.plan.timeMap, raceS);
   const st = K.sim.stateAt(bF);
   const cam = new PerspectiveCamera(30, w / h, 0.3, 9e3);
-  const line = V(fin.x, fin.y, fin.z);
-  cam.position.copy(line).add(V(fin.rx * side * 9.5, 3.3, fin.rz * side * 9.5)).addScaledVector(V(fin.tx, 0, fin.tz), -0.2);
-  cam.lookAt(line.clone().add(V(0, 0.9, 0)).addScaledVector(V(fin.tx, 0, fin.tz), -0.8));
+  const line = V(fin2.x, fin2.y, fin2.z);
+  cam.position.copy(line).add(V(fin2.rx * side * 9.5, 3.3, fin2.rz * side * 9.5)).addScaledVector(V(fin2.tx, 0, fin2.tz), -0.2);
+  cam.lookAt(line.clone().add(V(0, 0.9, 0)).addScaledVector(V(fin2.tx, 0, fin2.tz), -0.8));
   return renderToCanvas(K, cam, w, h, () => {
     const saved = [];
     for (const id of K.ids) {
@@ -40528,7 +40536,7 @@ function drawRuler(c, x) {
 }
 SCENES.photographer = (K, cs) => {
   const I = base(K, { camera: true, postBanner: "PHOTO FINISH!" });
-  const fin = K.world.anchors.finish;
+  const fin2 = K.world.anchors.finish;
   const fs = stageAt(K.C, K.C.finishM);
   const s = openSide(K.world, fs, 8);
   const root = I.bag.group();
@@ -40546,10 +40554,10 @@ SCENES.photographer = (K, cs) => {
   click.visible = false;
   const goose = makeGoose(I.bag, { scale: 1.4 });
   const gooseCam = new PerspectiveCamera(34, 16 / 9, 0.1, 9e3);
-  const gp = V(fin.x, fin.y, fin.z).addScaledVector(V(fin.rx, 0, fin.rz), s * 1.2);
+  const gp = V(fin2.x, fin2.y, fin2.z).addScaledVector(V(fin2.rx, 0, fin2.rz), s * 1.2);
   goose.root.position.copy(gp);
-  goose.root.rotation.y = Math.atan2(-fin.rx * s, -fin.rz * s);
-  gooseCam.position.copy(gp).add(V(fin.rx * s * 2.1, 0.75, fin.rz * s * 2.1));
+  goose.root.rotation.y = Math.atan2(-fin2.rx * s, -fin2.rz * s);
+  gooseCam.position.copy(gp).add(V(fin2.rx * s * 2.1, 0.75, fin2.rz * s * 2.1));
   gooseCam.lookAt(gp.clone().add(V(0, 0.75, 0)));
   const thumb = cs.params.variant === "thumb";
   const print1 = renderToCanvas(K, gooseCam, 960, 540, () => {
@@ -40853,6 +40861,697 @@ SCENES.sore_loser_var = (K, cs) => {
       cone.position.y = K.C.heightAt(c0.x, c0.z);
       cone.rotation.set(0, 0, 0);
     }
+  };
+  return I;
+};
+
+// client/tv/race/cutscenes/scenes2.js
+var goldDisc = (I, r = 0.16) => {
+  const g = new Group();
+  const d = I.bag.M(new CylinderGeometry(r, r, 0.05, 18).rotateX(Math.PI / 2), I.bag.mat("#ffd23f", { emissive: "#664400", emissiveIntensity: 0.25 }), 2.5);
+  g.add(d);
+  const rib = I.bag.M(new BoxGeometry(0.08, 0.45, 0.02).translate(0, 0.32, 0), "#2e6fe0", 0);
+  g.add(rib);
+  return g;
+};
+var fin = (K) => stageAt(K.C, K.C.finishM);
+function pairStage(K, cs, I, aId, bId, m) {
+  const f = stageAt(K.C, m, null);
+  const A = actor(K, I, K.pub(aId)), Bq = actor(K, I, K.pub(bId));
+  return { f, A, B: Bq };
+}
+SCENES.pointing_standoff = (K, cs) => {
+  const I = base(K, { camera: true, postBanner: "DEAD HEAT?!" });
+  const fs = fin(K);
+  const s = openSide(K.world, fs, 8);
+  const root = I.bag.group();
+  const A = actor(K, I, K.pub(cs.who)), Bq = actor(K, I, K.pub(cs.params.other));
+  const M = actor(K, I, CAST.maureen, { vest: "#d8ff1f" });
+  const goose = makeGoose(I.bag, { scale: 1.5, bellHat: !!cs.params.gooseBell });
+  root.add(goose.root);
+  const halves = [0, 1].map((k) => {
+    const h = I.bag.M(new CylinderGeometry(0.22, 0.22, 0.05, 16, 1, false, k * Math.PI, Math.PI).rotateX(Math.PI / 2), "#ffd23f", 2.5);
+    root.add(h);
+    return h;
+  });
+  const centre = fs.p(6, 0, 0);
+  const cue = cues();
+  I.update = (g0, dt, b, { gagDur }) => {
+    const t = tscale(g0, gagDur, 6.1);
+    const ang = t < 1.2 ? 0 : (t - 1.2) * 1.1;
+    const R = 1.25;
+    const pa = centre.clone().add(V(Math.cos(ang) * R * fs.rx + Math.sin(ang) * R * fs.tx, 0, Math.cos(ang) * R * fs.rz + Math.sin(ang) * R * fs.tz));
+    const pb = centre.clone().sub(V(Math.cos(ang) * R * fs.rx + Math.sin(ang) * R * fs.tx, 0, Math.cos(ang) * R * fs.rz + Math.sin(ang) * R * fs.tz));
+    pa.y = pb.y = centre.y;
+    const gooseT = clamp01((t - 4.4) / 1.4);
+    const gp = fs.p(7.2, lerp2(-6, 6, gooseT) * s, 0);
+    goose.root.position.copy(gp);
+    goose.root.rotation.y = Math.atan2(fs.rx * s, fs.rz * s);
+    goose.pose({ t, waddle: 1, honk: t > 5 && t < 5.4 ? 1 : 0 });
+    goose.root.visible = t > 4.3;
+    const lookAtGoose = t > 4.8;
+    place2(A, pa, lookAtGoose ? yawTo(pa, gp) : yawTo(pa, pb));
+    place2(Bq, pb, lookAtGoose ? yawTo(pb, gp) : yawTo(pb, pa));
+    for (const X of [A, Bq]) {
+      drive(X, dt, t < 0.6 ? "run" : "idle", null, { speed: 4, rate: 1, expr: t > 0.6 ? "worried" : "effort" });
+      if (t > 0.6) {
+        X.rig.arms[1].sh.rotation.set(-1.55, 0, 0.05);
+        X.rig.arms[1].el.rotation.x = -0.05;
+      }
+    }
+    const mIn = smooth3(2.2, 3, t);
+    const mp = centre.clone().addScaledVector(V(fs.tx, 0, fs.tz), lerp2(-6, -1.6, mIn)).addScaledVector(V(fs.rx, 0, fs.rz), -s * 0.4);
+    place2(M, mp, yawTo(mp, centre));
+    drive(M, dt, t > 2.2 && t < 3 ? "jog" : t > 3.6 && t < 4.3 ? "celebrate" : "idle", "shrug", { speed: 2, rate: 1 });
+    M.root.visible = t > 2.1;
+    const hand = M.root.localToWorld(V(0, M.r.hipH + 0.55, 0.45));
+    const snap = smooth3(3.5, 3.9, t);
+    halves.forEach((h, k) => {
+      h.visible = t > 2.1;
+      h.position.copy(hand).add(V((k ? 1 : -1) * snap * 0.45, snap * 0.2, 0));
+      h.rotation.set(0, M.root.rotation.y, (k ? 1 : -1) * snap * 0.8);
+    });
+    cue("line", t > 1.3, () => K.say(cs.lines?.[0]));
+    K.ov.caption(t < 1.2 ? "SAME TIME. TO THE SECOND." : t < 3.4 ? "DEAD HEAT!" : t < 4.6 ? "ONE TOKEN\u2026" : "IT WAS GERALD.", { yellow: t >= 1.2 && t < 3.4 });
+    K.cam(centre.clone().addScaledVector(V(fs.tx, 0, fs.tz), 6.5).add(V(fs.rx * s * 2.2, 2, fs.rz * s * 2.2)), centre.clone().add(V(0, 1.4, 0)), 44);
+  };
+  return I;
+};
+SCENES.sub20_wall = (K, cs) => {
+  const I = base(K, { camera: false, hide: "none" });
+  const wallM = cs.params.wallM || 4960;
+  const f = stageAt(K.C, wallM, null);
+  const root = I.bag.group();
+  const COLS2 = 12, ROWS = 7, BW = (PATH_W + 1.2) / COLS2, BH = 0.34;
+  const geo2 = I.bag.add(new RoundedBoxGeometry(BW * 0.96, BH * 0.92, 0.35, 1, 0.04));
+  const bricks = new InstancedMesh(geo2, I.bag.mat("#c8553d"), COLS2 * ROWS);
+  bricks.frustumCulled = false;
+  root.add(bricks);
+  const mortar = new Mesh(I.bag.add(new BoxGeometry(PATH_W + 1.2, ROWS * BH, 0.2)), I.bag.mat("#e9d8c4"));
+  root.add(mortar);
+  const sign2 = board(I.bag, signTexture(I.bag, ["20:00"], { bg: "#ffffff", fg: "#e8333f", w: 512, h: 220 }), 1.6, 0.7, "#1a1420", 0.1);
+  root.add(sign2);
+  const O = new Object3D();
+  const lat0 = -(PATH_W + 1.2) / 2 + BW / 2;
+  const holes = [];
+  for (let k = 0; k < (cs.params.holesBefore || 0); k++) holes.push({ lat: ((k * 0.37 + 0.2) % 1 - 0.5) * PATH_W * 0.8, t0: -9 });
+  const hit = /* @__PURE__ */ new Set();
+  const flying = [];
+  const smash = sprite(I.bag, bubbleTexture(I.bag, "SMASH!", { burst: true, w: 512, h: 300, size: 130, bg: "#ffd23f" }), 1.4, 512 / 300);
+  root.add(smash);
+  smash.visible = false;
+  const inHole = (c, r) => {
+    const lat = lat0 + c * BW, y = r * BH;
+    return holes.some((h) => Math.abs(lat - h.lat) < 0.55 + (y > 1.6 ? -0.15 : 0) && y < 2.05);
+  };
+  const cue = cues();
+  let lastSmash = -9;
+  I.update = (t, dt, b) => {
+    const st = K.sim.stateAt(Math.max(0, b));
+    for (const id of cs.params.near || []) {
+      const r = st.byId[id];
+      if (!r || hit.has(id) || r.m < wallM - 0.5) continue;
+      hit.add(id);
+      holes.push({ lat: r.lat ?? 0, t0: t });
+      lastSmash = t;
+      smash.position.copy(f.p(0, r.lat ?? 0, 2.6));
+    }
+    const drop = backOut(clamp01(t / 0.5));
+    const fade = 1 - smooth3(cs.durationS - 0.6, cs.durationS, t);
+    root.position.set(0, (1 - drop) * 7, 0);
+    root.scale.setScalar(Math.max(1e-3, fade));
+    let k = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS2; c++) {
+      const off = r % 2 ? BW / 2 : 0;
+      const hole = inHole(c, r);
+      const p = f.p(0, lat0 + c * BW + off - (r % 2 ? BW / 4 : 0), r * BH + BH / 2);
+      O.position.copy(p);
+      O.rotation.set(0, f.yaw + Math.PI / 2, 0);
+      O.scale.setScalar(hole ? 1e-4 : 1);
+      O.updateMatrix();
+      bricks.setMatrixAt(k++, O.matrix);
+    }
+    bricks.instanceMatrix.needsUpdate = true;
+    mortar.position.copy(f.p(0, 0, ROWS * BH / 2 - 0.02).add(V(-f.tx * 0.08, 0, -f.tz * 0.08)));
+    mortar.rotation.set(0, f.yaw, 0);
+    mortar.visible = false;
+    sign2.position.copy(f.p(0, 0, ROWS * BH + 0.55));
+    sign2.rotation.set(0, f.yaw + Math.PI, 0);
+    smash.visible = t - lastSmash < 0.9 && lastSmash > 0;
+    if (smash.visible) popScale(smash, t, lastSmash, 0.2);
+    cue("line", lastSmash > 0, () => K.say(cs.lines?.[0]));
+    K.ov.caption(t < 0.4 ? null : lastSmash > 0 && t - lastSmash < 1.6 ? "STRAIGHT THROUGH!" : `THE 20-MINUTE WALL \xB7 HOLES: ${holes.length}`, { yellow: lastSmash > 0 && t - lastSmash < 1.6 });
+    void flying;
+  };
+  return I;
+};
+SCENES.mirror_routine = (K, cs) => {
+  const I = base(K, { camera: false, pip: true, hide: "none", pipLabel: "MARK v MARK" });
+  const { f, A: N, B: O } = pairStage(K, cs, I, cs.who, cs.params.on, Math.min(4600, cs.params.atM || 2400));
+  I.pipOnly = [N.root, O.root];
+  const medal = goldDisc(I);
+  N.root.add(medal);
+  medal.visible = false;
+  const s = openSide(K.world, f, 8);
+  const cue = cues();
+  I.update = (t, dt) => {
+    const run = t * 4.2;
+    const ahead = smooth3(3.9, 5, t) * 2.6;
+    place2(N, f.p(run + ahead, -s * 0.7), f.yaw);
+    place2(O, f.p(run, s * 0.7), f.yaw);
+    for (const [X, me] of [[N, 1], [O, 0]]) {
+      drive(X, dt, "run", null, { speed: 4.2, rate: 1, expr: t > 3.7 ? me ? "happy" : "worried" : "normal" });
+      const r = X.rig;
+      if (t > 0.4 && t < 1) r.head.rotation.y = (me ? 1 : -1) * s * 0.9;
+      if (t > 1 && t < 1.7) {
+        r.arms[1].sh.rotation.set(-2.6, 0, 0.6);
+        r.arms[1].el.rotation.x = -1.8;
+      }
+      if (t > 1.7 && t < 2.4) {
+        r.arms[0].sh.rotation.set(-1.5, 0, 0.4);
+        r.arms[0].el.rotation.x = -1.6;
+        r.head.rotation.x = 0.4;
+      }
+      if (t > 2.4 && t < 2.9) {
+        r.arms[1].sh.rotation.set(0, 0, 2.6);
+        r.arms[1].el.rotation.x = 0.2 * Math.sin(t * 20);
+      }
+      if (t > 2.9 && t < 3.6) {
+        const j2 = Math.abs(Math.sin((t - 2.9) * 9));
+        r.arms[0].sh.rotation.set(0, 0, -2.4 * j2);
+        r.arms[1].sh.rotation.set(0, 0, 2.4 * j2);
+        r.legs[0].hp.rotation.z = -0.5 * j2;
+        r.legs[1].hp.rotation.z = 0.5 * j2;
+        X.root.position.y += j2 * 0.35;
+      }
+      if (!me && t > 4.1) {
+        r.arms[0].sh.rotation.set(0.3, 0, -0.3);
+        r.arms[1].sh.rotation.set(0.3, 0, 0.3);
+        r.head.rotation.x = 0.5;
+      }
+    }
+    medal.visible = t > 3.6;
+    medal.position.set(0.1, N.r.hipH + 0.9, 0.45);
+    if (t > 3.6 && t < 4.2) {
+      N.rig.arms[1].sh.rotation.set(-1.2, 0, 0.2);
+      N.rig.arms[0].sh.rotation.set(-2.2, 0, -0.3);
+      N.rig.arms[0].el.rotation.x = -2;
+    }
+    cue("line", t > 0.5, () => K.say(cs.lines?.[0]));
+    I.pipCaption = t < 2.9 ? "MIRROR, MIRROR\u2026" : t < 3.6 ? "STAR JUMP!" : "NEWER MODEL";
+    const c = N.root.position.clone().lerp(O.root.position, 0.5);
+    K.pipCamSet(c.clone().addScaledVector(V(f.tx, 0, f.tz), 6).addScaledVector(V(f.rx, 0, f.rz), s * 2.6).add(V(0, 1.8, 0)), c.clone().add(V(0, 1.3, 0)), 44);
+  };
+  return I;
+};
+SCENES.heart_vs_heart = (K, cs) => {
+  const I = base(K, { camera: false, hide: "none" });
+  const a = K.pub(cs.who), o = K.pub(cs.params.other);
+  const nm = (p) => (p?.shortName || p?.nickname || "MARK").toUpperCase();
+  const el = document.createElement("div");
+  el.className = "mrc-hh";
+  const heart = "M50 88 C10 60 0 40 12 22 C24 6 44 10 50 26 C56 10 76 6 88 22 C100 40 90 60 50 88 Z";
+  el.innerHTML = `<style>
+    .mrc-hh{position:absolute;display:flex;gap:0;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);overflow:hidden;box-shadow:0 calc(var(--u)*.7) 0 #14183c;opacity:0;transform:scale(.6);transform-origin:100% 0;transition:opacity .2s,transform .25s cubic-bezier(.2,.8,.2,1)}
+    .mrc-hh.on{opacity:1;transform:none}.mrc-hh>div{flex:1;position:relative;background:#1d2350;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .mrc-hh>div+div{background:#24305f;border-left:calc(var(--u)*.3) dashed #fff}
+    .mrc-hh svg{width:78%;height:auto;overflow:visible}.mrc-hh b{font-weight:400;font-size:calc(var(--u)*2.4);-webkit-text-stroke:calc(var(--u)*.25) #14183c;paint-order:stroke fill}
+    .mrc-hh i{font-style:normal;font-size:calc(var(--u)*1.7);opacity:.95}
+    .mrc-hh .hb{transform-origin:50% 55%;animation:mrchb .28s infinite}@keyframes mrchb{0%,100%{transform:scale(1)}40%{transform:scale(1.28)}}
+    .mrc-hh .calm .hb{animation:mrchb2 1.6s infinite}@keyframes mrchb2{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+    .mrc-hh .lean{transition:transform .4s}.mrc-hh.knock .lean{transform:translateX(26%) rotate(12deg)}
+  </style>
+  <div><svg viewBox="-20 -25 140 140"><g class="lean"><g class="hb"><path d="${heart}" fill="#ff2d55" stroke="#14183c" stroke-width="5"/><path d="M28 30 q8-10 14 0" stroke="#fff" stroke-width="5" fill="none"/></g>
+    <g fill="#e9eef5" opacity=".9"><circle cx="18" cy="-4" r="8"/><circle cx="84" cy="-10" r="10"/><circle cx="60" cy="-18" r="7"/></g><circle cx="100" cy="6" r="9" fill="#ffd23f" stroke="#14183c" stroke-width="4"/></g></svg>
+    <b style="color:${a?.colour?.primary || "#ffd23f"}">${nm(a)}</b><i>his watch: ${cs.params.hr} bpm</i></div>
+  <div class="calm"><svg viewBox="-20 -25 140 140"><path d="M-6 98 L28 64 L84 64 L104 98" stroke="#7a4a2a" stroke-width="7" fill="none"/><path d="M24 64 L50 30 L96 30" stroke="#ff8a1f" stroke-width="7" fill="none"/>
+    <g class="hb"><path d="${heart}" fill="#ff8fb0" stroke="#14183c" stroke-width="5" transform="translate(6 -4) scale(.82)"/></g>
+    <rect class="pg" x="40" y="44" width="46" height="34" fill="#fff" stroke="#14183c" stroke-width="4"/><path d="M48 54 h30 M48 62 h30 M48 70 h20" stroke="#9aa0a8" stroke-width="3"/>
+    <rect x="-8" y="60" width="16" height="18" rx="3" fill="#fff" stroke="#14183c" stroke-width="4"/></svg>
+    <b style="color:${o?.colour?.primary || "#57c7ff"}">${nm(o)}</b><i>his watch: ${cs.params.hr2} bpm</i></div>`;
+  K.ov.root.appendChild(el);
+  const cue = cues();
+  I.update = (t) => {
+    const rc = K.ov.pipRect();
+    const w = rc.w * 0.86, h = rc.h * 1.15;
+    Object.assign(el.style, { left: `${rc.x + rc.w - w}px`, top: `${rc.y}px`, width: `${w}px`, height: `${h}px` });
+    el.classList.toggle("on", t > 0.05 && t < cs.durationS - 0.25);
+    el.classList.toggle("knock", t > 3.4 && t < 4.4);
+    cue("line", t > 0.4, () => K.say(cs.lines?.[0]));
+    K.ov.caption(t > 0.3 ? t > 3.4 ? "HOW?" : "SAME PACE." : null, { yellow: t > 3.4 });
+  };
+  const d0 = I.dispose;
+  I.dispose = () => {
+    el.remove();
+    d0();
+  };
+  return I;
+};
+SCENES.breakfast = (K, cs) => {
+  const I = base(K, { camera: true, hide: "none" });
+  const big = cs.params.variant === "big";
+  const st0 = K.stage(0);
+  const s = openSide(K.world, st0, 9);
+  const root = I.bag.group();
+  const who = K.runners[cs.who];
+  const C = actor(K, I, K.pub(cs.who));
+  const gowns = [];
+  for (const id of K.ids) {
+    if (id === cs.who) continue;
+    const r = K.runners[id], rig = rigFor(r);
+    if (!rig) continue;
+    const g = new Group();
+    const robe = I.bag.M(new RoundedBoxGeometry(0.95, 1, 0.7, 3, 0.2), ["#ff9bd2", "#9fd8ff", "#c7f59a", "#ffe08a"][gowns.length % 4], 2.5);
+    robe.position.y = 0.35;
+    g.add(robe);
+    const mug = I.bag.M(new CylinderGeometry(0.1, 0.09, 0.2, 12), "#ffffff", 2);
+    rig.arms[1].hand.add(mug);
+    mug.position.y = -0.12;
+    rig.torso.add(g);
+    gowns.push({ r, rig, g, mug, fall: 0 });
+  }
+  let cape = null, tape = null, M = null;
+  if (big) {
+    cape = new Mesh(I.bag.add(new PlaneGeometry(1.2, 1.5)), I.bag.mat("#dfe6f0", { side: DoubleSide, emissive: "#556070", emissiveIntensity: 0.3 }));
+    C.rig.torso.add(cape);
+    cape.position.set(0, 0.3, -0.42);
+    cape.rotation.x = 0.2;
+    tape = new Mesh(I.bag.add(new BoxGeometry(PATH_W, 0.08, 0.02)), I.bag.basic("#ff3d8b"));
+    root.add(tape);
+    M = actor(K, I, CAST.maureen, { vest: "#d8ff1f" });
+  }
+  const steam = makePuffs(I.bag, 6, "#ffffff");
+  root.add(steam.root);
+  const cue = cues();
+  I.update = (t, dt, b) => {
+    const slot = who.root.position.clone();
+    const T = cs.durationS;
+    who.root.visible = t > T - 0.3;
+    const arrive = smooth3(0.2, big ? 3.4 : 2, t);
+    const from = big ? st0.p(60, 0, 0) : slot.clone().addScaledVector(V(st0.tx, 0, st0.tz), 3).addScaledVector(V(st0.rx, 0, st0.rz), -s * 10);
+    const cp = from.clone().lerp(slot, arrive);
+    cp.y = K.C.heightAt(cp.x, cp.z) + 0.16;
+    C.root.visible = t < T - 0.3;
+    const turned = big && t > 4.2;
+    place2(C, cp, arrive < 1 ? yawTo(cp, slot) : big && !turned ? st0.yaw + Math.PI : st0.yaw);
+    if (arrive < 1) drive(C, dt, big ? "trudge" : "jog", null, { speed: 2.5, rate: 1, expr: big ? "pant" : "happy" });
+    else if (big && t < 4.2) {
+      drive(C, dt, "celebrate", "jump", { expr: "happy" });
+    } else if (big) {
+      drive(C, dt, "idle", null, { expr: "sad" });
+    } else {
+      drive(C, dt, "pose", "stretch", { expr: "normal" });
+    }
+    steam.root.position.copy(C.root.position).add(V(0, C.r.height + 0.2, 0));
+    steam.update(t * 0.7 % 1, 0.8, 0);
+    if (tape) {
+      tape.position.copy(st0.p(0.5, 0, 1.15));
+      tape.rotation.set(0, st0.yaw + Math.PI / 2, 0);
+      tape.visible = !(arrive >= 1);
+    }
+    if (M) {
+      M.root.visible = t > 3.6;
+      const mp = slot.clone().addScaledVector(V(st0.rx, 0, st0.rz), s * 1.2);
+      place2(M, mp, yawTo(mp, C.root.position));
+      drive(M, dt, "idle");
+      if (t > 4.4) {
+        M.rig.arms[1].sh.rotation.set(-1.5, 0, 0);
+        M.root.rotation.y = st0.yaw;
+      }
+    }
+    for (const G2 of gowns) {
+      G2.rig.arms[0].sh.rotation.set(-0.3 - Math.max(0, Math.sin(t * 2)) * 2, 0, -0.3);
+      G2.rig.arms[1].sh.rotation.set(-1.1, 0, 0.2);
+      G2.rig.arms[1].el.rotation.x = -1.3;
+      const drop = !big && t > 2.3 ? smooth3(2.3, 2.8, t) : 0;
+      G2.g.position.y = -drop * 1.4;
+      G2.g.visible = drop < 0.95;
+      G2.mug.visible = drop < 0.95;
+    }
+    cue("line", t > (big ? 3.4 : 1.4), () => K.say(cs.lines?.[0]));
+    K.ov.caption(big ? t < 3.4 ? `${cs.params.km} KM ALREADY\u2026` : t < 4.4 ? "FINISHED!" : "WRONG WAY, MARK." : t > 0.4 ? "ALREADY WARMED UP" : null, { yellow: !big || t < 3.4 });
+    const look = slot.clone().add(V(0, 1.3, 0)).lerp(C.root.position.clone().add(V(0, 1.3, 0)), 0.5);
+    K.cam(st0.p(big ? 9 : 7.5, -s * 3.5, 2.4), look, big ? 52 : 46);
+  };
+  const d0 = I.dispose;
+  I.dispose = () => {
+    for (const G2 of gowns) {
+      G2.g.parent?.remove(G2.g);
+      G2.mug.parent?.remove(G2.mug);
+    }
+    if (who) who.root.visible = true;
+    d0();
+  };
+  return I;
+};
+SCENES.before_after = (K, cs) => {
+  const I = base(K, { camera: false, pip: true, hide: "none", pipLabel: "BEFORE / AFTER" });
+  const { f, A: Bf, B: Af } = pairStage(K, cs, I, cs.who, cs.params.other, 2600);
+  I.pipOnly = [Bf.root, Af.root];
+  const s = openSide(K.world, f, 8);
+  const bib = board(I.bag, signTexture(I.bag, ["RACE", "DAY?"], { bg: "#ffffff", fg: "#e8333f", w: 256, h: 256, round: 14 }), 0.5, 0.5, "#1a1420", 0.03);
+  Bf.rig.torso.add(bib);
+  bib.position.set(0, 0.45, 0.42);
+  const medal = goldDisc(I, 0.2);
+  Af.root.add(medal);
+  const cape = new Mesh(I.bag.add(new PlaneGeometry(1.1, 1.3)), I.bag.mat("#dfe6f0", { side: DoubleSide, emissive: "#556070", emissiveIntensity: 0.3 }));
+  Af.rig.torso.add(cape);
+  cape.position.set(0, 0.25, -0.45);
+  cape.rotation.x = 0.35;
+  const notes = noteSprites(I, 3);
+  const grp = I.bag.group();
+  for (const n of notes) grp.add(n);
+  I.pipOnly.push(grp);
+  const cue = cues();
+  I.update = (t, dt) => {
+    const run = t * 4;
+    place2(Bf, f.p(run, s * 0.7), f.yaw);
+    place2(Af, f.p(run + smooth3(0, 1, t) * 0, -s * 0.7), f.yaw);
+    drive(Bf, dt, "run", null, { speed: 4, rate: 1, expr: t > 1.4 && t < 3.4 ? "love" : "worried" });
+    drive(Af, dt, "run", null, { speed: 4, rate: 1, expr: "smug" });
+    if (t < 1.2) {
+      Bf.rig.torso.rotation.x = 0.7;
+      Bf.rig.arms[1].sh.rotation.set(-0.6, 0, 0.1);
+      Bf.rig.arms[1].el.rotation.x = -0.2 + Math.sin(t * 25) * 0.3;
+    } else if (t < 3) {
+      Bf.rig.head.rotation.y = -s * 0.9;
+      Bf.rig.arms[1].sh.rotation.set(-1.4, 0, 0);
+      Bf.rig.arms[1].el.rotation.x = 0;
+      if (t > 2.2) {
+        Bf.rig.arms[1].sh.rotation.set(-0.9, 0, -0.9);
+        Bf.rig.arms[1].el.rotation.x = -1.7;
+      }
+    } else {
+      Bf.rig.head.rotation.y = -s * 1.2;
+      Bf.root.position.addScaledVector(V(f.rx, 0, f.rz), -s * 0.3);
+    }
+    const hide = smooth3(3, 3.4, t);
+    medal.position.set(0, Af.r.hipH + 0.75 - hide * 0.4, lerp2(0.45, -0.55, hide));
+    if (hide > 0) {
+      Af.rig.arms[0].sh.rotation.set(0.9, 0, -0.2);
+      Af.rig.arms[1].sh.rotation.set(0.9, 0, 0.2);
+      Af.rig.head.rotation.x = -0.25;
+    }
+    notes.forEach((n, i) => {
+      const u = (t * 0.9 + i / 3) % 1;
+      n.visible = t > 3.3;
+      n.position.copy(Af.root.position).add(V(0.3, Af.r.height + 0.2 + u * 1.2, 0));
+      n.material.opacity = 1 - u;
+    });
+    cue("line", t > 1.3, () => K.say(cs.lines?.[0]));
+    I.pipCaption = t < 1.3 ? "BEFORE\u2026" : t < 3 ? "\u2026AND AFTER" : "IS THAT\u2026?";
+    const c = Bf.root.position.clone().lerp(Af.root.position, 0.5);
+    K.pipCamSet(c.clone().addScaledVector(V(f.tx, 0, f.tz), 6).addScaledVector(V(f.rx, 0, f.rz), s * 2.6).add(V(0, 1.8, 0)), c.clone().add(V(0, 1.3, 0)), 44);
+  };
+  return I;
+};
+SCENES.road_to_100 = (K, cs) => {
+  const I = base(K, { camera: false, hide: "none", postBanner: "ROAD TO 100" });
+  const nums = cs.params.numbers || [], before = new Set(cs.params.before || []);
+  const el = document.createElement("div");
+  el.className = "mrc-r100";
+  let cells = "";
+  for (let n = 1; n <= 100; n++) cells += `<span data-n="${n}" class="${before.has(n) ? "old" : ""} ${n > 98 ? "todo" : ""}">${n}</span>`;
+  const special = nums.includes(95) ? '<em class="sp">MOVING DAY</em>' : nums.some((n) => n >= 96 && n <= 98) ? '<em class="sp">VISITOR</em>' : "";
+  el.innerHTML = `<style>
+    .mrc-r100{position:absolute;right:calc(var(--u)*2.4);top:calc(var(--u)*17.5);width:calc(var(--u)*34);padding:calc(var(--u)*1) calc(var(--u)*1.2);background:#fff6df;color:#14183c;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);box-shadow:0 calc(var(--u)*.7) 0 #14183c;transform:translateX(130%) rotate(4deg);transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+    .mrc-r100.on{transform:rotate(-2deg)}
+    .mrc-r100 h3{margin:0 0 calc(var(--u)*.5);font-weight:400;font-size:calc(var(--u)*2.2);display:flex;justify-content:space-between}
+    .mrc-r100 .g{display:grid;grid-template-columns:repeat(10,1fr);gap:calc(var(--u)*.25)}
+    .mrc-r100 span{aspect-ratio:1;border:2px solid #c9b88f;border-radius:50%;font:800 calc(var(--u)*.75) Nunito,sans-serif;display:flex;align-items:center;justify-content:center;color:#b8a77e}
+    .mrc-r100 span.old{background:#cfd4dc;color:#fff;border-color:#9aa0a8}
+    .mrc-r100 span.new{background:#e8333f;color:#fff;border-color:#a8151f;transform:scale(1.35) rotate(-10deg);transition:transform .2s cubic-bezier(.3,1.6,.5,1)}
+    .mrc-r100 span.todo{border-style:dashed;border-color:#e8333f;color:#e8333f}
+    .mrc-r100 .sp{position:absolute;right:calc(var(--u)*1);bottom:calc(var(--u)*-1.2);font-style:normal;font-size:calc(var(--u)*1.7);color:#e8333f;border:calc(var(--u)*.3) solid #e8333f;padding:0 calc(var(--u)*.6);background:#fff;transform:rotate(-8deg)}
+  </style><h3><span>ROAD TO 100</span><span>${nums.length} STAMPS</span></h3><div class="g">${cells}</div>${special}`;
+  K.ov.root.appendChild(el);
+  const cue = cues();
+  I.update = (t) => {
+    el.classList.toggle("on", t > 0.05 && t < cs.durationS - 0.2);
+    nums.forEach((n, i) => cue(`s${n}`, t > 0.5 + i * 0.32, () => el.querySelector(`[data-n="${n}"]`)?.classList.add("new")));
+    cue("line", t > 0.6, () => K.say(cs.lines?.[0]));
+  };
+  const d0 = I.dispose;
+  I.dispose = () => {
+    el.remove();
+    d0();
+  };
+  return I;
+};
+SCENES.incline_button = (K, cs) => {
+  const I = base(K, { camera: true, hide: "none" });
+  const r = K.runners[cs.who];
+  const root = I.bag.group();
+  const screenTex = (txt) => I.bag.tex(512, 256, (g) => {
+    g.fillStyle = "#14183c";
+    g.fillRect(0, 0, 512, 256);
+    g.font = '58px "Lilita One", sans-serif';
+    g.textAlign = "center";
+    g.fillStyle = "#7dff9a";
+    g.fillText("INCLINE", 256, 92);
+    g.font = '96px "Lilita One", sans-serif';
+    g.fillStyle = txt.includes("!") ? "#ff3d5a" : "#7dff9a";
+    g.fillText(txt, 256, 200);
+  });
+  const tA = screenTex("4.0%"), tB = screenTex("9.0%!");
+  const con = new Group();
+  root.add(con);
+  const body = new Mesh(I.bag.add(new RoundedBoxGeometry(1.4, 0.8, 0.12, 2, 0.05)), I.bag.mat("#9fd8ff", { transparent: true, opacity: 0.55 }));
+  con.add(body);
+  const scr = new Mesh(I.bag.add(new PlaneGeometry(0.9, 0.45)), I.bag.add(new MeshBasicMaterial({ map: tA, transparent: true, opacity: 0.95 })));
+  scr.position.set(-0.15, 0.08, 0.07);
+  con.add(scr);
+  const up = new Mesh(I.bag.add(new ConeGeometry(0.1, 0.16, 3)), I.bag.basic("#2ec27e"));
+  up.position.set(0.48, 0.14, 0.08);
+  con.add(up);
+  const dn = up.clone();
+  dn.material = I.bag.basic("#ff3d5a");
+  dn.rotation.z = Math.PI;
+  dn.position.y = -0.14;
+  con.add(dn);
+  const goose = makeGoose(I.bag, { scale: 1.2 });
+  root.add(goose.root);
+  const beep = sprite(I.bag, bubbleTexture(I.bag, "BEEP.", { w: 400, h: 220, size: 100 }), 0.55, 400 / 220);
+  root.add(beep);
+  beep.visible = false;
+  const creak = sprite(I.bag, bubbleTexture(I.bag, "CREAK!", { burst: true, w: 512, h: 300, size: 120, bg: "#ffd23f" }), 0.9, 512 / 300);
+  root.add(creak);
+  creak.visible = false;
+  const cue = cues();
+  I.update = (t, dt, b) => {
+    if (!r) return;
+    const st = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
+    const fwd = V(st.tx, 0, st.tz), right = V(-st.tz, 0, st.tx);
+    const ap = r.root.position;
+    con.position.copy(ap).addScaledVector(fwd, 0.85).add(V(0, r.hipH + 0.55, 0));
+    con.lookAt(ap.clone().add(V(0, r.hipH + 0.55, 0)));
+    con.scale.setScalar(backOut(clamp01(t / 0.4)));
+    const rig = rigFor(r);
+    if (rig && t < 3.6) {
+      const poke = Math.max(0, Math.sin(t * 9));
+      rig.arms[1].sh.rotation.set(-1.45 - poke * 0.15, 0, 0.1);
+      rig.arms[1].el.rotation.x = -0.3 * (1 - poke);
+    }
+    beep.visible = t > 0.7 && t < 2.2 && Math.floor(t * 3) % 2 === 0;
+    if (beep.visible) beep.position.copy(con.position).add(V(0, 0.65, 0));
+    goose.root.visible = t > 2.2;
+    goose.root.position.copy(ap).addScaledVector(fwd, 0.9).addScaledVector(right, 1);
+    goose.root.position.y = K.C.heightAt(goose.root.position.x, goose.root.position.z);
+    goose.root.rotation.y = Math.atan2(-right.x, -right.z);
+    goose.pose({ t, nod: t > 2.6 && t < 3 ? 0.6 : 0 });
+    if (t > 2.85) scr.material.map = tB;
+    creak.visible = t > 3 && t < 3.9;
+    if (creak.visible) {
+      creak.position.copy(ap).add(V(0, r.height + 0.9, 0));
+      popScale(creak, t, 3);
+    }
+    if (rig && t > 3.6) {
+      rig.head.rotation.y = 0.9;
+      r.setPop?.("!");
+    }
+    cue("line", t > 0.6, () => K.say(cs.lines?.[0]));
+    K.ov.caption(t < 0.4 ? null : t < 2.3 ? "DOWN. DOWN!" : t < 3 ? "\u2026UP?" : "THANKS, GERALD.", { yellow: t >= 2.3 });
+    const roll = smooth3(3, 3.6, t) * 0.12;
+    K.cam(ap.clone().addScaledVector(right, -3.4).addScaledVector(fwd, 3).add(V(0, 1.9, 0)), ap.clone().add(V(0, 1.6, 0)).addScaledVector(fwd, 0.4), 46, roll, { sun: 30 });
+  };
+  return I;
+};
+SCENES.pb_bell = (K, cs) => {
+  const I = base(K, { camera: true, postBanner: "PERSONAL BEST!" });
+  const ring = cs.params.ring || 1;
+  const fs = fin(K);
+  const s = openSide(K.world, fs, 8);
+  const root = I.bag.group();
+  const postP = fs.p(4, s * (PATH_W / 2 + 1.6), 0);
+  const post = I.bag.M(new CylinderGeometry(0.1, 0.12, 3.2, 8).translate(0, 1.6, 0), "#7a4a2a", 2.5);
+  post.position.copy(postP);
+  root.add(post);
+  const arm = I.bag.M(new BoxGeometry(0.9, 0.12, 0.12).translate(0.45, 0, 0), "#7a4a2a", 2);
+  arm.position.copy(postP).add(V(0, 3.1, 0));
+  arm.rotation.y = Math.atan2(fs.tx, fs.tz) - Math.PI / 2;
+  root.add(arm);
+  const bellG = new Group();
+  root.add(bellG);
+  const bell = I.bag.M(new SphereGeometry(0.45, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), I.bag.mat("#ffd23f", { emissive: "#664400", emissiveIntensity: 0.25, side: DoubleSide }), 3);
+  bell.position.y = -0.45;
+  bellG.add(bell);
+  const clap = I.bag.M(new SphereGeometry(0.1, 8, 6), "#7a4a2a", 1.5);
+  clap.position.y = -0.75;
+  bellG.add(clap);
+  const rope = I.bag.M(new CylinderGeometry(0.03, 0.03, 1.6, 6).translate(0, -0.8, 0), "#e9d8c4", 0);
+  bellG.add(rope);
+  rope.position.y = -0.8;
+  const bellHome = arm.localToWorld(V(0.8, 0, 0));
+  const M = actor(K, I, CAST.maureen, { vest: "#d8ff1f" });
+  const W = actor(K, I, K.pub(cs.who));
+  const cone = makeCone(I.bag, 0.6);
+  root.add(cone);
+  cone.visible = false;
+  const goose = makeGoose(I.bag, { scale: 1.4, bellHat: true });
+  root.add(goose.root);
+  goose.root.visible = false;
+  const ding = sprite(I.bag, bubbleTexture(I.bag, ring === 2 ? "DONK." : "DING!", { burst: true, w: 512, h: 300, size: 130, bg: "#ffd23f" }), 1, 512 / 300);
+  root.add(ding);
+  ding.visible = false;
+  const cue = cues();
+  I.update = (g0, dt, b, { gagDur }) => {
+    const t = tscale(g0, gagDur, 3.6);
+    const mp = bellHome.clone().addScaledVector(V(fs.tx, 0, fs.tz), -1.7);
+    mp.y = K.C.heightAt(mp.x, mp.z) + 0.16;
+    place2(M, mp, yawTo(mp, bellHome));
+    drive(M, dt, "idle");
+    const wp2 = fs.p(5.2, s * (PATH_W / 2 - 0.6), 0);
+    place2(W, wp2, yawTo(wp2, bellHome) + 0.6);
+    drive(W, dt, "celebrate", "jump", { expr: "happy" });
+    let swing = 0, fall = 0;
+    if (ring === 1) {
+      swing = t > 0.8 ? Math.sin((t - 0.8) * 9) * 0.5 * Math.exp(-(t - 0.8) * 0.6) : 0;
+      M.rig.arms[1].sh.rotation.set(-2.4 + Math.max(0, Math.sin(t * 9)) * 0.4, 0, 0);
+    } else if (ring === 2) {
+      rope.visible = t < 0.9;
+      cone.visible = t > 0.9;
+      M.rig.arms[1].sh.rotation.set(-2.6 + Math.max(0, Math.sin(t * 7)) * 0.9, 0, 0);
+      cone.position.copy(wp(M.rig.arms[1].hand, V()));
+      swing = t > 1.3 ? Math.sin((t - 1.3) * 8) * 0.3 : 0;
+    } else {
+      fall = smooth3(1, 1.6, t);
+      M.rig.arms[1].sh.rotation.set(-2.4, 0, 0);
+    }
+    bellG.position.copy(bellHome).add(V(0, -fall * 2.6, 0)).addScaledVector(V(fs.tx, 0, fs.tz), fall > 0.99 ? (t - 1.6) * 6 : 0);
+    bellG.rotation.set(fall * 2.5 + (fall > 0.99 ? (t - 1.6) * 8 : 0), 0, swing);
+    goose.root.visible = ring === 3 && t > 2.4;
+    goose.root.position.copy(fs.p(2.5, s * 2.5, 0));
+    goose.root.rotation.y = Math.atan2(-fs.rx * s, -fs.rz * s);
+    goose.pose({ t, waddle: 0.5 });
+    ding.visible = ring === 1 && t > 0.8 && t < 1.8 || ring === 2 && t > 1.3 && t < 2.2;
+    if (ding.visible) {
+      ding.position.copy(bellHome).add(V(0, 0.8, 0));
+      popScale(ding, t, ring === 2 ? 1.3 : 0.8);
+    }
+    cue("line", t > 0.9, () => K.say(cs.lines?.[0]));
+    K.ov.caption(ring === 1 ? t > 0.8 ? "PB BELL!" : null : ring === 2 ? t < 0.9 ? "PB BELL\u2026" : "WITH A CONE." : t < 2.4 ? "OH NO." : "THE GOOSE'S BELL NOW", { yellow: ring !== 3 || t > 2.4 });
+    const focus = ring === 3 && t > 2.4 ? goose.root.position.clone().add(V(0, 1, 0)) : bellHome.clone().add(V(0, -1.2, 0));
+    K.cam(focus.clone().addScaledVector(V(fs.tx, 0, fs.tz), 3.5).add(V(fs.rx * s * 6, 0.2, fs.rz * s * 6)), focus.clone().add(V(0, 0.1, 0)), 48);
+  };
+  return I;
+};
+SCENES.wrong_kit_bag = (K, cs) => {
+  const I = base(K, { camera: true, hide: "none" });
+  const v = cs.params.variant || "swim";
+  const r = K.runners[cs.who], rig = r && rigFor(r);
+  const st0 = K.stage(0);
+  const s = openSide(K.world, st0, 9);
+  const kit = new Group();
+  const add = (o, parent) => {
+    parent.add(o);
+    return o;
+  };
+  if (rig) {
+    if (v === "swim") {
+      const ring = add(I.bag.M(new TorusGeometry(0.55, 0.16, 10, 24).rotateX(Math.PI / 2), "#ff3d5a", 2.5), rig.hips);
+      ring.position.y = 0.2;
+      const gog = add(I.bag.M(new TorusGeometry(0.34, 0.06, 6, 20), "#57c7ff", 2), rig.head);
+      gog.position.set(0, 0.48, 0.12);
+      gog.rotation.x = -0.1;
+      for (const a of rig.arms) {
+        const band = add(I.bag.M(new TorusGeometry(0.15, 0.08, 8, 14).rotateX(Math.PI / 2), "#ff9a1f", 2), a.sh);
+        band.position.y = -0.25;
+      }
+    } else if (v === "weights") {
+      const bar = add(I.bag.M(new CylinderGeometry(0.04, 0.04, 2.6, 8).rotateZ(Math.PI / 2), "#9aa0a8", 1.5), rig.torso);
+      bar.position.set(0, 0.85, -0.25);
+      for (const sx of [-1, 1]) {
+        const pl = I.bag.M(new CylinderGeometry(0.42, 0.42, 0.14, 18).rotateZ(Math.PI / 2), "#1a1420", 2.5);
+        pl.position.set(sx * 1.15, 0, 0);
+        bar.add(pl);
+      }
+    } else if (v === "ski") {
+      for (const l of rig.legs) {
+        const ski = add(I.bag.M(new BoxGeometry(0.16, 0.05, 2.2).translate(0, 0, 0.4), "#2e6fe0", 2), l.an);
+        ski.position.y = -0.2;
+      }
+      for (const a of rig.arms) {
+        const pole = add(I.bag.M(new CylinderGeometry(0.025, 0.025, 1.4, 6).translate(0, -0.7, 0), "#1a1420", 0), a.hand);
+        pole.rotation.x = 0.3;
+      }
+    }
+  }
+  const thrown = makePuffs(I.bag, 6, "#f4f4f4");
+  const root = I.bag.group();
+  root.add(thrown.root);
+  const cue = cues();
+  I.update = (t, dt, b) => {
+    if (!r || !rig) return;
+    const bb = b;
+    const on = bb < 1.1;
+    for (const o of [...rig.hips.children, ...rig.head.children, ...rig.torso.children, ...rig.legs.flatMap((l) => l.an.children), ...rig.arms.flatMap((a) => [...a.sh.children, ...a.hand.children])]) if (o.userData.__kit) o.visible = on;
+    if (v === "yoga" && bb < 0.6) {
+      rig.legs[1].hp.rotation.set(-0.2, 0, 1);
+      rig.legs[1].kn.rotation.x = 2.3;
+      rig.legs[0].hp.rotation.set(0, 0, 0);
+      rig.legs[0].kn.rotation.x = 0;
+      for (const [i, a] of rig.arms.entries()) {
+        a.sh.rotation.set(0, 0, (i ? 1 : -1) * 2.9);
+        a.el.rotation.x = 0;
+      }
+      r.setPop?.(bb > 0 ? "!" : null);
+    }
+    if (v === "weights" && bb < 1.1) for (const a of rig.arms) {
+      a.sh.rotation.set(-2.6, 0, 0);
+      a.el.rotation.x = -1.6;
+    }
+    if (v === "swim" && bb > 0 && bb < 1.1) {
+      const k = t * 6;
+      rig.arms[0].sh.rotation.set(-Math.PI + Math.sin(k) * 2.4, 0, 0);
+      rig.arms[1].sh.rotation.set(-Math.PI + Math.sin(k + Math.PI) * 2.4, 0, 0);
+    }
+    if (v === "ski" && bb < 1.1) {
+      rig.legs[0].hp.rotation.z = -0.25;
+      rig.legs[1].hp.rotation.z = 0.25;
+    }
+    thrown.root.position.copy(r.root.position).add(V(0, 1.2, 0));
+    thrown.update(clamp01((bb - 1.1) / 0.8), 1.2, -1);
+    cue("line", bb > -2.2, () => K.say(cs.lines?.[0]));
+    K.ov.caption(bb < 1.1 ? { swim: "WRONG BAG: SWIMMING", weights: "WRONG BAG: WEIGHTS", yoga: "WRONG BAG: YOGA", ski: "WRONG BAG: SKIS" }[v] : null, { yellow: true });
+    I.camera = bb > -2.8 && bb < 1.6;
+    if (I.camera) {
+      const ap = r.root.position;
+      K.cam(ap.clone().addScaledVector(V(st0.tx, 0, st0.tz), 4.8).addScaledVector(V(st0.rx, 0, st0.rz), s * 2.2).add(V(0, 1.9, 0)), ap.clone().add(V(0, 1.5, 0)), 46);
+    }
+  };
+  const tagged = [];
+  if (rig) {
+    for (const o of [...rig.hips.children, ...rig.head.children, ...rig.torso.children, ...rig.legs.flatMap((l) => l.an.children), ...rig.arms.flatMap((a) => [...a.sh.children, ...a.hand.children])]) if (I.bag.items.includes(o.geometry)) {
+      o.userData.__kit = true;
+      tagged.push(o);
+    }
+  }
+  void kit;
+  void add;
+  const d0 = I.dispose;
+  I.dispose = () => {
+    for (const o of tagged) o.parent?.remove(o);
+    d0();
   };
   return I;
 };
@@ -42381,7 +43080,7 @@ function makeRng(rng) {
 
 // server/game/cutscenes.mjs
 var RULES = {
-  maxPausing: 3,
+  maxPausing: 1,
   maxPauseS: 18,
   pauseGapS: 20,
   anyGapS: 6,
@@ -42419,8 +43118,20 @@ var CUTSCENE_KINDS = {
   mirror_signal: { cat: "overtake", label: "Mirror, Signal, Manoeuvre", ref: "D1" },
   ice_cream_van: { cat: "surge", label: "The Ice-Cream Van Jingle", ref: "B2" },
   photographer: { cat: "finish", label: "The Wildlife Photographer", ref: "X1" },
-  sore_loser_var: { cat: "finish", label: "Sore Loser VAR", ref: "X5" }
+  sore_loser_var: { cat: "finish", label: "Sore Loser VAR", ref: "X5" },
+  // batch 2 (docs/CUTSCENE_IDEAS_2.md)
+  pointing_standoff: { cat: "finish", label: "The Pointing Standoff", ref: "2/1" },
+  sub20_wall: { cat: "wall", label: "The Sub-20 Wall", ref: "2/2", story: true },
+  mirror_routine: { cat: "pair", label: "The Mirror Routine", ref: "2/3" },
+  heart_vs_heart: { cat: "pair", label: "Heart vs Heart", ref: "2/4" },
+  breakfast: { cat: "start", label: "Half Marathon Before Breakfast", ref: "2/5" },
+  before_after: { cat: "pair", label: "Before and After", ref: "2/6" },
+  road_to_100: { cat: "tag", label: "Road to 100", ref: "2/7", story: true },
+  incline_button: { cat: "hill", label: "Where's the Incline Button?", ref: "2/8" },
+  pb_bell: { cat: "finish", label: "The PB Bell", ref: "2/9", story: true },
+  wrong_kit_bag: { cat: "start", label: "The Wrong Kit Bag", ref: "2/10" }
 };
+var BENCHED = /* @__PURE__ */ new Set(["mirror_signal"]);
 var PAUSING = /* @__PURE__ */ new Set(["freeze", "replay"]);
 var DUR = {
   funfair_sign: 2.6,
@@ -42439,7 +43150,17 @@ var DUR = {
   mirror_signal: 4,
   ice_cream_van: 5,
   photographer: 7.5,
-  sore_loser_var: 6
+  sore_loser_var: 6,
+  pointing_standoff: 7,
+  mirror_routine: 5,
+  heart_vs_heart: 5,
+  before_after: 5,
+  incline_button: 5,
+  pb_bell: 4.5,
+  road_to_100: 3.2,
+  breakfast: 4.2,
+  wrong_kit_bag: 5,
+  sub20_wall: 6
 };
 var J = (text) => ({ speaker: "jeff", text });
 var P = (text) => ({ speaker: "pam", text });
@@ -42462,7 +43183,17 @@ var LINE_BANKS = {
   mirror_signal: [P("Mirror, signal, manoeuvre."), J("He's INDICATING! Who indicates?"), J("Textbook overtake!")],
   ice_cream_van: [J("He's heard the VAN!"), P("Sold out. Every time."), J("Faster, Mark! It's got FLAKES!")],
   photographer: [P("Hold on. Wrong end of the goose."), J("Lovely shot, Pam."), P("Second time lucky.")],
-  sore_loser_var: [J("Checking... checking... the result STANDS!"), P("The squirrel was onside, Jeff."), J("VAR says NO!")]
+  sore_loser_var: [J("Checking... checking... the result STANDS!"), P("The squirrel was onside, Jeff."), J("VAR says NO!")],
+  pointing_standoff: [P("Same man. Same time. Different Saturday."), J("It's a DEAD HEAT! With HIMSELF!"), P("One of them is copying.")],
+  sub20_wall: [J("It's the TWENTY-MINUTE WALL! And he's gone STRAIGHT THROUGH IT!"), P("He spent months on the wrong side of that."), P("There's a door, Jeff."), J("Another HOLE in the wall!")],
+  mirror_routine: [P("He's just been overtaken by his own future."), J("It's MARK against MARK! And the newer model's got more features!"), P("No spoilers, please.")],
+  heart_vs_heart: [P("Same pace. One of them is having a lovely time."), J("Look at that heart GO! And look at that one... reading!"), P("I'd ask for a refund on the watch.")],
+  breakfast: [P("He's been for a run already. Before nine."), J("He thinks he's FINISHED! Somebody tell him!"), P("The rest of them have had toast.")],
+  before_after: [P("One of them knows how it goes."), J("That's the SAME RACE! He's run it and he HASN'T run it!"), P("Don't tell him. He'll only worry.")],
+  road_to_100: [P("He needs to get to a hundred. He knows."), J("Stamp it, Maureen! STAMP IT!"), P("Free coffee at a hundred. Probably.")],
+  incline_button: [P("Outdoors doesn't have a console."), J("He's looking for the INCLINE BUTTON!"), P("That's what Thursdays indoors do to a man.")],
+  pb_bell: [J("RING THE BELL! That was a PERSONAL BEST on the day!"), P("Twenty-one of these in the archive. The bell is tired."), P("That's the goose's bell now.")],
+  wrong_kit_bag: [P("Wrong bag."), J("He's brought the WRONG KIT!"), P("Some of him is still at the gym.")]
 };
 var VISUAL_VARIANTS = {
   goose_toll: ["jelly", "peak"],
@@ -42478,7 +43209,7 @@ var VISUAL_VARIANTS = {
   hook_a_duck: ["goose", "duck"],
   test_strength: ["jeff", "pam"]
 };
-var GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6 };
+var GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6, breakfast: 0.3, wrong_kit_bag: 0.3, incline_button: 0.5, heart_vs_heart: 0.8, mirror_routine: 0.8, before_after: 0.9, pb_bell: 0.9 };
 var PER_NIGHT_CAP = 2;
 var r1 = (x) => Math.round(x * 10) / 10;
 var r2 = (x) => Math.round(x * 100) / 100;
@@ -42526,7 +43257,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   const info = Object.fromEntries(PR.map((r) => {
     const x = runners.find((q) => q.id === r.id) || {};
     const p = x.perf || x;
-    return [r.id, { name: x.shortName || x.nickname || null, personality: x.personality || null, facts: p.facts || x.facts || {}, features: p.features || x.features || {} }];
+    return [r.id, { name: x.shortName || x.nickname || null, personality: x.personality || null, facts: p.facts || x.facts || {}, features: p.features || x.features || {}, date: x.date || p.date || null }];
   }));
   const S = Object.fromEntries(PR.map((r) => [r.id, runnerStats(r)]));
   const backed = new Set(Array.isArray(backedBy) ? backedBy : Object.keys(backedBy || {}).filter((k) => (backedBy[k] || []).length));
@@ -42552,6 +43283,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   };
   const LIVE_KINDS = /* @__PURE__ */ new Set(["cannonball", "raincloud", "mirror_signal", "photographer", "sore_loser_var"]);
   const freshness = (kind) => {
+    if (CUTSCENE_KINDS[kind]?.story) return 1;
     const l = cm.last?.[kind];
     if (l == null) return 1;
     const ago = raceNo - l;
@@ -42561,11 +43293,16 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     cm.night = {};
     cm.lines = [];
     cm.variants = {};
+    cm.wall = { shown: 0, holes: 0 };
+    cm.bell = 0;
+    cm.road = [];
   }
   cm.night || (cm.night = {});
   cm.lines || (cm.lines = []);
   cm.variants || (cm.variants = {});
-  const capped = (kind) => (cm.night[kind] || 0) >= PER_NIGHT_CAP;
+  cm.last || (cm.last = {});
+  cm.funfairSigs || (cm.funfairSigs = []);
+  const capped = (kind) => !CUTSCENE_KINDS[kind]?.story && (cm.night[kind] || 0) >= PER_NIGHT_CAP;
   const gateRoll = {};
   const gate = (kind) => GATE[kind] == null || (gateRoll[kind] ?? (gateRoll[kind] = R.next())) < GATE[kind];
   const cool = (kind) => force === kind || freshness(kind) >= 0 && !capped(kind) && gate(kind);
@@ -42577,8 +43314,10 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   function fits(c, { ignoreGroup = null } = {}) {
     if (force && c.kind === force) return true;
     const [a, b] = span(c);
+    if (c.params?.tag) return !out.some((x) => x.kind === c.kind);
+    if (c.params?.overlay) return !out.some((x) => x.kind === c.kind);
     if (c.mode === "pre") return !out.some((x) => x.mode === "pre");
-    if (c.mode === "post") return !out.some((x) => x.mode === "post");
+    if (c.mode === "post") return !out.some((x) => x.mode === "post" && !x.params?.tag);
     if (a < RULES.startQuietS) return false;
     if (leaderM(b + (PAUSING.has(c.mode) ? 0.3 : 0.5)) >= RULES.noGoM) return false;
     if (PAUSING.has(c.mode)) {
@@ -42589,7 +43328,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     }
     if (c.mode === "inset" && c.params?.pip && out.filter((x) => x.mode === "inset" && x.params?.pip).length >= RULES.maxInsets) return false;
     for (const x of out) {
-      if (x.mode === "pre" || x.mode === "post" || x.mode === "slowmo") continue;
+      if (x.mode === "pre" || x.mode === "post" || x.mode === "slowmo" || x.params?.overlay) continue;
       if (ignoreGroup && x.group === ignoreGroup) continue;
       const [xa, xb] = span(x);
       if (a < xb + RULES.anyGapS && b > xa - RULES.anyGapS) return false;
@@ -42752,6 +43491,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   }
   {
     for (const e of evts) {
+      if (BENCHED.has("mirror_signal") && !isForced("mirror_signal")) break;
       if (e.type !== "overtake" && !isForced("mirror_signal")) continue;
       if (!cool("mirror_signal")) break;
       const by = e.by || e.to, on = e.on || e.from;
@@ -42783,6 +43523,143 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
         score: 5.5 + (3 - top.g) * 0.5,
         lines: [{ speaker: "jeff", text: "Checking... checking... the result STANDS!" }],
         truth: `${name(top.b.id)} really did finish just ${r1(top.g)} s behind ${name(top.a.id)}. There was no squirrel. The result stands.`
+      }));
+    }
+  }
+  const fact = (id, k) => info[id]?.facts?.[k];
+  const yearsApart = (a, b) => {
+    const da = info[a]?.date, db = info[b]?.date;
+    if (!da || !db) return null;
+    return Math.abs(new Date(da) - new Date(db)) / (365.25 * 864e5);
+  };
+  const finB = (id) => raceToBroadcast(tm, byId[id].officialS);
+  const postB2 = Math.min(lastFinishB + 3.2, Math.max(lastFinishB + 0.9, firstFinishB + 6.5));
+  {
+    const pairs = [];
+    for (let i = 0; i < order.length; i++) for (let j2 = i + 1; j2 < order.length; j2++) if (Math.round(order[i].officialS) === Math.round(order[j2].officialS)) pairs.push([order[i], order[j2]]);
+    if (pairs.length && cool("pointing_standoff")) {
+      const [a, b] = pairs[0];
+      C.push(mk("pointing_standoff", a.id, "post", postB2, {
+        params: { other: b.id, finishRaceS: a.officialS },
+        score: 12,
+        truth: `${name(a.id)} and ${info[b.id]?.name || "his twin"} really did run the identical time, to the second, on two different Saturdays${yearsApart(a.id, b.id) != null ? ` ${Math.round(yearsApart(a.id, b.id) * 12)} months apart` : ""}.`
+      }));
+    }
+  }
+  {
+    const sub = order.filter((r) => r.officialS < 1200), near = order.filter((r) => r.officialS >= 1200 && r.officialS <= 1237);
+    const wall = cm.wall || (cm.wall = { shown: 0, holes: 0 });
+    if ((sub.length || near.length) && (wall.shown || 0) < 4 && !force) {
+      const g = near.length ? 0.9 : !wall.shown ? 0.8 : 0.25;
+      if (R.next() < g || force === "sub20_wall") {
+        const at = raceToBroadcast(tm, 1200);
+        const lastHit = near.length ? raceToBroadcast(tm, timeAtDistance(byId[near.at(-1).id].progress, 4960)) : at;
+        C.push(mk("sub20_wall", (near[0] || sub[0]).id, "inset", at, {
+          durationS: r1(Math.min(30, Math.max(3.5, lastHit - at + 2.5))),
+          params: { overlay: true, near: near.map((r) => r.id), sub: sub.map((r) => r.id), holesBefore: wall.holes || 0, wallM: 4960 },
+          score: 20,
+          truth: near.length ? `${name(near[0].id)} finished just over 20 minutes. He spent months on the wrong side of that wall before he first broke it.` : `Everyone in this race who finished in under 20 minutes was through before the wall dropped.`
+        }));
+      }
+    } else if (force === "sub20_wall") C.push(mk("sub20_wall", order[0].id, "inset", Math.max(8, raceToBroadcast(tm, Math.min(1200, order[0].officialS - 10))), { durationS: 6, params: { overlay: true, near: [order[1]?.id].filter(Boolean), sub: [], holesBefore: 2, wallM: 4960 }, score: 20, truth: "Preview." }));
+  }
+  for (const e of evts) {
+    if (e.type !== "overtake" || e.atM < 1e3 || e.atM > 4600 || !cool("mirror_routine")) continue;
+    const ya = yearsApart(e.by, e.on);
+    if (ya == null || ya < 3) continue;
+    if (!(new Date(info[e.by].date) > new Date(info[e.on].date))) continue;
+    C.push(mk("mirror_routine", e.by, "inset", e.broadcastS - 1.2, {
+      params: { on: e.on, atM: e.atM, pip: true, years: Math.floor(ya) },
+      score: 6,
+      truth: `These two runs were ${Math.floor(ya)} years and ${Math.round(ya % 1 * 12)} months apart. Same man, same course. The later one really did pass the earlier one at ${km(e.atM)}.`
+    }));
+    break;
+  }
+  {
+    const hr = PR.filter((r) => Number.isFinite(Number(fact(r.id, "hr_mean"))));
+    let best = null;
+    for (let i = 0; i < hr.length; i++) for (let j2 = i + 1; j2 < hr.length; j2++) {
+      const a = hr[i], b = hr[j2];
+      const d = Math.abs(fact(a.id, "hr_mean") - fact(b.id, "hr_mean"));
+      if (d >= 25 && Math.abs(a.officialS - b.officialS) <= 30 && (!best || d > best.d)) best = { a, b, d };
+    }
+    if (best && cool("heart_vs_heart")) {
+      const [hi, lo] = fact(best.a.id, "hr_mean") >= fact(best.b.id, "hr_mean") ? [best.a, best.b] : [best.b, best.a];
+      C.push(mk("heart_vs_heart", hi.id, "inset", Math.max(20, B(hi.id, 2200)), {
+        params: { other: lo.id, hr: Math.round(fact(hi.id, "hr_mean")), hr2: Math.round(fact(lo.id, "hr_mean")), pip: true, panel: true },
+        score: 5,
+        truth: `His watch recorded an average of ${Math.round(fact(hi.id, "hr_mean"))} bpm on one of these runs and ${Math.round(fact(lo.id, "hr_mean"))} on the other. The finishing times were ${Math.round(Math.abs(hi.officialS - lo.officialS))} seconds apart.`
+      }));
+    }
+  }
+  {
+    const wu = PR.map((r) => ({ r, km: Number(fact(r.id, "warmup_km")?.km ?? 0) })).filter((x) => x.km > 0).sort((a, b) => b.km - a.km)[0];
+    if (wu && !capped("breakfast") && (wu.km >= 8 || gate("breakfast")) || force === "breakfast") {
+      const x = wu || { r: order[0], km: 2.1 };
+      const big = x.km >= 8;
+      C.push(mk("breakfast", x.r.id, "pre", -8.4, {
+        durationS: big ? 5.4 : 4.1,
+        // before the race title card (-4.2) params: { km: Math.round(x.km * 10) / 10, variant: big ? 'big' : 'standard' }, score: big ? 9 : 4,
+        truth: big ? `He really had run ${x.km.toFixed(1)} km earlier that morning before running this one.` : `He really had jogged ${x.km.toFixed(1)} km earlier that morning to warm up. The others, on their Saturdays, did not.`
+      }));
+    }
+  }
+  {
+    let pair = null;
+    for (const a of PR) for (const b of PR) {
+      if (a === b) continue;
+      const up = fact(a.id, "race_upcoming"), rec = fact(b.id, "race_recent");
+      if (up?.name && rec?.name && up.name === rec.name) pair = pair || { a, b, up, rec };
+    }
+    if (pair && cool("before_after")) {
+      const at = Math.max(22, Math.min(B(pair.a.id, 3e3), B(pair.b.id, 3e3)));
+      C.push(mk("before_after", pair.a.id, "inset", at, {
+        params: { other: pair.b.id, pip: true },
+        score: 5.5,
+        truth: `One of these runs was ${pair.up.days_after} day${pair.up.days_after === 1 ? "" : "s"} before a ${Math.round(pair.up.km || 0) >= 20 ? "half marathon" : "race"}; the other was ${pair.rec.days_before} days after the very same race.`
+      }));
+    }
+  }
+  {
+    const nums = PR.map((r) => ({ id: r.id, n: Number(fact(r.id, "finsbury_number")) })).filter((x) => Number.isFinite(x.n) && x.n > 0);
+    if (nums.length) C.push(mk("road_to_100", order[0].id, "post", postB2 + 0.01, {
+      durationS: 3.2,
+      params: { tag: true, numbers: nums.map((x) => x.n).sort((a, b) => a - b), before: [...cm.road || []] },
+      score: 0,
+      truth: `Tonight's runs were Finsbury runs number ${nums.map((x) => x.n).sort((a, b) => a - b).join(", ")}. He has run it 98 times.`
+    }));
+  }
+  {
+    const r = [...PR].filter((x) => Number(fact(x.id, "treadmill_7d")) > 0).sort((a, b) => S[b.id].hill1 - S[a.id].hill1)[0];
+    if (r && (S[r.id].hill1 >= 1.15 || force === "incline_button") && cool("incline_button")) C.push(mk("incline_button", r.id, "inset", B(r.id, 1790), {
+      params: { atM: 1790, ratio: r2(S[r.id].hill1), treadmill: Number(fact(r.id, "treadmill_7d")) },
+      score: 5.5,
+      truth: `He had run on a treadmill ${Number(fact(r.id, "treadmill_7d")) === 1 ? "once" : `${fact(r.id, "treadmill_7d")} times`} that week. The real Hill then cost him ${pct(S[r.id].hill1)}% of his pace.`
+    }));
+  }
+  {
+    const bell = cm.bell || 0;
+    const pb = order.slice(0, 2).find((r) => fact(r.id, "was_finsbury_pb") === true);
+    if (pb && bell < 3 && gate("pb_bell") || force === "pb_bell") {
+      const w = pb || order[0];
+      C.push(mk("pb_bell", w.id, "post", postB2, { params: { ring: Math.min(3, bell + 1) }, score: 8.5, truth: `This run was a course PB on the day he ran it. He has set 21 of them here.` }));
+    }
+  }
+  {
+    const SPORT = { Swim: "swim", WeightTraining: "weights", Yoga: "yoga", AlpineSki: "ski" };
+    let best = null;
+    for (const r of PR) {
+      const ct = fact(r.id, "cross_training_7d") || {};
+      for (const [k, v] of Object.entries(ct)) if (SPORT[k] && (!best || (v.minutes || 0) > best.min)) best = { r, sport: SPORT[k], min: v.minutes || 0, count: v.count || 1 };
+    }
+    if (best && cool("wrong_kit_bag") || force === "wrong_kit_bag") {
+      const b0 = best || { r: order[0], sport: "swim", count: 1 };
+      const what = { swim: "went swimming", weights: "lifted weights", yoga: "did yoga", ski: "went skiing" }[b0.sport];
+      C.push(mk("wrong_kit_bag", b0.r.id, "pre", -3, {
+        durationS: 5,
+        params: { variant: b0.sport },
+        score: 4.5,
+        truth: `In the week before this run he really ${what}${b0.count > 1 ? ` ${b0.count} times` : " once"}.`
       }));
     }
   }
@@ -42832,6 +43709,10 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
       const r = c.params.ratio ?? 1;
       bankKey = r <= 0.97 ? "rejoin_fast" : r >= 1.03 ? "rejoin_slow" : "rejoin_even";
     }
+    if (c.kind === "road_to_100" && !c.params.numbers.some((n) => n >= 95)) {
+      c.lines = [];
+      continue;
+    }
     if (LINE_BANKS[bankKey] && !c.params.callback) c.lines = [pickLine(LINE_BANKS[bankKey], { n: Math.max(1, Math.round(c.params.costS ?? 0)) })];
     const vv = VISUAL_VARIANTS[c.kind];
     if (vv) {
@@ -42846,6 +43727,9 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
       }
     }
   }
+  if ((cm.bell || 0) >= 3) {
+    for (const c of out) if (["goose_toll", "treadmill_hill", "pb_bell", "pointing_standoff"].includes(c.kind)) c.params.gooseBell = true;
+  }
   out.forEach((c, i) => {
     c.id = `cs${i + 1}`;
     delete c._score;
@@ -42855,6 +43739,14 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     cm.races = raceNo;
     for (const c of out) cm.last[c.kind] = raceNo;
     for (const k of new Set(out.map((c) => c.kind))) cm.night[k] = (cm.night[k] || 0) + 1;
+    const wl = out.find((c) => c.kind === "sub20_wall");
+    if (wl) {
+      cm.wall.shown = (cm.wall.shown || 0) + 1;
+      cm.wall.holes = (cm.wall.holes || 0) + wl.params.near.length;
+    }
+    if (out.some((c) => c.kind === "pb_bell")) cm.bell = (cm.bell || 0) + 1;
+    const rd = out.find((c) => c.kind === "road_to_100");
+    if (rd) cm.road = [.../* @__PURE__ */ new Set([...cm.road || [], ...rd.params.numbers])];
     for (const [k, v] of Object.entries(sigVar)) cm.variants[k] = v;
     if (cm._sig) {
       cm.funfairSigs = [...cm.funfairSigs || [], cm._sig];
@@ -42886,12 +43778,15 @@ async function j(u) {
 var FUN = /* @__PURE__ */ new Set(["hook_a_duck", "test_strength", "funfair"]);
 async function main() {
   const kind = qs.get("cutscene") || "all";
+  const cfx = qs.get("cfx");
   const fx = qs.get("fixture") || (FUN.has(kind) ? "funfair" : "real");
-  const [course, park, round] = await Promise.all([j("/data/course/course.json"), j("/data/course/park.json"), j(`/client/tv/race/fixtures/${fx}.json`)]);
+  const [course, park, round] = await Promise.all([j("/data/course/course.json"), j("/data/course/park.json"), j(cfx ? `/client/tv/race/cutscenes/fixtures/${cfx}.json` : `/client/tv/race/fixtures/${fx}.json`)]);
   if (qs.get("shot")) document.body.classList.add("shot");
   const plan = round.racePlan;
-  const force = kind === "all" || kind === "funfair" ? null : kind;
-  let cs = planCutscenes({ racePlan: plan, runners: round.public.runners, rng: Number(qs.get("seed") || 7), force, roundNumber: Number(qs.get("round") || 3) });
+  const force = kind === "all" || kind === "funfair" || cfx ? null : kind;
+  const mem = qs.get("night") ? JSON.parse(qs.get("night")) : null;
+  let cs = planCutscenes({ racePlan: plan, runners: round.csRunners || round.public.runners, rng: cfx ? round.seed : Number(qs.get("seed") || 7), force, roundNumber: Number(qs.get("round") || 3), sessionMemory: mem });
+  if (cfx) cs = cs.filter((c) => c.kind === (kind === "all" ? cfx : kind));
   if (force && !["hook_a_duck", "test_strength"].includes(force)) cs = cs.filter((c) => c.kind === force);
   if (kind === "funfair" || ["hook_a_duck", "test_strength"].includes(force)) cs = cs.filter((c) => c.group?.startsWith("funfair"));
   if (qs.get("variant")) {

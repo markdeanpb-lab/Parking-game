@@ -34,7 +34,14 @@ let screen = null; // { key, update?, destroy? }
 let gestureDone = params.has('autostart');
 let localMute = params.has('mute');
 const audio = createAudio();
-const voice = createVoice({ onLine: showSub, onIdle: () => { audio.duck(false); } });
+// Premium (Kokoro) voices: the Node edition serves them from the host (npm run voices:download); the web edition
+// sets MARKRUN_VOICE_SOURCE = 'remote' and loads them from the Hugging Face CDN once (browser cache).
+const VOICE_SOURCE = globalThis.MARKRUN_VOICE_SOURCE || 'local';
+const voice = createVoice({
+  onLine: showSub, onIdle: () => { audio.duck(false); }, audio,
+  premium: { source: VOICE_SOURCE, localBase: '/voices/', threads: Number(params.get('ttsThreads')) || undefined, onStatus: onVoiceStatus },
+});
+window.__markrun.voice = voice;
 
 // ---------- stage scaling ----------
 function fit() {
@@ -83,6 +90,7 @@ function unlockAll() {
   audio.unlock();
   $('#gesture').classList.add('gone');
   try { window.speechSynthesis?.getVoices(); } catch { /* */ }
+  audio.preload();
   applyAudioSettings();
   if (S) phaseMusic(S, true);
 }
@@ -97,6 +105,7 @@ function applyAudioSettings() {
   audio.setMusicEnabled(st.music !== false);
   voice.setEnabled(!localMute && st.voice !== false && SPEED <= 1.5);
   voice.setVolume(Math.min(1, (st.volume ?? 0.8) + 0.1));
+  if (S) voice.setPremium(st.premiumVoices !== false && st.voice !== false && SPEED <= 1.5 && !params.has('nopremium'));
   $('#btn-mute').textContent = localMute ? '🔇' : '🔊';
 }
 $('#btn-mute').addEventListener('click', (e) => { e.stopPropagation(); localMute = !localMute; applyAudioSettings(); });
@@ -160,6 +169,43 @@ function onState(st) {
   renderHud(st);
   renderNextHint(st);
   phaseMusic(st);
+  syncVoicePrefetch(st);
+}
+
+// Premium voices: the race commentary arrives (TV only) while bets are placed. Register it for rendering, timed on an
+// estimate of when the race will start; the race screen fixes the clock when the broadcast really starts.
+let vpKey = '';
+function syncVoicePrefetch(st) {
+  const vp = st.voicePrefetch;
+  if (!vp?.lines?.length || !voice.premiumOn) return;
+  const group = `race:${vp.roundId}`;
+  const nBets = Object.values(st.bets || {}).reduce((a, b) => a + (b?.length || 0), 0);
+  const startAt = st.revealed ? Date.now() + 4000 + nBets * 1100 + 6000
+    : st.deadline ? Date.now() + Math.max(0, st.deadline - net.serverNow()) + 15000 : Date.now() + 75000;
+  const key = `${vp.roundId}|${vp.personalised}|${vp.lines.length}`;
+  if (key !== vpKey) {
+    vpKey = key;
+    voice.prefetch(group, vp.lines.map((l) => ({ text: l.text, speaker: l.speaker, atMs: Math.max(0, l.b) * 1000, priority: l.priority || 2 })), { startAt });
+  } else voice.groupStarts(group, startAt);
+}
+// Intro: the news desk (round 1), the theme card and the runner introductions, in the order they're spoken.
+function prefetchIntro(st, withCold) {
+  if (!voice.premiumOn) return;
+  const round = st.round;
+  const lines = [];
+  let at = 1500;
+  const push = (text, speaker, priority = 3, min = 2600) => { if (!text) return; lines.push({ text, speaker: speaker === 'pam' ? 'pam' : 'jeff', atMs: at, priority }); at += Math.max(min, String(text).split(/\s+/).length * 330 + 900); };
+  if (withCold) for (const l of newsDeskScript(st).lines.slice(0, 10)) push(l.text, l.speaker);
+  if (round.theme?.label) for (const l of themeLinesFor(st, round.theme).slice(0, 3)) push(l.text, l.speaker);
+  const runners = [...round.runners].sort((a, b) => a.lane - b.lane);
+  if (round.number >= 2) { const l = (round.introLines || []).find((x) => x.text) || { speaker: 'jeff', text: `Round ${round.number}: ${round.title}! Five Marks, one winner.` }; push(l.text, l.speaker || 'jeff', 3, 5500); }
+  else {
+    const l0 = (round.introLines || []).find((x) => x.text);
+    if (l0) push(l0.text, l0.speaker || 'jeff', 3, 7000);
+    runners.forEach((r, i) => push(r.intro || `${r.nickname}. ${r.tagline || ''}`, i % 2 ? 'pam' : 'jeff', 2, 5700));
+  }
+  push('The book is open! Check your phones for your secret clues.', 'pam', 2);
+  voice.prefetch(`intro:${round.roundId}`, lines, { startAt: Date.now() });
 }
 
 function screenKey(st) {
@@ -254,6 +300,42 @@ function toast(msg, kind = '') {
   setTimeout(() => { if (t.parentNode) t.remove(); }, 3200);
 }
 
+// premium voices: a one-line status for ⚙ Options
+function voiceStatusText(set = S?.settings || {}) {
+  const v = voice.premium?.status;
+  if (set.voice === false) return '';
+  if (set.premiumVoices === false || !v) return 'Commentators use this computer\'s built-in voices.';
+  const pct = Math.round((v.progress || 0) * 100);
+  switch (v.status) {
+    case 'ready': return `✨ Premium voices ready${v.threads > 1 ? ` (${v.threads} threads)` : ''}. Lines not ready in time use the built-in voices.`;
+    case 'loading': return v.cached || VOICE_SOURCE === 'local' ? `✨ Loading premium voices… ${pct}%` : `✨ Downloading premium voices… ${v.loadedMB || 0} of ~${v.totalMB || 90} MB (once)`;
+    case 'checking': return '✨ Checking premium voices…';
+    case 'unavailable': return v.reason === 'not-downloaded' ? '💡 Premium voices aren\'t downloaded: run <code>npm run voices:download</code> on the host computer. Built-in voices for now.'
+      : v.reason === 'offline' ? 'Premium voices need the internet the first time. Built-in voices for now.' : `Premium voices unavailable here (${esc(v.reason)}). Built-in voices for now.`;
+    case 'error': return `Premium voices failed to start (${esc(String(v.lastError).slice(0, 80))}). Built-in voices for now.`;
+    default: return '';
+  }
+}
+let lastVoiceStatus = '';
+function onVoiceStatus(v) {
+  const key = `${v.status}|${Math.round((v.progress || 0) * 20)}|${v.reason}`;
+  if (key === lastVoiceStatus) return;
+  lastVoiceStatus = key;
+  log({ type: 'premium-voice', status: v.status, reason: v.reason, progress: v.progress });
+  const el2 = $('#tvmodal .vstat');
+  if (el2) el2.innerHTML = voiceStatusText();
+  if (v.status === 'ready') prefetchStatic();
+}
+// lines that can be said any time (rendered first, while the lobby is up)
+function prefetchStatic() {
+  voice.prefetch('static', [
+    ['jeff', 'Halfway! The market is open. One bet each — quick!'], ['pam', 'Market closed! Back to the action!'],
+    ['pam', "It's a photo finish! Hold your breath!"], ['jeff', "And they're off!"], ['jeff', 'Right then. The bets, smallest first!'],
+    ['pam', 'The book is open! Check your phones for your secret clues.'], ['jeff', 'Welcome back to MARKRUN!'],
+    ['jeff', 'Nobody has bet a penny. Cowards, the lot of them.'], ['pam', 'Nobody won, nobody lost. The bookie is furious.'],
+  ].map(([speaker, text], i) => ({ speaker, text, atMs: i, priority: 1 })));
+}
+
 // subtitles (always on), max 2 visible
 function showSub(item) {
   audio.duck(true);
@@ -261,7 +343,7 @@ function showSub(item) {
   subsEl.appendChild(s);
   const maxSubs = 1; // one commentator line at a time, everywhere
   while (subsEl.children.length > maxSubs) subsEl.firstElementChild.remove();
-  const ttl = Math.max(3000, item.text.split(/\s+/).length * 420 + 1500);
+  const ttl = item.durMs ? Math.max(1800, item.durMs + 700) : Math.max(3000, item.text.split(/\s+/).length * 420 + 1500);
   setTimeout(() => { s.classList.add('out'); setTimeout(() => s.remove(), 450); }, ttl);
   log({ type: 'line', text: item.text, speaker: item.speaker });
 }
@@ -363,9 +445,11 @@ function lobbyScreen(st) {
         setRow('Bet timer', 'betTimer', set.betTimer ? `${set.betTimer}s` : 'Off', stepper),
         setRow('Drinking', 'drinkingMode', '', toggle(set.drinkingMode, '🍺 ON')),
         setRow('Voice', 'voice', '', toggle(set.voice, '🎙️ ON')),
+        setRow('Premium voices <small>(downloads ~90 MB once)</small>', 'premiumVoices', '', toggle(set.premiumVoices !== false, '✨ ON')),
         setRow('Music', 'music', '', toggle(set.music, '🎵 ON')),
         setRow('Volume', 'volume', `${vol * 10}%`, stepper),
       ].join('')}</div>
+      <div class="vstat">${voiceStatusText(set)}</div>
       <button class="adv-link" data-advanced>${advanced ? '▾ Advanced' : '▸ Advanced options'}</button>
       ${advanced ? `<div class="optgrid adv">${[
         setRow('Rounds', 'roundsPerGame', set.roundsPerGame, stepper),
@@ -389,7 +473,7 @@ function lobbyScreen(st) {
     const k = b.closest('[data-k]')?.dataset.k;
     if (!k) return undefined;
     const st2 = S.settings;
-    if (b.dataset.toggle !== undefined) return send({ t: 'settings', settings: { [k]: !st2[k] } });
+    if (b.dataset.toggle !== undefined) return send({ t: 'settings', settings: { [k]: k === 'premiumVoices' ? st2[k] === false : !st2[k] } });
     const d = Number(b.dataset.d);
     let v;
     if (k === 'betTimer') { const i = TIMERS.indexOf(st2[k]); v = TIMERS[Math.max(0, Math.min(TIMERS.length - 1, (i < 0 ? 2 : i) + d))]; }
@@ -574,7 +658,13 @@ function newsDeskFallback(st) {
       'WEATHER: GRASS WET, AGAIN', 'THE HILL: STILL THERE', `${n} RACES TONIGHT · FINAL ROUND PAYS DOUBLE`],
   };
 }
+const scriptMemo = new Map(); // the same (possibly random) script for the pre-render and the show
 function newsDeskScript(st) {
+  const k = `nd|${st.sessionId}|${st.gameNumber}|${st.round?.roundId}`;
+  if (!scriptMemo.has(k)) scriptMemo.set(k, newsDeskScriptRaw(st));
+  return scriptMemo.get(k);
+}
+function newsDeskScriptRaw(st) {
   const fromServer = st.introExtras?.newsDesk;
   if (fromServer?.lines?.length) return fromServer;
   const m = moment('newsDeskScript', st.players.map((p) => ({ id: p.id, name: p.name })), { ...st.settings, rounds: st.roundsPerGame, budget: budgetOf(st) });
@@ -605,11 +695,13 @@ async function playNewsDesk(root, st, tok) {
   </div>`);
   root.appendChild(desk);
   document.body.classList.add('newsdesk-on');
-  audio.play('sting'); audio.play('fanfare');
+  audio.play('theme');
   let skipped = false;
   setSkip(() => { skipped = true; voice.clear(); });
   const strapEl = $('.nd-strap > span', desk), capWho = $('.nd-cap .who', desk), capTxt = $('.nd-cap .txt', desk), l3 = $('.nd-l3', desk);
   await sleepT(900, tok);
+  // hold the opening beat (under the sting) until the first line is rendered with the premium voice, if it's coming
+  await voice.whenRendered(lines.slice(0, 1).map((l) => ({ text: l.text, speaker: l.speaker === 'pam' ? 'pam' : 'jeff' })), SPEED > 1.5 ? 0 : 3000);
   const t0 = Date.now();
   for (let i = 0; i < lines.length && !tok.cancelled && !skipped; i++) {
     const l = lines[i];
@@ -638,6 +730,11 @@ async function playNewsDesk(root, st, tok) {
 
 // ---------- theme card: big label, blurb, up to 3 explainer lines, an icon; the presenters read it out ----------
 function themeLinesFor(st, theme) {
+  const k = `th|${st.round?.roundId}|${theme?.key}`;
+  if (!scriptMemo.has(k)) scriptMemo.set(k, themeLinesForRaw(st, theme));
+  return scriptMemo.get(k);
+}
+function themeLinesForRaw(st, theme) {
   const fromServer = st.introExtras?.themeLines;
   if (Array.isArray(fromServer) && fromServer.length) return fromServer;
   const m = moment('themeAnnouncement', theme);
@@ -664,7 +761,7 @@ async function playThemeCard(root, st, tok) {
     <div class="ts-pres"><div class="mini jeff">${presenterSvg('jeff', 130)}</div><div class="mini pam">${presenterSvg('pam', 130)}</div></div>
   </div>`);
   root.appendChild(card);
-  audio.play('reveal'); audio.play('fanfare');
+  audio.play('theme');
   let skipped = false;
   setSkip(() => { skipped = true; voice.clear(); });
   const lines = themeLinesFor(st, t).slice(0, 3);
@@ -728,6 +825,7 @@ function introScreen(st) {
   tok.timers.push(hb);
   const coldKey = `markrun.coldopen.${st.sessionId}.${st.gameNumber}`;
   const seenCold = () => { if (coldOpenDone === `${st.sessionId}.${st.gameNumber}`) return true; try { return sessionStorage.getItem(coldKey) === '1'; } catch { return false; } };
+  prefetchIntro(st, round.number === 1 && !seenCold());
   async function coldOpen() {
     if (round.number !== 1 || seenCold()) return;
     coldOpenDone = `${st.sessionId}.${st.gameNumber}`;
@@ -856,6 +954,7 @@ function bettingScreen(st) {
     timerEl.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     timerEl.classList.toggle('hurry', left <= 20);
     if (left <= 10 && left !== lastSec) audio.play('tick');
+    if (left <= 20 && left > 0) audio.setMusicLayer('bet_b', true); // the timer bed tightens for the last 20 s
     if (left <= 20 && left > 0 && !hurried && S.players.some((p) => !p.locked)) {
       hurried = true;
       const slow = S.players.filter((p) => !p.locked).map((p) => p.name);
@@ -893,6 +992,7 @@ function revealScreen(st) {
       .map((x) => ({ ...x, line: lines.shift() || null }));
   }
   const pcol = (pid) => st.players.find((p) => p.id === pid)?.avatar?.colour || '#fff';
+  voice.prefetch(`reveal:${round.roundId}`, seq.filter((x) => x.line?.text).map((x, i) => ({ text: x.line.text, speaker: x.line.speaker || 'jeff', atMs: 1300 + i * 950, priority: i === seq.length - 1 ? 3 : 1 })), { startAt: Date.now() });
   const root = el(`<div class="faceoff">
     <div class="rh outlined">THE BETS ARE IN!</div>
     <div class="fo-grid">${runners.map((r) => `<div class="fo-card" data-rid="${r.id}"><div class="fo-top" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 150)}</div></div><b>${esc(tvName(r))}</b>${rankHtml(round, r, 'fo-rank')}<div class="fo-chips"></div></div>`).join('')}</div>
@@ -983,8 +1083,9 @@ function raceScreen(st) {
   screenEl.appendChild(root);
   document.body.classList.add('racing');
   const mkLayer = $('.market-layer', root);
-  let lastWhoosh = 0;
+  let lastWhoosh = 0, lastSwell = 0;
   let finished = 0;
+  const startRaceBed = () => { if (S?.settings?.music !== false && !tok.cancelled && !finished) audio.startMusic('race'); };
   let marketState = 'idle'; // idle | waiting | open | done
   // P4: ONE live number per player - "if it ended now" - from the game's provisionalNet and the live order
   const ifnowEl = $('.ifnow', root);
@@ -1090,18 +1191,20 @@ function raceScreen(st) {
     document.body.classList.add('racing');
     if (raceViewKind === '3d') root.querySelector('.live')?.remove(); // the 3D HUD has its own lap/distance chips
     if (raceViewKind !== '3d') {
-      audio.play('horn');
+      audio.play('horn'); startRaceBed();
       setTimeout(() => audio.play('crowd', { dur: 3, peak: 0.25 }), 300);
       say("And they're off!", 'jeff', 3);
     } else audio.play('crowd', { dur: 4, peak: 0.2 });
     log({ type: 'race-start', kind: raceViewKind });
+    voice.groupStarts(`race:${round.roundId}`); // the pre-rendered commentary is now on the broadcast clock
+    voice.forget(`intro:${round.roundId}`); voice.forget(`reveal:${round.roundId}`);
     // report the broadcast clock so phones can show their runners live (they never get the plan)
     clockIv = setInterval(() => { const b = v.broadcastTime; if (Number.isFinite(b)) send({ t: 'raceTime', roundId: round.roundId, b }); }, 1000);
     ifIv = setInterval(() => updateIfNow(v), 500);
     v.playRace((e) => {
       if (tok.cancelled || !e) return;
       log({ type: 'race-event', e: e.type || 'line', text: e.text });
-      if (e.kind === 'countdown') { audio.play(e.n === 0 ? 'go' : 'beep'); if (e.n === 0) { audio.play('horn'); audio.play('crowd', { dur: 3, peak: 0.28 }); } return; }
+      if (e.kind === 'countdown') { audio.play(e.n === 0 ? 'go' : 'beep'); if (e.n === 0) { audio.play('horn'); audio.play('crowd', { dur: 3, peak: 0.28 }); startRaceBed(); } return; }
       if (e.kind === 'photo_finish') { audio.play('stamp'); audio.play('heartbeat', { beats: 5 }); say("It's a photo finish! Hold your breath!", 'pam', 3); return; }
       if (e.kind === 'winner_replay_done') { showStamps(); return; }
       // cutscenes: a sting in and out; live commentary is dropped while one plays, its own lines are spoken instead
@@ -1110,6 +1213,8 @@ function raceScreen(st) {
           cutActive = e.id; cutSpeaker = null;
           if (cutLog.roundId === round.roundId) cutLog.ids.add(e.id);
           voice.clear(); audio.duck(true); audio.play('scratch');
+          const kind = String(e.cutscene?.kind || '');
+          setTimeout(() => audio.play(/everest|heart_vs_heart|pointing_standoff|sore_loser|pb_bell|test_strength|before_after/.test(kind) ? 'sting_drama' : /funfair|duck|ice_cream|goose|cannonball|spaghetti|raincloud|wrong_kit|breakfast|treadmill|incline|mirror|photographer/.test(kind) ? 'sting_comedy' : 'sting_in', { gain: 0.55 }), 260);
         } else if (e.phase === 'end' && (cutActive === e.id || cutActive)) {
           cutActive = null;
           audio.play(cutSpeaker === 'pam' ? 'clink' : 'scratch');
@@ -1124,14 +1229,14 @@ function raceScreen(st) {
         return;
       }
       switch (e.type) {
-        case 'overtake': if (Date.now() - lastWhoosh > 1500) { lastWhoosh = Date.now(); audio.play('whoosh'); } break;
+        case 'overtake': if (Date.now() - lastWhoosh > 1500) { lastWhoosh = Date.now(); audio.play('whoosh'); } if (Date.now() - lastSwell > 7000) { lastSwell = Date.now(); audio.play('crowd', { dur: 3, peak: 0.16 }); } break;
         case 'lead_change': audio.play('whoosh'); audio.play('crowd', { dur: 2, peak: 0.18 }); break;
         case 'breakaway': audio.play('crowd', { dur: 2.5, peak: 0.2 }); break;
         case 'lap':
           if (marketState === 'idle' && S?.marketAvailable) { log({ type: 'market' }); runMarket(v); } else audio.play('bell');
           break;
         case 'final_stretch': audio.play('crowd', { dur: 6, peak: 0.4 }); if (S?.settings?.music !== false) audio.startMusic('final'); break;
-        case 'finish': finished++; if (finished === 1) { audio.stopMusic(0.6); audio.play('fanfare'); audio.play('crowd', { dur: 4, peak: 0.45 }); } break;
+        case 'finish': finished++; if (finished === 1) { audio.stopMusic(0.6); audio.play('fanfare'); audio.play('crowd', { dur: 6, peak: 0.45 }); } break;
         default: break;
       }
     }, async () => {
@@ -1212,57 +1317,67 @@ function resultsScreen(st) {
     done(0);
   }
 
+  // The reveal: the emotional peak. Each run gets its moment in the spotlight, last place to the winner: a face-down
+  // card, (if someone is Mark) "Remember this one?" on his phone and "Does he really?" on the others', then the flip:
+  // the Strava title (or the punchline) big, the context line, PB/rank and weather badges, and the clue that mattered.
+  // The card then drops into the row below; the winner stays big for the punchline.
   async function stageReveal() {
     const t = tok;
+    const s0 = S || st;
     const order = res.finishOrder.map((f) => f.runnerId);
-    const rv = new Map((res.reveal || []).map((x) => [x.runnerId, x]));
-    // sofa-readable: date, time, Strava title only (stats + fun facts go to the phones)
-    root.innerHTML = head('WHO WERE THEY REALLY?', 'Every runner was a real Mark, on a real Saturday 🕵️ — details on your phones') + `<div class="reveal-grid">${order.map((rid, i) => {
-      const r = runnerById(round, rid); const x = rv.get(rid) || {};
-      const f = res.finishOrder[i];
-      return `<div class="rv" data-i="${i}">
-        <div class="face front" style="background:${esc(r?.colour?.primary)}"><div><div class="rp">${r ? portrait(r, 220) : ''}</div><div class="q outlined">?</div></div></div>
-        <div class="face back"><div class="bh" style="background:${esc(r?.colour?.primary)}"><div class="rp">${r ? portrait(r, 74) : ''}</div><div class="n">${esc(r?.nickname || rid)}</div></div>
-          <div class="date">${esc(x.dateText || x.date || x.headline || '')}</div>
-          <div class="time num">${esc(f?.timeText || '')}</div>
-          ${(() => {
-            const facts = (x.funFacts || []).filter(Boolean);
-            const generic = !x.stravaTitle || /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$/i.test(String(x.stravaTitle).trim()) || /^(run|parkrun)$/i.test(String(x.stravaTitle).trim());
-            const box = generic ? (facts[0] ? `<div class="strava fact"><span class="k">DID YOU KNOW?</span>${esc(facts[0])}</div>` : '') : `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>`;
-            const ctx = Array.isArray(x.context) ? x.context[0] : x.context || x.contextLine || x.contextText;
-            const extra = ctx || x.punchline || facts[generic ? 1 : 0];
-            return box + (extra ? `<div class="ff">${esc(extra)}</div>` : '');
-          })()}
-          ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'COURSE PB!' : 'PB! 🏅'}</div>` : ''}
-          <div class="place">${ordinalHtml(f?.place || i + 1)}</div>
-        </div></div>`;
-    }).join('')}</div>`;
-    const cards = $$('.rv', root);
-    await sleepT(900, t);
-    for (let i = cards.length - 1; i >= 0; i--) { // last place first, the winner last
+    const n = order.length;
+    const mark = markPlayerOf(s0);
+    root.innerHTML = head('WHO WERE THEY REALLY?', mark ? `Every runner was a real ${esc(mark.name)}, on a real Saturday 🕵️` : 'Every runner was a real Mark, on a real Saturday 🕵️')
+      + `<div class="rvx-spot"></div><div class="rvx-ask"></div><div class="rvx-row">${order.map((rid, i) => {
+        const r = runnerById(round, rid);
+        return `<div class="rvm" data-i="${i}" style="--c1:${esc(r?.colour?.primary || '#2a62e0')}"><div class="rvm-in"><div class="rvm-f"><span class="rp">${r ? portrait(r, 96) : ''}</span><span class="q outlined">?</span></div><div class="rvm-b"></div></div></div>`;
+      }).join('')}</div>`;
+    const spot = $('.rvx-spot', root), ask = $('.rvx-ask', root);
+    const minis = $$('.rvm', root);
+    await sleepT(700, t);
+    for (let i = n - 1; i >= 0; i--) {
       if (t.cancelled) return;
-      cards[i].classList.add('flip');
-      const x = rv.get(order[i]);
-      const r = runnerById(round, order[i]);
-      audio.play(i === 0 ? 'fanfare' : 'reveal');
-      if (i === cards.length - 1 && cards.length > 1) say(`And in last place, ${r?.nickname}: ${x?.dateText || ''}`, 'pam', 2);
-      if (i === 0) { cards[0].classList.add('winner-big'); say(`The winner, ${r?.nickname}: ${x?.dateText || ''}, ${res.finishOrder[0]?.timeText || ''}.`, 'jeff', 3); }
-      await sleepT(i === 0 ? 1800 : 2200, t);
+      const m = revealModel(s0, order[i]);
+      minis.forEach((x, j) => x.classList.toggle('on', j === i));
+      spot.innerHTML = revealCardHtml(m);
+      const card = $('.rvc', spot);
+      if (i === 0) card.classList.add('winner');
+      audio.play('whoosh');
+      voice.groupStarts(`res:reveal${i}:${round.roundId}`);
+      // the memory moment: Mark's phone asks first; the TV waits for the answers (or ~9 s)
+      if (mark) {
+        send({ t: 'markAsk', roundId: round.roundId, runnerId: m.rid, index: n - 1 - i });
+        await markWait(t, m.rid, mark);
+        if (t.cancelled) return;
+      } else await sleepT(i === n - 1 ? 600 : 400, t);
+      card.classList.add('flip');
+      audio.play(i === 0 ? 'fanfare' : 'cardflip');
+      if (i === 0) { confetti(document.body, { count: 90 }); audio.play('crowd', { dur: 5, peak: 0.3 }); }
+      const line = revealLine(m, i, n);
+      if (line) say(line.text, line.speaker, i === 0 || i === n - 1 ? 3 : 2);
+      if (mark) showMarkVerdict(card, m.rid, mark, t);
+      await sleepT(i === 0 ? 2600 : 3000, t);
+      if (i > 0) await waitVoice(t, 300, 4500);
+      if (t.cancelled) return;
+      ask.textContent = '';
+      minis[i].classList.add('done');
+      $('.rvm-b', minis[i]).innerHTML = `${ordinalHtml(m.place)}<b class="t">${esc(m.shortBig)}</b><span class="num">${esc(m.time)}</span>`;
+      if (i > 0) { card.classList.add('away'); await sleepT(350, t); }
     }
-    // a beat of silence, then the punchline lands
-    const w0 = rv.get(order[0]) || {};
-    const generic = !w0.stravaTitle || /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$/i.test(String(w0.stravaTitle).trim());
-    const punch = w0.punchline || (!generic ? `“${w0.stravaTitle}”` : '');
+    minis.forEach((x) => x.classList.remove('on'));
+    // a beat of silence, then the punchline lands (a generic Strava title already shows it big on the card)
+    const w0 = revealModel(s0, order[0]);
+    const punch = w0.generic ? '' : w0.reveal.punchline;
     await waitVoice(t, 900, 5000);
     if (punch && !t.cancelled) {
       root.appendChild(el(`<div class="punch"><div class="anim-pop">${esc(punch)}</div></div>`));
       audio.play('stamp');
-      say(punch.replace(/[“”]/g, ''), 'pam', 3);
+      say(punch, 'pam', 3);
     }
     const rmf = typeof res.realMarkFact === 'string' ? res.realMarkFact : res.realMarkFact?.text;
     if (rmf && !t.cancelled) {
       await waitVoice(t, 2200, 6000);
-      root.querySelector('.punch')?.remove();
+      root.querySelectorAll('.punch').forEach((x) => x.classList.add('gone'));
       root.appendChild(el(`<div class="punch rmf"><div class="anim-pop"><small>THE REAL MARK</small>${esc(rmf)}</div></div>`));
       say(rmf, 'jeff', 3);
     }
@@ -1270,17 +1385,57 @@ function resultsScreen(st) {
     if (truths.length && !t.cancelled) {
       await waitVoice(t, 2200, 6000);
       if (t.cancelled) return;
-      root.querySelectorAll('.punch').forEach((x) => x.remove());
+      root.querySelectorAll('.punch').forEach((x) => x.classList.add('gone'));
       root.classList.add('truthing');
       root.appendChild(el(`<div class="truths"><div class="th outlined white thin">WHAT REALLY HAPPENED</div>${truths.map((x, i) => {
         const r = runnerById(round, x.runnerId);
         return `<div class="tr panel white" style="animation-delay:${0.15 + i * 0.35}s"><span class="rp">${r ? portrait(r, 70) : ''}</span><div><span class="tk">DRAMATISATION</span><b>${esc(x.text)}</b></div></div>`;
       }).join('')}</div>`));
-      audio.play('scratch');
+      audio.play('sting_comedy', { gain: 0.7 });
       say(`What really happened: ${truths[0].text}`, 'pam', 2);
       await waitVoice(t, 3500 + truths.length * 1200, 8000);
     } else await waitVoice(t, 3000, 6000);
     done(1);
+  }
+  // wait for Mark's answer (and the believers/doubters) on this card; the banner shows who has answered
+  async function markWait(t, rid, mark) {
+    const ask = $('.rvx-ask', root);
+    const others = (S || st).players.filter((p) => p.id !== mark.id);
+    ask.innerHTML = `<div class="mk-ask anim-pop"><span class="ic">📱</span><div class="tx"><b>${esc(mark.name.toUpperCase())}: REMEMBER THIS ONE?</b>${others.length ? `<small>${others.map((p) => esc(p.name)).join(' & ')}: does he really? Believe or doubt: +${MARK_BONUS_PP}pp if you're right</small>` : '<small>Answer on your phone</small>'}</div><span class="who"></span><span class="cd num"></span></div>`;
+    const t0 = Date.now();
+    const maxMs = SPEED > 1.5 ? Math.max(T(9000), 3500) : 9000; // fast test runs still give the phones a moment
+    for (;;) {
+      if (t.cancelled) return;
+      const mm = S?.markMoment;
+      if (mm?.log?.some((x) => x.runnerId === rid)) break;
+      const o = mm?.open?.runnerId === rid ? mm.open : null;
+      if (o) {
+        const left = Math.max(0, Math.ceil((o.closesAt - net.serverNow()) / 1000));
+        const cd = ask.querySelector('.cd'); if (cd && cd.textContent !== String(left)) cd.textContent = String(left);
+        const who = ask.querySelector('.who');
+        const html = (o.answered || []).map((pid) => { const p = S.players.find((x) => x.id === pid); return p ? avatarHtml(p.avatar, 44) : ''; }).join('');
+        if (who && who.innerHTML !== html) { who.innerHTML = html; if (html) audio.play('pop'); }
+      }
+      if (Date.now() - t0 > maxMs) break;
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    ask.querySelector('.mk-ask')?.classList.add('out');
+  }
+  // the verdict arrives with the state (possibly a moment after the flip)
+  function showMarkVerdict(card, rid, mark, t) {
+    let tries = 0;
+    const iv = setInterval(() => {
+      if (t.cancelled || ++tries > 40) { clearInterval(iv); return; }
+      const e = S?.markMoment?.log?.find((x) => x.runnerId === rid);
+      if (!e) return;
+      clearInterval(iv);
+      const v = markVerdict(e, mark, S.players);
+      if (!v) return;
+      card.querySelector('.rvc-back')?.appendChild(el(`<div class="mk-verdict ${v.cls} anim-pop">${v.html}</div>`));
+      audio.play(Object.keys(e.bonus || {}).length ? 'kaching' : 'stamp');
+      say(v.say, 'jeff', 2);
+    }, 150);
+    t.timers.push(iv);
   }
 
   async function stageClues(s) {
@@ -1315,7 +1470,8 @@ function resultsScreen(st) {
     const drinking = s.settings.drinkingMode;
     root.innerHTML = head('PAY DAY', 'The bookie settles up 💰') + `<div class="payouts">${s.players.map((p) => {
       const pay = res.payouts?.[p.id] || { bets: [], net: 0, score: scoreOf(p) };
-      const lines = (pay.bets || []).map((b) => { const o = betOutcome(b); return `<div class="pl ${o.kind === 'won' ? 'won' : o.kind === 'push' ? 'push' : 'lost'}"><span class="mark">${o.kind === 'won' ? '✅' : o.kind === 'push' ? '↩️' : '❌'}</span><div class="lb">${esc(betLabel(round, b))}<small>${money(b.stake)} at ${esc(oddsText(round, b))}</small></div><div class="r">${o.text}</div></div>`; }).join('') || '<div class="pl show"><div class="lb">No bets placed. Sensible. Boring.</div></div>';
+      const lines = ((pay.bets || []).map((b) => { const o = betOutcome(b); return `<div class="pl ${o.kind === 'won' ? 'won' : o.kind === 'push' ? 'push' : 'lost'}"><span class="mark">${o.kind === 'won' ? '✅' : o.kind === 'push' ? '↩️' : '❌'}</span><div class="lb">${esc(betLabel(round, b))}<small>${money(b.stake)} at ${esc(oddsText(round, b))}</small></div><div class="r">${o.text}</div></div>`; }).join('') || '<div class="pl show"><div class="lb">No bets placed. Sensible. Boring.</div></div>')
+        + (pay.bonus ? `<div class="pl won bonus"><span class="mark">🧠</span><div class="lb">Memory bonus<small>called Mark's memory right</small></div><div class="r">${signedMoney(pay.bonus)}</div></div>` : '');
       return `<div class="pay panel slant" data-pid="${p.id}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;flex-direction:column;height:100%">
         <div class="who">${avatarHtml(p.avatar, 90)}${esc(p.name)}</div>
         <div class="lines">${lines}</div>
@@ -1347,13 +1503,14 @@ function resultsScreen(st) {
       audio.play('kaching'); confetti(document.body, { count: 140 });
       best.panel.classList.add('big-win');
       best.panel.appendChild(el('<div class="mood">🤑</div>'));
-      say(winLine(best.p.name, best.net), 'jeff', 3);
+      audio.play('fanfare');
+      say(winLine(best.p.name, best.net, round.roundId), 'jeff', 3);
     }
     if (worst && worst.net < 0) {
       setTimeout(() => audio.play('sadtrombone'), T(900));
       worst.panel.classList.add('big-loss');
       worst.panel.appendChild(el('<div class="raincloud">🌧️</div>'));
-      say(loseLine(worst.p.name, worst.net), 'pam', 3);
+      say(loseLine(worst.p.name, worst.net, round.roundId), 'pam', 3);
     }
     if (!best?.net && !worst?.net) say('Nobody won, nobody lost. The bookie is furious.', 'pam', 2);
     await waitVoice(t, 5000, 8000);
@@ -1402,6 +1559,8 @@ function resultsScreen(st) {
     }
     const name = s.resultStages[s.resultsStage];
     root.classList.remove('truthing');
+    if (first) prefetchResults(s);
+    voice.groupStarts(`res:${name}:${round.roundId}`);
     log({ type: 'results-stage', stage: name });
     if (name !== 'order' && raceView) disposeRaceView();
     if (name === 'order' && raceView && raceViewKind === '3d') {
@@ -1413,6 +1572,156 @@ function resultsScreen(st) {
   if (res) runStage(st);
   return { update: (s) => { if (s.results) runStage(s); }, destroy: () => { if (tok) cancelToken(tok); disposeRaceView(); } };
 }
+// ---------- reveal cards: one memory prompt per run ----------
+const MARK_BONUS_PP = 25; // server/net/game.mjs MARK_BONUS
+const GENERIC_TITLE_RE = /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$|^(run|parkrun)$|^finsbury( parkrun)?$/i;
+const ORD_WORDS = ['', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'];
+const markPlayerOf = (s) => { const id = s?.settings?.runnerPlayerId; return id ? s.players.find((p) => p.id === id) || null : null; };
+// Meteostat condition code (or the season word of the context line) -> icon + label
+function weatherBadge(x) {
+  const w = x.weather || {};
+  const c = Number(w.coco);
+  let icon = null;
+  if (c) icon = c <= 1 ? '☀️' : c === 2 ? '🌤️' : c === 3 ? '⛅' : c === 4 ? '☁️' : c <= 6 ? '🌫️' : c <= 9 || c === 17 || c === 18 ? '🌧️' : c <= 13 || c === 19 || c === 20 ? '🌨️' : c <= 16 || c === 21 || c === 22 ? '❄️' : '⛈️';
+  const ctx = String((Array.isArray(x.context) ? x.context[0] : '') || x.contextLine || '');
+  if (!icon) icon = /frosty/i.test(ctx) ? '❄️' : /cold/i.test(ctx) ? '🥶' : /chilly/i.test(ctx) ? '🌥️' : /mild/i.test(ctx) ? '⛅' : /warm|hot/i.test(ctx) ? '☀️' : null;
+  if (Number(w.prcpMm) >= 0.5 && !/🌧️|🌨️|⛈️|❄️/u.test(icon || '')) icon = '🌦️';
+  if (!icon && w.tempC == null) return null;
+  const windy = Number(w.windKmh) >= 30;
+  return { icon: icon || '🌡️', text: `${w.tempC != null ? `${w.tempC}°C` : ''}${windy ? `${w.tempC != null ? ' · ' : ''}💨 ${w.windKmh} km/h` : ''}` };
+}
+// the clue that mattered for this runner, tied back to what really happened
+function clueTie(s, rid) {
+  const all = s.results?.clueReview || [];
+  const mine = all.filter((c) => c.runnerId === rid);
+  const c = mine.find((x) => x.highlight) || mine.find((x) => x.verdict === 'useful') || mine.find((x) => x.verdict === 'red_herring');
+  if (!c) return null;
+  const ct = (s.clues || []).find((x) => x.id === c.clueId) || null;
+  const raw = c.text || ct?.text;
+  if (!raw) return null;
+  const hl = clueParts(ct || { text: raw }, 7).headline.replace(/[.!?…]+$/, '');
+  const p = s.players.find((x) => x.id === c.owner);
+  const who = c.owner === 'public' ? '📺 The TV clue' : `${ct?.tier === 'hot' ? '🔥' : '🤫'} ${p ? `${p.name}'s ${ct?.tier === 'hot' ? 'hot tip' : 'secret clue'}` : 'A secret clue'}`;
+  const tail = c.verdict === 'useful' ? 'True, and it told you everything.' : c.verdict === 'red_herring' ? 'True… and a total red herring.' : 'True. It changed nothing.';
+  return { who, hl, tail, verdict: c.verdict };
+}
+function revealModel(s, rid) {
+  const res = s.results;
+  const x = (res.reveal || []).find((v) => v.runnerId === rid) || {};
+  const f = res.finishOrder.find((v) => v.runnerId === rid) || {};
+  const r = runnerById(s.round, rid);
+  const title = String(x.stravaTitle || '').trim();
+  const generic = x.genericTitle ?? (!title || GENERIC_TITLE_RE.test(title));
+  const punch = x.punchline || (x.funFacts || [])[0] || '';
+  const big = generic ? punch : `“${title}”`;
+  const ctx = x.contextLine || (Array.isArray(x.context) ? x.context.join(', ') : x.context) || '';
+  const badge = x.pbKind === 'parkrun' ? { cls: 'pb', text: '🏅 PARKRUN PB' } : x.pbKind === 'finsbury' || x.wasPB ? { cls: 'pb', text: '🏅 COURSE PB' }
+    : x.rank === 1 ? { cls: 'pb', text: '⚡ HIS FASTEST EVER HERE' } : x.rank && x.of ? { cls: x.rank <= 10 ? 'top' : x.rank > x.of - 10 ? 'low' : '', text: `#${x.rank} OF ${x.of}` } : null;
+  return {
+    rid, r, reveal: x, place: f.place || 0, time: f.timeText || fmtTime(f.officialS), date: x.dateText || x.date || '',
+    generic, big, bigLen: big.length, sub: generic ? (title ? `Strava: “${title}”` : '') : punch,
+    shortBig: generic ? (title || punch) : title, ctx, badge, wx: weatherBadge(x), tie: clueTie(s, rid),
+  };
+}
+function revealCardHtml(m) {
+  const r = m.r;
+  const size = m.bigLen > 70 ? 46 : m.bigLen > 44 ? 56 : m.bigLen > 26 ? 68 : 84;
+  return `<div class="rvc" style="--c1:${esc(r?.colour?.primary || '#2a62e0')}">
+    <div class="rvc-front"><div class="rp">${r ? portrait(r, 300) : ''}</div><div class="nm outlined white">${esc(r?.nickname || '')}</div><div class="pl">${ordinalHtml(m.place)}</div><div class="q outlined">?</div></div>
+    <div class="rvc-back">
+      <div class="rvc-top"><span class="rp">${r ? portrait(r, 84) : ''}</span><span class="nm">${esc(r?.nickname || '')}</span><span class="pl">${ordinalHtml(m.place)}</span></div>
+      <div class="rvc-body">
+        <div class="kick">${m.generic ? 'THAT MORNING' : 'HE CALLED IT ON STRAVA'}</div>
+        <div class="big ${m.generic ? 'punchy' : 'strava'}" style="font-size:${size}px">${esc(m.big)}</div>
+        ${m.sub ? `<div class="sub2">${esc(m.sub)}</div>` : ''}
+        ${m.ctx ? `<div class="ctx">${esc(m.ctx)}</div>` : ''}
+        <div class="badges"><span class="bd date">📅 ${esc(m.date)}</span><span class="bd time num">⏱ ${esc(m.time)}</span>${m.badge ? `<span class="bd rank ${m.badge.cls}">${esc(m.badge.text)}</span>` : ''}${m.wx ? `<span class="bd wx"><i>${m.wx.icon}</i>${esc(m.wx.text)}</span>` : ''}</div>
+        ${m.tie ? `<div class="tie ${esc(m.tie.verdict)}"><span class="who">${esc(m.tie.who)}</span> said <b>“${esc(m.tie.hl)}”</b>. ${esc(m.tie.tail)}</div>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+// what the commentators say as each card flips (deterministic, so it can be rendered ahead of time)
+function revealLine(m, i, n) {
+  const nick = m.r?.nickname || 'this one';
+  if (i === n - 1 && n > 1) return { speaker: 'pam', text: `In last place, ${nick}: ${m.date}. ${m.generic ? '' : `${m.big.replace(/[“”]/g, '')}.`}`.trim() };
+  if (i === 0) return { speaker: 'jeff', text: `And the winner, ${nick}: ${m.date}, in ${m.time}.` };
+  return { speaker: i % 2 ? 'pam' : 'jeff', text: `${ORD_WORDS[m.place] || `Number ${m.place}`}: ${m.date}.${m.tie?.verdict === 'useful' ? ' And that clue was spot on.' : m.tie?.verdict === 'red_herring' ? ' And that clue? A red herring.' : ''}` };
+}
+// "Remember this one?" verdict for a card: chip on the card + a line
+function markVerdict(e, mark, players) {
+  const g = Object.entries(e.guesses || {}).map(([pid, ans]) => ({ p: players.find((x) => x.id === pid), ans, won: !!e.bonus?.[pid] })).filter((x) => x.p);
+  if (!e.mark && !g.length) return null;
+  const said = e.mark === 'yes' ? `🧠 ${esc(mark.name)}: “I remember it!”` : e.mark === 'no' ? `🤷 ${esc(mark.name)}: “No idea.”` : `🙊 ${esc(mark.name)} kept quiet`;
+  const chips = g.map((x) => `<span class="gch ${x.won ? 'won' : 'lost'}">${avatarHtml(x.p.avatar, 30)}${x.ans === 'believe' ? 'BELIEVED' : 'DOUBTED'}${x.won ? ` +${MARK_BONUS_PP}pp` : ''}</span>`).join('');
+  const o = g[0];
+  let sayTxt;
+  if (!e.mark) sayTxt = `${mark.name} isn't saying.`;
+  else if (!o) sayTxt = e.mark === 'yes' ? `${mark.name} remembers this one.` : `Not a flicker of recognition from ${mark.name}.`;
+  else if (e.mark === 'yes') sayTxt = o.ans === 'believe' ? `${mark.name} remembers it, and ${o.p.name} believes him. ${MARK_BONUS_PP} Parkpounds!` : `${mark.name} swears he remembers. ${o.p.name} isn't having it.`;
+  else sayTxt = o.ans === 'doubt' ? `${mark.name} has no memory of it, and ${o.p.name} called it. ${MARK_BONUS_PP} Parkpounds!` : `${mark.name} doesn't remember a thing. ${o.p.name} thought he would.`;
+  return { cls: e.mark === 'yes' ? 'yes' : 'no', html: `<div class="said">${said}</div>${chips ? `<div class="gs">${chips}</div>` : ''}`, say: sayTxt };
+}
+// every verdict line that could be said this round (two players: four outcomes), for pre-rendering
+function markVerdictLines(s) {
+  const mark = markPlayerOf(s);
+  if (!mark) return [];
+  const others = s.players.filter((p) => p.id !== mark.id);
+  const out = [];
+  for (const m of ['yes', 'no']) {
+    if (!others.length) out.push(markVerdict({ mark: m, guesses: {}, bonus: {} }, mark, s.players)?.say);
+    for (const ans of ['believe', 'doubt']) {
+      const o = others[0];
+      if (!o) continue;
+      const won = (ans === 'believe') === (m === 'yes');
+      out.push(markVerdict({ mark: m, guesses: { [o.id]: ans }, bonus: won ? { [o.id]: MARK_BONUS_PP } : {} }, mark, s.players)?.say);
+    }
+  }
+  return out.filter(Boolean).map((text) => ({ speaker: 'jeff', text }));
+}
+// Results: everything the commentators will say, registered for pre-rendering as soon as the results exist.
+// Each stage is its own group, re-timed when the stage really starts.
+function prefetchResults(s) {
+  const res = s.results;
+  if (!res?.finishOrder?.length || !voice.premiumOn) return;
+  const rid = s.round.roundId;
+  const lines = (arr, gap = 2500) => arr.filter((l) => l?.text).map((l, i) => ({ text: l.text, speaker: l.speaker || 'jeff', atMs: i * gap, priority: l.priority || 2 }));
+  const now = Date.now();
+  voice.prefetch(`res:order:${rid}`, lines((res.commentary || []).slice(0, 2).map((l) => ({ ...l, priority: 3 })), 2500).map((l) => ({ ...l, atMs: l.atMs + 4800 })), { startAt: now });
+  const order = res.finishOrder.map((f) => f.runnerId);
+  const n = order.length;
+  const mark = markPlayerOf(s);
+  const per = mark ? 9000 : 4200;
+  const revealStart = now + 11000;
+  order.forEach((r, i) => {
+    const m = revealModel(s, r);
+    const k = n - 1 - i;
+    voice.prefetch(`res:reveal${i}:${rid}`, lines([{ ...revealLine(m, i, n), priority: 3 }]).map((l) => ({ ...l, atMs: mark ? 8000 : 900 })), { startAt: revealStart + k * per });
+  });
+  const tail = [];
+  const w0 = revealModel(s, order[0]);
+  if (!w0.generic && w0.reveal.punchline) tail.push({ speaker: 'pam', text: w0.reveal.punchline, priority: 3 });
+  const rmf = typeof res.realMarkFact === 'string' ? res.realMarkFact : res.realMarkFact?.text;
+  if (rmf) tail.push({ speaker: 'jeff', text: rmf, priority: 3 });
+  const truths = cutsceneTruthsFor(s);
+  if (truths.length) tail.push({ speaker: 'pam', text: `What really happened: ${truths[0].text}` });
+  voice.prefetch(`res:reveal-end:${rid}`, lines(tail, 4000), { startAt: revealStart + n * per });
+  voice.prefetch(`res:mark:${rid}`, lines(markVerdictLines(s), 50), { startAt: revealStart + per });
+  const all = res.clueReview || [];
+  let items = all.filter((c) => c.highlight).slice(0, 3);
+  if (!items.length) items = all.filter((c) => c.verdict !== 'neutral').slice(0, 3);
+  const cluesStart = revealStart + n * per + 9000;
+  voice.prefetch(`res:clues:${rid}`, lines(items.filter((c) => c.quip).map((c, i) => ({ text: c.quip, speaker: i % 2 ? 'jeff' : 'pam' })), 3000), { startAt: cluesStart });
+  const pays = s.players.map((p) => ({ p, net: res.payouts?.[p.id]?.net ?? 0 }));
+  const best = pays.reduce((a, b) => (!a || b.net > a.net ? b : a), null), worst = pays.reduce((a, b) => (!a || b.net < a.net ? b : a), null);
+  const payLines = [];
+  if (best && best.net > 0) payLines.push({ speaker: 'jeff', text: winLine(best.p.name, best.net, rid), priority: 3 });
+  if (worst && worst.net < 0) payLines.push({ speaker: 'pam', text: loseLine(worst.p.name, worst.net, rid), priority: 3 });
+  voice.prefetch(`res:payouts:${rid}`, lines(payLines, 1500).map((l) => ({ ...l, atMs: l.atMs + 5000 })), { startAt: cluesStart + 12000 });
+  const aw = (res.awards || [])[0];
+  if (aw) voice.prefetch(`res:awards:${rid}`, lines([{ speaker: 'jeff', text: `${aw.title}! ${aw.text || ''}` }]).map((l) => ({ ...l, atMs: 1500 })), { startAt: cluesStart + 24000 });
+}
+
 // payouts: each player's SCORE before -> after this round (scores can be negative, so a counter, not a share bar)
 function scoreBarHtml(s) {
   const res = s.results;
@@ -1431,13 +1740,14 @@ function scoreBarAnimate(root) {
     b.closest('.sbp')?.classList.add(to > from ? 'up' : 'down');
   }
 }
-function winLine(name, net) {
+const pickBy = (list, seed) => { let h = 7; for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return list[h % list.length]; };
+function winLine(name, net, seed = Math.random()) {
   const l = [`${name} cleans up! Up ${moneySay(net)}. Insufferable for the rest of the evening.`, `Kerching! ${name} is ${moneySay(net)} richer and won't let anyone forget it.`, `${name} read that race like a book.`];
-  return l[Math.floor(Math.random() * l.length)];
+  return pickBy(l, `${seed}|${name}|w`);
 }
-function loseLine(name, net) {
+function loseLine(name, net, seed = Math.random()) {
   const l = [`Oh dear. ${name} is down ${moneySay(-net)}. The bank of Mark is not sympathetic.`, `${name} backed the wrong Mark. It happens to the best of us. Mostly to ${name}.`, `That's ${moneySay(-net)} gone, ${name}. Thoughts and prayers.`];
-  return l[Math.floor(Math.random() * l.length)];
+  return pickBy(l, `${seed}|${name}|l`);
 }
 
 // =====================================================================================================

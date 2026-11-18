@@ -82,6 +82,10 @@ copy(path.join(ROOT, 'client/shared/theme.css'), path.join(OUT, 'theme.css'), re
 copy(path.join(ROOT, 'client/tv/tv.css'), path.join(OUT, 'tv.css'), relCss);
 copy(path.join(ROOT, 'client/phone/phone.css'), path.join(OUT, 'phone.css'), relCss);
 for (const f of fs.readdirSync(path.join(ROOT, 'client/assets/fonts'))) copy(path.join(ROOT, 'client/assets/fonts', f), path.join(OUT, 'assets/fonts', f));
+// music + stings (local files: nothing loads from a CDN at play time) and the premium-voice engine (the voice model
+// itself is fetched from Hugging Face on first use and cached by the browser, so the zip stays small)
+for (const f of fs.readdirSync(path.join(ROOT, 'client/assets/audio'))) if (/\.(mp3|json|md)$/.test(f)) copy(path.join(ROOT, 'client/assets/audio', f), path.join(OUT, 'assets/audio', f));
+if (fs.existsSync(path.join(ROOT, 'client/dist/tts-worker.js'))) copy(path.join(ROOT, 'client/dist/tts-worker.js'), path.join(OUT, 'js/tts-worker.js'));
 copy(DATA, path.join(OUT, 'data.json'));
 
 // guard: no absolute (root-relative) URLs left in what we ship
@@ -137,6 +141,6 @@ const total = files.reduce((a, f) => a + size(f), 0);
 const js = files.filter((f) => f.startsWith('js/'));
 console.log(`\nweb edition built: ${rel(OUT)}/  (${files.length} files, ${kb(total)} uncompressed)`);
 for (const f of js) console.log(`  ${f.padEnd(28)} ${kb(size(f))}`);
-console.log(`  data.json                    ${kb(size('data.json'))}   fonts ${kb(files.filter((f) => f.startsWith('assets/')).reduce((a, f) => a + size(f), 0))}`);
+console.log(`  data.json                    ${kb(size('data.json'))}   fonts ${kb(files.filter((f) => f.startsWith('assets/fonts/')).reduce((a, f) => a + size(f), 0))}   audio ${kb(files.filter((f) => f.startsWith('assets/audio/')).reduce((a, f) => a + size(f), 0))}`);
 if (!flag('no-zip')) console.log(`  ZIP: ${rel(ZIP)}  ${kb(fs.statSync(ZIP).size)}  <- upload this to itch.io (Kind: HTML)`);
 void result;
