@@ -4,10 +4,12 @@
 //  - localTransport: the TV UI talks to the in-page host through the same JSON protocol (an in-memory channel).
 //  - peerTransport: phones connect a DataConnection to the TV's peer id; auto-reconnect with backoff, heartbeats,
 //    clock sync, "can't reach the TV" detection. Implements the same API as client/shared/net.js connect().
-import { Peer } from 'peerjs';
+import * as PeerJS from 'peerjs';
 import { Emitter } from '../server/net/emitter.mjs';
 import { encodeFrames, createDecoder } from './frames.js';
 
+// (bundlers see PeerJS's ES module; Node, used by the unit tests, sees its CommonJS build)
+const Peer = PeerJS.Peer || PeerJS.default?.Peer;
 export const PROTOCOL = 'v1';
 export const ROOM_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I / O (and no digits: no 0 / 1)
 const ROOM_BLOCK = /^(FUCK|SHIT|CUNT|TWAT|PISS|DICK|COCK|SLAG|WANK|NAZI|ANUS|ARSE|CRAP|TITS|PAKI|SPAZ|FAGS|KKKK)$/;

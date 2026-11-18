@@ -10,7 +10,10 @@ const fmtDate = (iso) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 };
-const pretty = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+// what to show next to the code: host + path (a private itch page's ?secret=… is in the QR, not worth typing)
+const pretty = (u) => {
+  try { const x = new URL(u); return { text: `${x.host}${x.pathname}`.replace(/\/$/, ''), secret: !!(x.search || x.hash) }; } catch { return { text: String(u || ''), secret: false }; }
+};
 const STATUS = {
   online: ['ok', 'Room open — phones can join'],
   connecting: ['wait', 'Opening the room…'],
@@ -26,8 +29,9 @@ export function decorateTv(web) {
   function cardHtml() {
     const [cls, txt] = STATUS[web.peerStatus] || STATUS.connecting;
     const letters = [...web.code].map((c) => `<b>${esc(c)}</b>`).join('');
-    const where = web.pageLink
-      ? `<div class="wr-link">${esc(pretty(web.pageLink))}</div>`
+    const pl = web.pageLink ? pretty(web.pageLink) : null;
+    const where = pl
+      ? `<div class="wr-link${pl.text.length > 30 ? ' long' : ''}">${esc(pl.text)}${pl.secret ? '<small>(private link: easiest to scan the QR)</small>' : ''}</div>`
       : '<div class="wr-link soft">this game\'s itch.io page</div>';
     return `<div class="wr-head">📱 On your phone, go to</div>${where}
       <div class="wr-and">and enter the code</div>

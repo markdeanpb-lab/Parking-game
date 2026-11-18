@@ -228,6 +228,43 @@ try {
     pages.splice(pages.findIndex(([l]) => l === 'phoneC'), 1);
   }
 
+  // launcher + code entry at other phone sizes (small portrait, landscape): everything on screen, no sideways scroll
+  for (const [w, h] of [[320, 568], [844, 390], [412, 915]]) {
+    const pv = await ctx({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }, `phone${w}`);
+    await pv.goto(wrap(`${GAME}?${SIG}`));
+    const f = await gameFrame(pv);
+    await f.waitForSelector('#wl-phone');
+    await shot(pv, `08b-launcher-${w}x${h}`);
+    await f.click('#wl-phone');
+    await f.type('.wl-code input', code, { delay: 30 });
+    const lay = await f.evaluate(() => {
+      const r = document.querySelector('#wl-go').getBoundingClientRect();
+      const boxes = [...document.querySelectorAll('.wl-code input')].map((x) => x.getBoundingClientRect());
+      return { overflowX: document.documentElement.scrollWidth > innerWidth + 1, goVisible: r.bottom <= innerHeight + 1 && r.top >= 0, boxesIn: boxes.every((b) => b.left >= 0 && b.right <= innerWidth), enabled: !document.querySelector('#wl-go').disabled };
+    });
+    await shot(pv, `08c-join-${w}x${h}`);
+    if (lay.overflowX || !lay.boxesIn || !lay.enabled) throw new Error(`launcher layout broken at ${w}x${h}: ${JSON.stringify(lay)}`);
+    if (!lay.goVisible) log(`  note: at ${w}x${h} the JOIN button needs a scroll (on-screen keyboard sizes vary)`);
+    await pv.context().close();
+    pages.splice(pages.findIndex(([l]) => l === `phone${w}`), 1);
+  }
+  pass('launcher + code entry fit 320x568, 844x390 (landscape) and 412x915 with no sideways scrolling');
+  { // a phone whose iframe storage is blocked (third-party storage off / Safari): localStorage throws on access
+    const pz = await ctx(phoneOpts, 'phoneNoStorage');
+    await pz.context().addInitScript(() => {
+      if (window === window.top) return;
+      Object.defineProperty(window, 'localStorage', { configurable: true, get() { throw new DOMException('The operation is insecure.', 'SecurityError'); } });
+    });
+    await pz.goto(wrap(`${GAME}?${SIG}#join=${code}`));
+    const f = await gameFrame(pz);
+    await f.waitForSelector('#nm', { timeout: 30000 });
+    const st = await f.evaluate(() => { localStorage.setItem('x', '1'); return { persistent: window.__markrunWeb.persistent, roundTrip: localStorage.getItem('x') }; });
+    if (st.persistent !== false || st.roundTrip !== '1') throw new Error(`storage fallback: ${JSON.stringify(st)}`);
+    pass('blocked localStorage in the iframe: in-memory fallback kicks in and the phone still reaches the join screen');
+    await pz.context().close();
+    pages.splice(pages.findIndex(([l]) => l === 'phoneNoStorage'), 1);
+  }
+
   await pa.click('#readybtn');
   await pb.click('#readybtn');
   await waitPhase('INTRO');
@@ -257,25 +294,17 @@ try {
     await pa.waitForSelector('#holdlock');
     const linesBefore = await pa.$$eval('.rv-line', (x) => x.length);
     if (round === 1) await shot(paPage, '10-phoneA-review');
-    // phone reload mid-betting: round 1 = iframe reload (keeps #phone=CODE), round 2 = whole page (itch page reload)
+    // phone reload mid-betting (round 1): the game iframe reloads (keeps #phone=CODE) -> rejoins by itself, slip kept
     if (round === 1) {
       await pa.evaluate(() => location.reload());
       await sleep(500);
       pa = await gameFrame(paPage);
       await pa.waitForSelector('.flow', { timeout: 30000 });
-      pass('phone A reloaded mid-betting (iframe) and rejoined automatically');
-    } else {
-      await paPage.reload();
-      pa = await gameFrame(paPage);
-      await pa.waitForSelector('#wl-rejoin:not(.hidden)', { timeout: 15000 });
-      await shot(paPage, '10b-phoneA-rejoin-button');
-      await pa.click('#wl-rejoin');
-      await pa.waitForSelector('.flow', { timeout: 30000 });
-      pass('phone A reloaded from the top (itch page reload): one tap on "Rejoin room" and it is back in');
+      await pa.click('.rvbtn');
+      const linesAfter = await pa.$$eval('.rv-line', (x) => x.length);
+      if (linesAfter < linesBefore) throw new Error(`slip lost after reload (${linesBefore} -> ${linesAfter})`);
+      pass(`phone A reloaded mid-betting (iframe) and rejoined automatically, bet slip kept (${linesAfter} bets)`);
     }
-    await pa.click('.rvbtn');
-    const linesAfter = await pa.$$eval('.rv-line', (x) => x.length);
-    if (linesAfter < linesBefore) throw new Error(`slip lost after reload (${linesBefore} -> ${linesAfter})`);
     await hold(paPage, pa);
     await pa.waitForFunction(() => document.body.innerText.includes('Locked in!'), null, { timeout: 15000 });
     if (round === 1) { await shot(paPage, '11-phoneA-locked'); await shot(tvPage, '12-tv-betting-onelocked'); }
@@ -302,6 +331,19 @@ try {
     await pb.click('[data-add="max"]');
     await pb.click('[data-tray="ok"]');
     await pb.click('.rvbtn');
+    if (round === 2) { // the whole page reloads (like the itch.io page): launcher -> one tap on "Rejoin room" -> back in, slip kept
+      await pbPage.reload();
+      pb = await gameFrame(pbPage);
+      await pb.waitForSelector('#wl-rejoin:not(.hidden)', { timeout: 15000 });
+      const label = await pb.$eval('#wl-rejoin', (e) => e.textContent.trim());
+      await shot(pbPage, '16b-phoneB-rejoin-button');
+      await pb.click('#wl-rejoin');
+      await pb.waitForSelector('.flow', { timeout: 30000 });
+      await pb.click('.rvbtn');
+      const n = await pb.$$eval('.rv-line', (x) => x.length);
+      if (n < 1) throw new Error('phone B slip lost after page reload');
+      pass(`phone B page reloaded mid-betting (itch-style): "${label}" -> back in with its bet slip`);
+    }
     await hold(pbPage, pb);
     await tv.waitForSelector('.faceoff .fchip, .faceoff .fside, .faceoff .clash-stamp', { timeout: 30000 });
     await sleep(Math.max(400, 3000 / SPEED));

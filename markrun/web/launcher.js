@@ -54,8 +54,10 @@ function phoneProblem(code, p) {
     problemEl.id = 'web-problem';
     document.body.appendChild(problemEl);
   }
-  problemEl.innerHTML = `<div class="wp-card"><div class="em">📺❓</div><h2>Can't reach the TV</h2>
-    <p>${esc(p.msg)}</p>
+  const [title, ...rest] = String(p.msg).split(' — ');
+  const body = rest.join(' — ');
+  problemEl.innerHTML = `<div class="wp-card" role="alert" aria-label="${esc(p.msg)}"><div class="em">📺❓</div><h2>${esc(title)}</h2>
+    ${body ? `<p>${esc(body.charAt(0).toUpperCase() + body.slice(1))}</p>` : ''}
     <div class="wp-code">Room <b>${esc(code)}</b></div>
     <div class="wp-acts"><button class="btn green" data-retry>Try again</button><button class="btn white" data-change>Change code</button></div>
     <small>${p.kind === 'unreachable' ? 'Still stuck? Put the phones on the same Wi-Fi as the TV computer, and keep the TV tab open and visible.' : ''}</small></div>`;

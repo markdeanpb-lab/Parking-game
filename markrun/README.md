@@ -63,6 +63,14 @@ Use **Refresh Historical Data** in the TV lobby (bottom right), or run `npm run 
 - **Strava on the home computer:** create a free Strava API app once and run the one-line setup in [docs/REFRESH.md](docs/REFRESH.md).
 - **No Strava setup:** ask Claude Code, which has the Strava connector, to "refresh MARKRUN historical data following markrun/docs/REFRESH.md option B", then pull the updated repository.
 
+## Web edition (itch.io, nothing to install)
+The whole game can also run in the browser: the TV page is the host, and the phones connect to it peer-to-peer (WebRTC, matched up through the free PeerJS service).
+- Build: `npm install`, then `npm run build:web`. Upload **`dist-web/markrun-itch.zip`** to itch.io: Kind of project **HTML**, tick **"This file will be played in the browser"**, viewport **1280 × 720**, tick **Mobile friendly** (orientation **Portrait**), **Fullscreen button** and **Automatically start on page load**. Set visibility to **Restricted** or **Draft** to keep it private.
+- Play: on the MacBook, open the game page and click **📺 This is the TV**. The TV shows a 4-letter room code and a QR code. On each phone, scan the QR or open the game page and tap **📱 Join on my phone**, then enter the code. In ⚙ Options you can set the **Game page link** for the QR code to open. Leave it empty and the QR opens the game directly with the code filled in.
+- Keep the TV tab open and visible. Same Wi-Fi is best. Reloading the TV or a phone resumes the game.
+- New parkruns: refresh the data in the home-computer edition, run `npm run build:web` again and re-upload the zip. The web edition can't refresh by itself, so its Options show "Data last updated".
+- Tests: `npm run test:web` uses a local signalling server and cross-origin iframes. `npm run test:web:cloud` does a quick check against the real PeerJS cloud.
+
 ## For developers
 - `npm test` runs data-integrity, game, server and race-plan tests.
 - `node tools/e2e.mjs` plays full rounds with a TV and two phones in headless Chromium and blocks all non-local network access.

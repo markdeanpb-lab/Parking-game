@@ -30,6 +30,7 @@ body.web-launcher { min-height: 100dvh; overflow-x: hidden; }
   align-self: center; padding: 12px 22px; border-radius: 16px; border: 4px solid var(--ink); background: #fff; color: var(--ink);
   font-size: clamp(16px, 3.4vw, 24px); font-weight: 900; box-shadow: 0 5px 0 var(--ink); cursor: pointer;
 }
+#wl-home .wl-rejoin { order: -1; align-self: stretch; min-height: 76px; font-size: clamp(20px, 4.6vw, 30px); background: var(--sun); box-shadow: 0 7px 0 var(--ink); }
 .wl-rejoin b { font-family: var(--font-display); font-weight: 400; letter-spacing: .12em; color: var(--tomato); }
 #wl-join h2 { margin: 0; font-size: clamp(26px, 6vw, 46px); }
 .wl-code { display: flex; justify-content: center; gap: clamp(8px, 3vw, 18px); }
@@ -53,6 +54,10 @@ body.web-launcher { min-height: 100dvh; overflow-x: hidden; }
   .wl-big { flex: 1 1 280px; min-height: 96px; }
   .wl-logo { font-size: 48px; }
   .wl-code input { height: 70px; font-size: 48px; }
+  #launcher { gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+  .wl-sub { display: none; }
+  #wl-join h2 { font-size: 24px; }
+  .wl-go { min-height: 60px; }
 }
 
 /* ---- phone: can't reach the TV ---- */
@@ -77,6 +82,8 @@ body.web-launcher { min-height: 100dvh; overflow-x: hidden; }
 .web-edition .qr-card.web-room { width: 640px; right: 70px; top: 46px; padding: 22px 26px 18px; }
 .qr-card.web-room .wr-head { font-family: var(--font-display); font-size: 40px; line-height: 1.05; }
 .qr-card.web-room .wr-link { font-size: 34px; font-weight: 1000; color: var(--panel-deep); word-break: break-all; line-height: 1.1; margin: 4px 0; }
+.qr-card.web-room .wr-link.long { font-size: 26px; }
+.qr-card.web-room .wr-link small { display: block; font-size: 18px; color: var(--ink-2); font-weight: 800; }
 .qr-card.web-room .wr-link.soft { color: var(--ink-2); font-size: 30px; }
 .qr-card.web-room .wr-and { font-family: var(--font-display); font-size: 36px; }
 .qr-card.web-room .wr-code { display: flex; justify-content: center; gap: 16px; margin: 12px 0 18px; }

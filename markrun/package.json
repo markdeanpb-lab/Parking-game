@@ -16,7 +16,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.mjs\"",
     "build:web": "node --disable-warning=ExperimentalWarning tools/build_web.mjs",
     "test:web": "node --disable-warning=ExperimentalWarning tools/web_e2e.mjs",
-    "export:web": "node --disable-warning=ExperimentalWarning tools/export_web_data.mjs"
+    "export:web": "node --disable-warning=ExperimentalWarning tools/export_web_data.mjs",
+    "test:web:cloud": "node --disable-warning=ExperimentalWarning tools/web_cloud_smoke.mjs"
   },
   "dependencies": {
     "qrcode": "1.5.4",
