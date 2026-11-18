@@ -151,6 +151,15 @@ export function createAudio() {
     go(t) { osc('square', 1320, t, 0.3, { gain: 0.07, a: 0.005, rel: 0.1, filter: { freq: 3000 } }); },
     stamp(t) { osc('sine', 90, t, 0.05, { gain: 0.5, a: 0.002, rel: 0.25 }); noise(t, 0.04, { gain: 0.25, a: 0.002, rel: 0.1, type: 'lowpass', freq: 1200 }); },
     reveal(t) { [64, 67, 71, 74].forEach((m, i) => osc('triangle', mtof(m + 12), t + i * 0.05, 0.05, { gain: 0.06, a: 0.004, rel: 0.25 })); },
+    scratch(t) { // vinyl scratch: a bandpassed noise swept down, back up and down again (cutscene start/end)
+      const n = noise(t, 0.32, { gain: 0.22, a: 0.01, rel: 0.08, freq: 2400, q: 3 });
+      n.f.frequency.setValueAtTime(2400, t); n.f.frequency.exponentialRampToValueAtTime(500, t + 0.12);
+      n.f.frequency.exponentialRampToValueAtTime(1900, t + 0.2); n.f.frequency.exponentialRampToValueAtTime(350, t + 0.34);
+    },
+    clink(t) { // Pam's flask on a glass: two bright partials, a hair apart
+      osc('sine', 2637, t, 0.01, { gain: 0.08, a: 0.001, rel: 0.6 }); osc('sine', 3951, t + 0.004, 0.01, { gain: 0.05, a: 0.001, rel: 0.45 });
+      osc('sine', 2794, t + 0.11, 0.01, { gain: 0.05, a: 0.001, rel: 0.5 });
+    },
     boo(t) { const o = osc('sawtooth', 160, t, 0.7, { gain: 0.06, a: 0.1, rel: 0.3, filter: { freq: 600 } }); o.frequency.linearRampToValueAtTime(110, t + 0.8); },
   };
 
