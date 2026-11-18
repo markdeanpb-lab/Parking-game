@@ -33,7 +33,7 @@ export const ODDS_FEATURES = ['vol28', 'vol7', 'long14', 'hard', 'rpw', 'form'];
 // supBottomX: "bottom" superlatives (quietest month, fewest runs, worst form) are even more telling than "top" ones.
 // longshotFloor: like any bookie, the house never offers silly prices: every runner is priced at no less than this probability.
 // longshotShade (< 1): the classic favourite-longshot bias - the book is flattened slightly, so long shots carry more of the margin.
-export const MODEL_DEFAULTS = { lambda: 50, sigma: 16, privateWeight: 0.95, supScale: 2.4, supBottomX: 1.4, margin: 0.06, longshotFloor: 0.02, longshotShade: 0.95 };
+export const MODEL_DEFAULTS = { lambda: 50, sigma: 16, privateWeight: 0.95, supScale: 2.4, supBottomX: 1.4, margin: 0.065, longshotFloor: 0.02, longshotShade: 0.97 };
 
 // Field superlatives (the DECISIVE clues): "busiest month in this field", "fewest runs here"... A superlative only counts
 // with a clear margin over the next runner. The house prices each one by its measured average effect (seconds vs the

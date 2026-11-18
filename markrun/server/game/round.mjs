@@ -170,7 +170,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const preMus = perfs.map((p, i) => predict(model, p.date, assigned[ids[i]].map(({ slot, clue }) => ({ features: clue.features, weight: slot === 0 ? 1 : S.privateWeight }))));
   const marketProb = Object.fromEntries(winProbs(preMus, S.sigma).map((q, i) => [ids[i], q]));
   const avoid = Object.fromEntries(pids.map((pid) => [pid, new Set(ids.filter((id) => clues[id].private[pid]?.decisive))]));
-  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, avoid, favourBias: S.tipFavourBias ?? 6, rivalBias: S.tipRivalBias ?? 2, decisiveDamp: S.tipDecisiveDamp ?? 0.55, positiveShare: S.tipPositiveShare ?? 0.6 });
+  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, avoid, favourBias: S.tipFavourBias ?? 6, rivalBias: S.tipRivalBias ?? 2, decisiveDamp: S.tipDecisiveDamp ?? 0.65, positiveShare: S.tipPositiveShare ?? 0.6 });
   for (const [pid, list] of Object.entries(tips)) {
     for (const t of list) {
       const old = clues[t.runnerId].private[pid];

@@ -10,6 +10,7 @@ import { createFallbackRaceView } from './fallback-race.js';
 import { Race3D, introPlan } from './race-bridge.js';
 import { provisionalNet } from '../../server/game/provisional.mjs';
 import * as Moments from '../../server/game/moments.mjs';
+import * as Cutscenes from '../../server/game/cutscenes.mjs';
 import { broadcastToRace, distanceAt } from '../../server/game/raceplan.mjs';
 const moment = (name, ...a) => { try { return typeof Moments[name] === 'function' ? Moments[name](...a) : null; } catch { return null; } };
 
@@ -479,6 +480,19 @@ function disposeRaceView() {
   raceView = null; raceViewKind = null; raceViewRound = null;
   raceLayer.innerHTML = '';
   document.body.classList.remove('racing');
+}
+// Cutscenes that actually played in this round's broadcast (the results reveal shows their "what really happened").
+let cutLog = { roundId: null, ids: new Set(), kind: null };
+function cutsceneTruthsFor(st) {
+  const plan = st.racePlan;
+  if (!plan?.cutscenes?.length) return [];
+  let all;
+  try { all = typeof Cutscenes.cutsceneTruths === 'function' ? Cutscenes.cutsceneTruths(plan) : null; } catch { all = null; }
+  all ||= plan.cutscenes.filter((c) => c.truth).map((c) => ({ cutsceneId: c.id, kind: c.kind, label: c.kind, runnerId: c.who, text: c.truth }));
+  const played = cutLog.roundId === st.round?.roundId ? cutLog.ids : null;
+  // a TV reloaded mid-race lost its log: then show what the plan says played (2D view: no cutscenes at all)
+  const list = played && played.size ? all.filter((t) => played.has(t.cutsceneId)) : (cutLog.roundId === st.round?.roundId && cutLog.kind === '2d' ? [] : all);
+  return list.filter((t) => t.text).slice(0, 3);
 }
 // The finish stamp hook is read from the view's creation opts when it fires, so every view (including an intro view
 // reused for the race) routes it through this shell-level handler, which the race screen sets.
@@ -1003,6 +1017,8 @@ function raceScreen(st) {
   }
   // P8: per-player stamps after the finish replay
   let stamped = false;
+  let cutActive = null, cutSpeaker = null;
+  cutLog = { roundId: round.roundId, ids: new Set(), kind: null };
   winnerStampHandler = () => showStamps();
   function showStamps() {
     if (stamped || tok.cancelled) return;
@@ -1070,6 +1086,7 @@ function raceScreen(st) {
     clearInterval(loadHb);
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }
+    cutLog.kind = raceViewKind;
     document.body.classList.add('racing');
     if (raceViewKind === '3d') root.querySelector('.live')?.remove(); // the 3D HUD has its own lap/distance chips
     if (raceViewKind !== '3d') {
@@ -1087,7 +1104,25 @@ function raceScreen(st) {
       if (e.kind === 'countdown') { audio.play(e.n === 0 ? 'go' : 'beep'); if (e.n === 0) { audio.play('horn'); audio.play('crowd', { dur: 3, peak: 0.28 }); } return; }
       if (e.kind === 'photo_finish') { audio.play('stamp'); audio.play('heartbeat', { beats: 5 }); say("It's a photo finish! Hold your breath!", 'pam', 3); return; }
       if (e.kind === 'winner_replay_done') { showStamps(); return; }
-      if (e.text && (e.kind === 'commentary' || !e.type)) { if (marketState !== 'waiting') voice.say(e.text, e.speaker || 'jeff', { priority: e.priority || 2 }); return; }
+      // cutscenes: a sting in and out; live commentary is dropped while one plays, its own lines are spoken instead
+      if (e.kind === 'cutscene') {
+        if (e.phase === 'start') {
+          cutActive = e.id; cutSpeaker = null;
+          if (cutLog.roundId === round.roundId) cutLog.ids.add(e.id);
+          voice.clear(); audio.duck(true); audio.play('scratch');
+        } else if (e.phase === 'end' && (cutActive === e.id || cutActive)) {
+          cutActive = null;
+          audio.play(cutSpeaker === 'pam' ? 'clink' : 'scratch');
+        }
+        return;
+      }
+      if (e.text && (e.kind === 'commentary' || !e.type)) {
+        if (marketState === 'waiting') return;
+        if (cutActive && !e.cutscene) return; // the cutscene has the floor
+        if (e.cutscene) cutSpeaker = e.speaker || 'jeff';
+        voice.say(e.text, e.speaker || 'jeff', { priority: e.cutscene ? 3 : e.priority || 2 });
+        return;
+      }
       switch (e.type) {
         case 'overtake': if (Date.now() - lastWhoosh > 1500) { lastWhoosh = Date.now(); audio.play('whoosh'); } break;
         case 'lead_change': audio.play('whoosh'); audio.play('crowd', { dur: 2, peak: 0.18 }); break;
@@ -1231,7 +1266,20 @@ function resultsScreen(st) {
       root.appendChild(el(`<div class="punch rmf"><div class="anim-pop"><small>THE REAL MARK</small>${esc(rmf)}</div></div>`));
       say(rmf, 'jeff', 3);
     }
-    await waitVoice(t, 3000, 6000);
+    const truths = cutsceneTruthsFor(S || st);
+    if (truths.length && !t.cancelled) {
+      await waitVoice(t, 2200, 6000);
+      if (t.cancelled) return;
+      root.querySelectorAll('.punch').forEach((x) => x.remove());
+      root.classList.add('truthing');
+      root.appendChild(el(`<div class="truths"><div class="th outlined white thin">WHAT REALLY HAPPENED</div>${truths.map((x, i) => {
+        const r = runnerById(round, x.runnerId);
+        return `<div class="tr panel white" style="animation-delay:${0.15 + i * 0.35}s"><span class="rp">${r ? portrait(r, 70) : ''}</span><div><span class="tk">DRAMATISATION</span><b>${esc(x.text)}</b></div></div>`;
+      }).join('')}</div>`));
+      audio.play('scratch');
+      say(`What really happened: ${truths[0].text}`, 'pam', 2);
+      await waitVoice(t, 3500 + truths.length * 1200, 8000);
+    } else await waitVoice(t, 3000, 6000);
     done(1);
   }
 
@@ -1353,6 +1401,7 @@ function resultsScreen(st) {
       if (my.cancelled) return;
     }
     const name = s.resultStages[s.resultsStage];
+    root.classList.remove('truthing');
     log({ type: 'results-stage', stage: name });
     if (name !== 'order' && raceView) disposeRaceView();
     if (name === 'order' && raceView && raceViewKind === '3d') {
