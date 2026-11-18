@@ -35535,7 +35535,9 @@ function createRunner(info, opts = {}) {
     for (const d of disposables) d.dispose?.();
     pop.material.dispose();
   }
-  return { id: info.id, info, root, update, set, setPop, setExpr, setProp, dispose, height: topY, hipH, get state() {
+  return { id: info.id, info, root, update, set, setPop, setExpr, setProp, dispose, height: topY, hipH, get popping() {
+    return pop.visible;
+  }, get state() {
     return state;
   }, get variant() {
     return variant;
@@ -35836,14 +35838,17 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
     if (len >= 8) {
       const n = Math.max(1, Math.round(len / 11));
       for (let i = 0; i < n; i++) {
-        const a2 = bSlow + len * i / n, e = bSlow + len * (i + 1) / n, subj2 = pickSubject(a2, e, fo);
-        out.push({ type: pairType(subj2, out.at(-1)?.type, meanRate(a2, e)), a: a2, b: e, ids: subj2.ids, subject: subj2.kind, gap: subj2.gap });
+        const a = bSlow + len * i / n, e = bSlow + len * (i + 1) / n, subj = pickSubject(a, e, fo);
+        out.push({ type: pairType(subj, out.at(-1)?.type, meanRate(a, e)), a, b: e, ids: subj.ids, subject: subj.kind, gap: subj.gap });
       }
     }
-    const a = Math.max(bSlow, out.at(-1).b), subj = pickSubject(a, bFin, fo);
-    const last = { type: "headon", a, b: bFin, ids: subj.ids, subject: subj.kind, gap: subj.gap };
-    if (out.at(-1).type === "headon" && out.at(-1).a >= bSlow && String(out.at(-1).ids) === String(last.ids)) out.at(-1).b = bFin;
-    else out.push(last);
+    const a0 = Math.max(bSlow, out.at(-1).b), n2 = Math.max(1, Math.round((bFin - a0) / 11));
+    for (let i = 0; i < n2; i++) {
+      const a = a0 + (bFin - a0) * i / n2, e = a0 + (bFin - a0) * (i + 1) / n2, subj = pickSubject(a, e, fo);
+      const last = { type: i < n2 - 1 ? pairType(subj, out.at(-1)?.type, meanRate(a, e)) : "headon", a, b: e, ids: subj.ids, subject: subj.kind, gap: subj.gap };
+      if (out.at(-1).type === last.type && out.at(-1).a >= bSlow && String(out.at(-1).ids) === String(last.ids) && e - out.at(-1).a <= 14) out.at(-1).b = e;
+      else out.push(last);
+    }
   }
   if (out.at(-1).b - out.at(-1).a < 6 && out.length > 4) {
     const l = out.pop();
@@ -39821,8 +39826,8 @@ SCENES.spaghetti_legs = (K, cs) => {
     for (const c of l.hp.children) if (c.isMesh && c.geometry.type === "CapsuleGeometry") legMeshes.push({ m: c, orig: c.material });
     for (const c of l.kn.children) if (c.isMesh) legMeshes.push({ m: c, orig: c.material });
   }
-  const NSTR = 4, NSEG = 9;
-  const noodles = new InstancedMesh(I.bag.add(new SphereGeometry(0.062, 8, 6)), I.bag.mat("#f6d36b"), 2 * NSTR * NSEG);
+  const NSTR = 4, NSEG = 15;
+  const noodles = new InstancedMesh(I.bag.add(new SphereGeometry(0.05, 8, 6)), I.bag.mat("#f6d36b"), 2 * NSTR * NSEG);
   noodles.frustumCulled = false;
   A.rig.hips.add(noodles);
   noodles.visible = false;
@@ -39867,7 +39872,7 @@ SCENES.spaghetti_legs = (K, cs) => {
           const ox = (sI % 2 ? 1 : -1) * 0.05 * (1 + (sI >> 1)), oz = (sI >> 1 ? 1 : -1) * 0.04;
           for (let j2 = 0; j2 < NSEG; j2++) {
             const u = j2 / (NSEG - 1);
-            const wig = Math.sin(u * Math.PI) * (0.22 + 0.06 * sI);
+            const wig = Math.sin(u * Math.PI) * (0.3 + 0.07 * sI);
             nO.position.set(lerp2(hipL.x, ankL.x, u) + ox + Math.sin(t * 11 + u * 6 + sI + i * 2) * wig, lerp2(hipL.y, ankL.y + 0.08, u), lerp2(hipL.z, ankL.z, u) + oz + Math.cos(t * 9 + u * 5 + sI) * wig * 0.7);
             nO.updateMatrix();
             noodles.setMatrixAt(k++, nO.matrix);
@@ -39977,7 +39982,8 @@ SCENES.cannonball = (K, cs) => {
     K.ov.caption(bb > 0.05 && bb < 1.9 ? "HUMAN CANNONBALL!" : null, { yellow: true });
     if (I.camera && slot) {
       const look = slot.clone().addScaledVector(V(st0.tx, 0, st0.tz), Math.max(0, bb) * 3.5 + 0.5).add(V(0, 1.3, 0));
-      K.cam(st0.p(3.6, side * 8.6, 2.6), look, 46);
+      const lat = slot ? (slot.x - st0.x) * st0.rx + (slot.z - st0.z) * st0.rz : 0;
+      K.cam(st0.p(-9.5 + Math.max(0, bb) * 1.5, lat + side * 1.6, 3), look, 44);
     }
   };
   return I;
@@ -41160,7 +41166,7 @@ function createRaceView(container, opts = {}) {
     const track = mode === "race" && TRACK_SHOTS.has(director?.shot?.type);
     for (const id of ids) {
       const r = runners[id];
-      proj.set(r.root.position.x, r.root.position.y + r.height + 0.5, r.root.position.z);
+      proj.set(r.root.position.x, r.root.position.y + r.height + (r.popping ? 1.4 : 0.5), r.root.position.z);
       const dist2 = proj.distanceTo(camera.position);
       proj.project(camera);
       const pxTall = r.height / Math.max(0.1, dist2) * focal;

@@ -953,8 +953,8 @@ const PZ = {
     '{x} and {y}, neck and neck. So are {a} and {b}, probably.'],
   pz_same: ['{a} and {b} are both on {x}. United, for once.', 'The whole sofa is on {x}. Lovely. Until it isn\'t.'],
   pz_lead: ['{lead} leads {trail} by {gap} on the night. Over to you, {trail}.', '{gap} between {lead} and {trail} on the night. The sofa is tense.'],
-  pz_streak_lose: ['{name} has lost {n} rounds running. This one, surely?', '{n} losing rounds in a row for {name}. Deep breaths.', '{name}: {n} rounds, {n} losses. Pam is taking notes.'],
-  pz_streak_win: ['{name} has won {n} rounds on the bounce. Unbearable, frankly.', '{n} winning rounds in a row for {name}. Somebody check that phone.'],
+  pz_streak_lose: ['{name} has lost {n} rounds running. This one, surely?', '{N} losing rounds in a row for {name}. Deep breaths.', '{name}: {n} rounds, {n} losses. Pam is taking notes.'],
+  pz_streak_win: ['{name} has won {n} rounds on the bounce. Unbearable, frankly.', '{N} winning rounds in a row for {name}. Somebody check that phone.'],
   // the real Mark
   pz_mark: ['Somewhere, the real Mark is checking his watch.', 'The real Mark would like it known he had a cold.', 'The real Mark has seen this before. He still flinched.',
     'The real Mark is watching. He knows how this ends.', 'The real Mark, I\'m told, still blames the Hill.'],
@@ -1002,7 +1002,7 @@ export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
     let l = null, t = null;
     if (c.lean < 0 && lt != null && lt < winT - 6) { t = lt + 5; l = pz('pz_tip_wrong_neg', other, { who, x: sn(id) }); }
     else if (c.lean > 0 && fsT != null && at(fsT).at(-1) === id) { t = fsT + 5; l = pz('pz_tip_wrong_pos', other, { who, x: sn(id) }); }
-    else if (c.lean > 0 && lt != null && lt < winT - 6) { t = lt + 5; l = pz('pz_tip_right_pos', c.voice || 'jeff', { who, x: sn(id) }); }
+    else if (c.lean > 0 && lt != null && lt < winT - 6) { t = lt + 5; l = pz('pz_tip_right_pos', other, { who, x: sn(id) }); }
     if (l) { cand.push({ t, l, kind: 'tip' }); break; }
   }
   // 3. a bio/tagline callback for the first runner to make a move after the opening
@@ -1048,7 +1048,8 @@ export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
       for (let j = nets.length - 1; j >= 0 && sign !== 0 && Math.sign(nets[j]) === sign; j--) k++;
       if (k >= 2 && (!streak || k > streak.k)) streak = { p, k, sign };
     }
-    if (streak) { const l = pz(streak.sign < 0 ? 'pz_streak_lose' : 'pz_streak_win', streak.sign < 0 ? 'pam' : 'jeff', { name: streak.p.name, n: streak.k }); if (l) cand.push({ t: tS, l, kind: 'streak', w: 1.5 }); }
+    const NUMW = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+    if (streak) { const nW = NUMW[streak.k] ?? String(streak.k); const l = pz(streak.sign < 0 ? 'pz_streak_lose' : 'pz_streak_win', streak.sign < 0 ? 'pam' : 'jeff', { name: streak.p.name, n: nW, N: nW.charAt(0).toUpperCase() + nW.slice(1) }); if (l) cand.push({ t: tS, l, kind: 'streak', w: 1.5 }); }
     else if (players.length >= 2) {
       const tot = players.map((p) => ({ p, s: log.reduce((a, x) => a + (x.nets[p.id] || 0), 0) })).sort((a, b) => b.s - a.s);
       const gap = tot[0].s - tot[1].s;
@@ -1059,7 +1060,7 @@ export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
   const markP = players.find((p) => p.id != null && p.id === round.hidden?.settings?.runnerPlayerId);
   if (markP ? rng.chance(0.6) : rng.chance(0.3)) {
     const l = markP ? pz('pz_mark_player', 'pam', { mark: markP.name }) : pz('pz_mark', 'pam', {});
-    if (l) cand.push({ t: plan.timeMap.durationS * 0.42, l, kind: 'mark', w: 1 });
+    if (l) cand.push({ t: plan.timeMap.durationS * 0.42, l, kind: 'mark', w: markP ? 1.8 : 1 });
   }
   // at most 4 personal lines a race: the most personal first
   const KIND_W = { stake: 2, tip: 2.2, bio: 0.8 };
