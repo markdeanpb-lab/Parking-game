@@ -100,3 +100,33 @@
 - Pam's spoken reveal line still reads a generic Strava title ("Morning Run") even though the card shows a fun fact instead.
 - The last two parkruns (Oct 2026) post-date the weather archive used, so they have no weather facts until a refresh.
 - Hot-tip ROI (+24%) sits at the top of the target band; lower `tipPositiveShare` if tips feel too decisive in real play.
+
+
+## Iteration 4: user feedback from the second game night, plus Fable's independent review (2026-11-18), done
+- **Phase 1, the core game:**
+  - Decisive key clues. Measured over 3,840 rounds: favourite wins 39%, clue-reader ROI +14%, blind outsider ROI −17%, hedged clues down to 12%.
+  - FAVOURITE → OUTSIDER ranks, with plain-money winnings.
+  - One head-to-head duel per round, showing both runners' clues.
+  - A 500pp budget each round, with profit banked to a running score.
+  - News-desk cold open, theme cards, a soft 90 s bet timer, and bug fixes.
+- **Phase 2, the broadcast:**
+  - Runners fill about 40–45% of the frame, with calm head-on cameras and a PiP map.
+  - A big slanted HUD with player avatars, a clear finish line and photo finish, and consistent runner looks.
+  - Weather and season visuals per theme.
+- **Cutscenes:** 21 live gags (12 in batch 1, 10 in batch 2 from Fable's data dive; 2 benched), all triggered by real data.
+  - About 3 per race, never more than one pause, with a DRAMATISATION stamp and a "what really happened" card for each.
+  - Night storylines: Sub-20 Wall, PB Bell, Road to 100.
+  - Funfair about 8% of races (rare, as the user asked).
+  - Fable reviewed both batches, and its ship blockers are fixed.
+- **Phase 3:**
+  - Kokoro neural voices, pre-rendered during betting, with a fallback to the built-in voice. In this container a line takes about 2.5× real time; untested on a real MacBook.
+  - Original composed CC0 music and stings.
+  - The reveal as a memory prompt, plus the "Remember this one?" phone moment (+25pp).
+- **Importer:** new facts for treadmill_7d, intervals_7d, hr_mean, cadence_spm and kudos.
+- **Verified:** 101/101 tests; offline acceptance with a host restart (no phone scroll or clip, zero external requests); web edition with 25 checks; itch zip 3.2 MB.
+- **Open:**
+  - Restage "Before and After" and "Half Marathon Before Breakfast".
+  - Real-hardware frame rate and voice speed are unmeasured.
+  - The music is unheard by a human.
+  - A reveal subtitle can linger from the previous card.
+  - The player-text rewrite is deferred by the user; `content/MARKRUN_TEXT.txt` and the import tool are ready.
