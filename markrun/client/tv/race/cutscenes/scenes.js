@@ -47,7 +47,13 @@ function arrowTexture(bag, colour) {
   });
 }
 function noteSprites(I, n = 4) {
-  const tex = bubbleTexture(I.bag, '♪', { bg: 'rgba(0,0,0,0)', fg: '#ff3d8b', w: 128, h: 128, size: 110, tail: false });
+  // a drawn quaver (no font glyph needed)
+  const tex = I.bag.tex(128, 128, (g) => {
+    g.clearRect(0, 0, 128, 128); g.fillStyle = '#ff3d8b'; g.strokeStyle = '#1a1420'; g.lineWidth = 7; g.lineJoin = 'round';
+    g.beginPath(); g.ellipse(44, 96, 22, 16, -0.4, 0, 7); g.fill(); g.stroke();
+    g.fillRect(60, 22, 10, 74); g.strokeRect(60, 22, 10, 74);
+    g.beginPath(); g.moveTo(70, 22); g.quadraticCurveTo(108, 38, 100, 72); g.quadraticCurveTo(96, 50, 70, 46); g.closePath(); g.fill(); g.stroke();
+  });
   return Array.from({ length: n }, () => sprite(I.bag, tex, 0.7, 1));
 }
 
@@ -978,8 +984,8 @@ SCENES.ice_cream_van = (K, cs) => {
     A.r.setPop(t > 1.5 && t < 2.8 ? 'heart' : null);
     if (t > 1.4 && t < 2.7) A.rig.head.rotation.y = s * 0.4;
     cue('line', t > 1.45, () => K.say(cs.lines?.[0]));
-    if (t < 1.4) { K.cam(f.p(-1, -s * 9, 2.2), f.p(-2, s * 2.5, 1.6), 46); K.ov.caption(t > 0.4 ? '♪ DING-A-LING ♪' : null, { yellow: true }); }
-    else if (t < 2.7) { K.cam(A.root.position.clone().addScaledVector(V(f.tx, 0, f.tz), 2.8).addScaledVector(V(f.rx, 0, f.rz), -s * 0.9).add(V(0, 1.9, 0)), A.root.position.clone().add(V(0, 1.9, 0)), 34); K.ov.caption('THE VAN!', { yellow: true }); }
+    if (t < 1.4) { K.cam(f.p(-9.5, -s * 3.2, 3.1), f.p(-1.5, s * 1.8, 1.3), 46); K.ov.caption(t > 0.4 ? 'DING-A-LING!' : null, { yellow: true }); }
+    else if (t < 2.7) { K.cam(A.root.position.clone().addScaledVector(V(f.tx, 0, f.tz), 3.4).addScaledVector(V(f.rx, 0, f.rz), -s * 1.2).add(V(0, 2.0, 0)), A.root.position.clone().add(V(0, 2.05, 0)), 36); K.ov.caption('THE VAN!', { yellow: true }); }
     else { K.cam(f.p(run * 6.2 - 7.5, -s * 1.8, 2.3), f.p(run * 6.2 + 3, s * 1.6, 1.6), 44); K.ov.caption('SO CLOSE…'); }
   };
   // live tail: the race has resumed; the van keeps exactly his pace, just out of reach (back sign readable)

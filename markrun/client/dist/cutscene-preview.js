@@ -32936,7 +32936,7 @@ ${ShaderChunk.fog_fragment}
   add(archGroup);
   function arch(s, label, colA, colB) {
     const g = new Group();
-    const R = PATH_W / 2 + 1.4, tube = 0.85;
+    const R = PATH_W / 2 + 2.5, tube = 0.85;
     const stripe = canvasTexture(256, 32, (c, w, h) => {
       for (let i = 0; i < 16; i++) {
         c.fillStyle = i % 2 ? colA : colB;
@@ -35726,7 +35726,7 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
   const winnerId = sim.finishOrder[0];
   const margin = sim.finishOrder.length > 1 ? sim.byId[sim.finishOrder[1]].officialS - sim.byId[winnerId].officialS : 99;
   const runaway = margin > 8 && backedIds.some((id) => id !== winnerId);
-  const pickSubject = (a, b, { exclude = [] } = {}) => {
+  const pickSubject = (a, b, { exclude = [], preferBacked = false } = {}) => {
     const T = [];
     for (let k = 0; k <= 6; k++) T.push(sim.stateAt(Math.max(0, a + (b - a) * k / 6)));
     const live = T[0].order.filter((id) => !T[0].byId[id].finished && !T.at(-1).byId[id].finished && !exclude.includes(id));
@@ -35740,7 +35740,8 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
       pairs.push({ ids: [x, y], gap: mx, backed: backedIds.includes(x) || backedIds.includes(y), pos });
     }
     const best = (l) => l.sort((p, q) => p.gap + p.pos * 2 - (q.gap + q.pos * 2))[0];
-    const pick = best(pairs.filter((p) => p.backed && p.gap <= 30)) || best(pairs.filter((p) => p.gap <= 24));
+    const focusB = live.find((id) => backedIds.includes(id));
+    const pick = best(pairs.filter((p) => p.backed && p.gap <= 30)) || (preferBacked && focusB ? null : best(pairs.filter((p) => p.gap <= 24)));
     const ride = (core) => {
       const ids2 = [...core];
       for (const id of live) if (!ids2.includes(id) && T.every((st) => {
@@ -35830,15 +35831,16 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
   fill2(t, bSlow);
   {
     const ex = runaway ? [winnerId] : [];
+    const fo = { exclude: ex, preferBacked: true };
     const len = b4700 - bSlow;
     if (len >= 8) {
       const n = Math.max(1, Math.round(len / 11));
       for (let i = 0; i < n; i++) {
-        const a2 = bSlow + len * i / n, e = bSlow + len * (i + 1) / n, subj2 = pickSubject(a2, e, { exclude: ex });
+        const a2 = bSlow + len * i / n, e = bSlow + len * (i + 1) / n, subj2 = pickSubject(a2, e, fo);
         out.push({ type: pairType(subj2, out.at(-1)?.type, meanRate(a2, e)), a: a2, b: e, ids: subj2.ids, subject: subj2.kind, gap: subj2.gap });
       }
     }
-    const a = Math.max(bSlow, out.at(-1).b), subj = pickSubject(a, bFin, { exclude: ex });
+    const a = Math.max(bSlow, out.at(-1).b), subj = pickSubject(a, bFin, fo);
     const last = { type: "headon", a, b: bFin, ids: subj.ids, subject: subj.kind, gap: subj.gap };
     if (out.at(-1).type === "headon" && out.at(-1).a >= bSlow && String(out.at(-1).ids) === String(last.ids)) out.at(-1).b = bFin;
     else out.push(last);
@@ -35848,7 +35850,26 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
     out.at(-1).b = l.b;
   }
   out.push({ type: "finishcam", a: bFin, b: firstFin + 1.15, hard: true, winner: winnerId });
-  if (lastFin > firstFin + 1.2) out.push({ type: "placecam", a: firstFin + 1.15, b: lastFin + 2.5, hard: true });
+  {
+    let a = firstFin + 1.15, hard = true;
+    const rest = sim.finishOrder.slice(1);
+    for (let i = 0; i < rest.length; ) {
+      const grp = [rest[i]];
+      let fb = sim.byId[rest[i]].finishB;
+      i++;
+      while (i < rest.length && sim.byId[rest[i]].finishB - fb < 3) {
+        grp.push(rest[i]);
+        fb = sim.byId[rest[i]].finishB;
+        i++;
+      }
+      const e = i < rest.length ? Math.max(fb + 2.2, a + 4) : lastFin + 2.5;
+      if (e > a + 0.5) {
+        out.push({ type: "placecam", a, b: e, hard, ids: grp });
+        hard = false;
+        a = e;
+      }
+    }
+  }
   out.push({ type: "celebrate", a: Math.max(firstFin + 1.2, lastFin + 2.5), b: lastFin + 90 });
   const pri = (plan.events || []).filter((e) => (e.type === "lead_change" || e.type === "overtake" && (backedIds.includes(e.by) || backedIds.includes(e.on))) && e.broadcastS > gunEnd + 2 && e.broadcastS < bSlow - 3);
   let lastI = -1e9;
@@ -36086,6 +36107,13 @@ function createDirector({ camera, C, sim, world, funfair }) {
           c.y = c.y * 0.6 + fr.y * 0.4;
         }
         ({ pos, look } = headOn(c, s.dist, s.lat ?? 1, 1.2, front));
+        const dv = Math.max(0, ...live.map((r) => r.div || 0));
+        if (dv > 0.01) {
+          const sm = smooth5(ids, b, 1.2);
+          const p2 = sm.c.clone().addScaledVector(sm.h, s.dist).addScaledVector(sm.r, 1.2);
+          p2.y = sm.c.y + 1.35 + s.dist * 0.045;
+          pos.lerp(p2, Math.min(1, dv * 1.5));
+        }
         fov2 = s.fov;
         break;
       }
@@ -36100,7 +36128,7 @@ function createDirector({ camera, C, sim, world, funfair }) {
         }
         const camM = Math.min(mAhead(c.m, FIN_PARK), mAhead(5e3, FIN_PARK));
         const sm = C.sample(camM, void 0, tmpS);
-        pos = new Vector3(sm.x + sm.rx * 1.2, sm.y + 1.45, sm.z + sm.rz * 1.2);
+        pos = new Vector3(sm.x + sm.rx * 0.5, sm.y + 1.45, sm.z + sm.rz * 0.5);
         look = new Vector3(c.x, c.y + 1.15, c.z);
         fov2 = fovFor(FIN_PARK);
         s.smoothLook = true;
@@ -36108,15 +36136,15 @@ function createDirector({ camera, C, sim, world, funfair }) {
       }
       case "placecam": {
         const st = sim.stateAt(Math.max(0, b));
-        const next = backedFirst(st, s.backed);
-        const fins = st.order.map((id) => st.byId[id]).filter((x) => x.finished).sort((a, c) => a.post - c.post);
-        const fresh = fins[0];
+        const sub = (s.ids || []).map((id) => st.byId[id]);
+        const next = sub.find((x) => !x.finished) || null;
+        const fresh = sub.filter((x) => x.finished).sort((a, c) => a.post - c.post)[0];
         const h = new Vector3(fin.tx, 0, fin.tz), r = new Vector3(-h.z, 0, h.x);
         if (!s.fside) s.fside = world.inPark(fin.x + r.x * 16, fin.z + r.z * 16) ? 1 : -1;
         const line = new Vector3(fin.x, fin.y + 1, fin.z);
         const sidePos = line.clone().addScaledVector(r, s.fside * 13).addScaledVector(h, -1.5).add(up.clone().multiplyScalar(2.6));
         let sideLook;
-        if (fresh && fresh.post < 4 && (!next || next.distToFinish > 40)) sideLook = new Vector3(fresh.x, fresh.y + 1.1, fresh.z);
+        if (fresh && (!next || next.distToFinish > 40)) sideLook = new Vector3(fresh.x, fresh.y + 1.1, fresh.z);
         else {
           const k = next ? Math.min(1, Math.max(0, next.distToFinish / 60)) : 0;
           sideLook = next ? line.clone().lerp(new Vector3(next.x, next.y + 1, next.z), Math.min(1, 0.3 + k)) : line;
@@ -36284,7 +36312,7 @@ var CSS = `
 .mr-row .mr-card>*{transform:skewX(var(--usk))}
 .mr-row .mr-chip{width:calc(var(--u)*3.6);height:calc(100% + var(--u)*.7);margin:calc(var(--u)*-.35) 0 calc(var(--u)*-.35) calc(var(--u)*-.6);flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .mr-row .mr-chip svg{width:calc(var(--u)*3.6);height:calc(var(--u)*3.6);display:block;filter:drop-shadow(0 calc(var(--u)*.15) 0 var(--ink))}
-.mr-row .mr-name{flex:1 1 auto;min-width:0;font-size:calc(var(--u)*2.05);line-height:1;white-space:nowrap;-webkit-text-stroke:calc(var(--u)*.22) var(--ink);paint-order:stroke fill}
+.mr-row .mr-name{flex:1 0 auto;font-size:calc(var(--u)*2.05);line-height:1;white-space:nowrap;-webkit-text-stroke:calc(var(--u)*.22) var(--ink);paint-order:stroke fill}
 .mr-row .mr-gap{font-family:var(--body);font-weight:900;font-size:calc(var(--u)*1.35);color:#e3ecff;white-space:nowrap}
 .mr-row.lead .mr-card{background:linear-gradient(180deg,#ffe066,#ffb21f)}
 .mr-row.lead .mr-name{color:#fff}
@@ -36443,6 +36471,8 @@ function createHud(container, { runners, backedBy = {}, players = [], course, pa
   const tags = {};
   const pub = Object.fromEntries(runners.map((r) => [r.id, r]));
   const face = (r, px2) => runnerPortrait(r, { size: px2, idSuffix: `h${(uid++).toString(36)}` });
+  const longest = Math.max(...runners.map((r) => shortOf(r).length));
+  tower.style.width = `calc(var(--u) * ${Math.max(27, Math.min(44, 19 + longest * 1.08)).toFixed(1)})`;
   for (const r of runners) {
     const row = document.createElement("div");
     row.className = "mr-row off snap";
@@ -37838,16 +37868,13 @@ function createOverlay(container, hudRoot) {
   let capText = null, bigText = null, bannerText = null, flashT = 0;
   const api = {
     root,
-    stamp(on, { pip = false } = {}) {
+    stamp(on, { pip = null } = {}) {
       el.stamp.classList.toggle("on", !!on);
       if (pip && on) {
-        const r = el.pip;
-        el.stamp.style.top = `calc(${r.style.top || "var(--u)*17.5"} + 0px)`;
-        el.stamp.classList.add("pip");
-        el.stamp.style.top = "calc(var(--u)*34.6)";
-        el.stamp.style.right = "calc(var(--u)*22)";
+        const w = container.clientWidth || 1920;
+        el.stamp.style.top = `${pip.y + pip.h + 8}px`;
+        el.stamp.style.right = `${w - pip.x - pip.w - 6}px`;
       } else {
-        el.stamp.classList.remove("pip");
         el.stamp.style.top = "";
         el.stamp.style.right = "";
       }
@@ -37911,7 +37938,7 @@ function createOverlay(container, hudRoot) {
     pipRect() {
       const w = container.clientWidth || 1920, h = container.clientHeight || 1080;
       const u = Math.min(w / 100, h * 1.78 / 100);
-      const pw = Math.round(u * 34), ph = Math.round(pw * 9 / 16);
+      const pw = Math.round(u * 38), ph = Math.round(pw * 9 / 16);
       return { x: Math.round(w - u * 2.4 - pw), y: Math.round(u * 17.5), w: pw, h: ph };
     },
     big(text, colour = "#2ec27e") {
@@ -39760,7 +39787,16 @@ SCENES.spaghetti_legs = (K, cs) => {
   const A = actor(K, I, pub);
   const pasta = I.bag.mat("#f6d36b");
   const legMeshes = [];
-  for (const l of A.rig.legs) for (const o of [l.hp, l.kn]) for (const c of o.children) if (c.isMesh && c.geometry.type === "CapsuleGeometry") legMeshes.push({ m: c, orig: c.material });
+  for (const l of A.rig.legs) {
+    for (const c of l.hp.children) if (c.isMesh && c.geometry.type === "CapsuleGeometry") legMeshes.push({ m: c, orig: c.material });
+    for (const c of l.kn.children) if (c.isMesh) legMeshes.push({ m: c, orig: c.material });
+  }
+  const NSTR = 4, NSEG = 9;
+  const noodles = new InstancedMesh(I.bag.add(new SphereGeometry(0.062, 8, 6)), I.bag.mat("#f6d36b"), 2 * NSTR * NSEG);
+  noodles.frustumCulled = false;
+  A.rig.hips.add(noodles);
+  noodles.visible = false;
+  const nO = new Object3D(), hipL = V(), ankL = V();
   const ball = new Group();
   root.add(ball);
   const bm = I.bag.M(new IcosahedronGeometry(0.42, 2), "#8a4a2a", 3);
@@ -39779,15 +39815,37 @@ SCENES.spaghetti_legs = (K, cs) => {
     place2(A, f.p(a, 0), f.yaw);
     const w = smooth3(0.6, 1.1, t);
     drive(A, dt, "run", null, { speed: 3.2, rate: 1, effort: 0.8, expr: t > 2.8 ? "happy" : "effort" });
-    for (const lm of legMeshes) lm.m.material = w > 0.5 ? pasta : lm.orig;
+    for (const lm of legMeshes) {
+      lm.m.material = w > 0.5 ? pasta : lm.orig;
+      lm.m.visible = w < 0.5;
+    }
+    noodles.visible = w >= 0.5;
     A.rig.legs.forEach((l, i) => {
       const ph = t * 9 + i * 1.7;
       l.hp.rotation.z += Math.sin(ph) * 0.55 * w * (i ? 1 : -1);
       l.hp.rotation.x += Math.sin(ph * 0.7) * 0.3 * w;
       l.kn.rotation.z = Math.sin(ph * 1.3 + 1) * 0.9 * w;
       l.kn.rotation.x += Math.cos(ph) * 0.6 * w;
-      l.hp.scale.set(1 - 0.35 * w, 1 + 0.12 * w, 1 - 0.35 * w);
     });
+    if (w >= 0.5) {
+      A.root.updateMatrixWorld(true);
+      let k = 0;
+      A.rig.legs.forEach((l, i) => {
+        A.rig.hips.worldToLocal(l.hp.getWorldPosition(hipL));
+        A.rig.hips.worldToLocal(l.an.getWorldPosition(ankL));
+        for (let sI = 0; sI < NSTR; sI++) {
+          const ox = (sI % 2 ? 1 : -1) * 0.05 * (1 + (sI >> 1)), oz = (sI >> 1 ? 1 : -1) * 0.04;
+          for (let j2 = 0; j2 < NSEG; j2++) {
+            const u = j2 / (NSEG - 1);
+            const wig = Math.sin(u * Math.PI) * (0.22 + 0.06 * sI);
+            nO.position.set(lerp2(hipL.x, ankL.x, u) + ox + Math.sin(t * 11 + u * 6 + sI + i * 2) * wig, lerp2(hipL.y, ankL.y + 0.08, u), lerp2(hipL.z, ankL.z, u) + oz + Math.cos(t * 9 + u * 5 + sI) * wig * 0.7);
+            nO.updateMatrix();
+            noodles.setMatrixAt(k++, nO.matrix);
+          }
+        }
+      });
+      noodles.instanceMatrix.needsUpdate = true;
+    }
     A.rig.body.rotation.z = Math.sin(t * 6) * 0.12 * w;
     A.root.position.y += -0.15 * w + Math.abs(Math.sin(t * 9)) * 0.1 * w;
     boing.visible = t > 0.9 && t < 1.6;
@@ -39889,7 +39947,7 @@ SCENES.cannonball = (K, cs) => {
     K.ov.caption(bb > 0.05 && bb < 1.9 ? "HUMAN CANNONBALL!" : null, { yellow: true });
     if (I.camera && slot) {
       const look = slot.clone().addScaledVector(V(st0.tx, 0, st0.tz), Math.max(0, bb) * 3.5 + 0.5).add(V(0, 1.3, 0));
-      K.cam(st0.p(-1.5, side * 9.5, 2.4), look, 44);
+      K.cam(st0.p(3.6, side * 8.6, 2.6), look, 46);
     }
   };
   return I;
@@ -39942,7 +40000,7 @@ SCENES.raincloud = (K, cs) => {
     cue("line", t > 0.4, () => K.say(cs.lines?.[0]));
     I.pipCaption = t > 0.5 ? t > 3.1 ? "NICE TRY" : "HIS OWN WEATHER" : null;
     const ap = r.root.position;
-    K.pipCamSet(tmp2.copy(ap).addScaledVector(right, 6.2).addScaledVector(V(st.tx, 0, st.tz), 1.4).add(V(0, 2.4, 0)), ap.clone().add(V(0, 1.9, 0)), 46);
+    K.pipCamSet(tmp2.copy(ap).addScaledVector(right, 4.4).addScaledVector(V(st.tx, 0, st.tz), 1.6).add(V(0, 2.3, 0)), ap.clone().add(V(0, 2.1, 0)), 48);
   };
   return I;
 };
@@ -39970,6 +40028,7 @@ SCENES.mirror_signal = (K, cs) => {
   tick.visible = false;
   const dust = makePuffs(I.bag, 7, "#e8d9b5");
   root.add(dust.root);
+  I.pipOnly = [parp, tick, dust.root];
   let side = 1, attached = false;
   const cue = cues();
   I.update = (t, dt, b) => {
@@ -40008,13 +40067,14 @@ SCENES.mirror_signal = (K, cs) => {
       parp.position.copy(on.root.position).add(V(0, on.height + 0.9, 0));
       popScale(parp, t, 1.9);
     }
-    dust.root.position.copy(by.root.position).add(V(-sB.tx * 0.8, 0.3, -sB.tz * 0.8));
+    dust.root.position.copy(by.root.position).add(V(-sB.tx * 0.9, 0.25, -sB.tz * 0.9));
+    dust.root.scale.setScalar(0.45);
     dust.update(clamp01((t - 1.5) / 1.4), 1.2, -1);
     cue("line", t > 0.25, () => K.say(cs.lines?.[0]));
     I.pipCaption = t < 1.3 ? "MIRROR" : t < 2.4 ? "SIGNAL" : "MANOEUVRE";
     const c = by.root.position.clone().lerp(on.root.position, 0.5);
     const fwd = V(sB.tx, 0, sB.tz), right = V(-sB.tz, 0, sB.tx);
-    K.pipCamSet(c.clone().addScaledVector(fwd, -6.5).addScaledVector(right, side * 2.6).add(V(0, 2.6, 0)), c.clone().addScaledVector(fwd, 1.2).add(V(0, 1.4, 0)), 42);
+    K.pipCamSet(c.clone().addScaledVector(fwd, -4.6).addScaledVector(right, side * 2.2).add(V(0, 2.1, 0)), c.clone().addScaledVector(fwd, 0.8).add(V(0, 1.35, 0)), 46);
   };
   const d0 = I.dispose;
   I.dispose = () => {
@@ -40711,7 +40771,7 @@ function createCutscenePlayer(ctx) {
     else restoreRunners();
     ov.paused(paused);
     ov.cut(stampOn || !!pipActive);
-    ov.stamp(stampOn, pipActive && !owns ? { pip: true } : {});
+    ov.stamp(stampOn, pipActive && !owns ? { pip: ov.pipRect() } : {});
     if (pipActive) ov.pip(ov.pipRect(), { label: pipActive.I.pipLabel || "MEANWHILE\u2026", caption: pipActive.I.pipCaption || null });
     else ov.pip(null);
     if (owns && !liveCam) {
@@ -41114,7 +41174,7 @@ function createRaceView(container, opts = {}) {
     const order = st.order.map((id, i) => {
       const r = st.byId[id];
       const show = i < 3 || backedIds.includes(id);
-      let gapText = finalKm || r.finished ? r.gapText : "";
+      let gapText = finalKm || r.finished ? r.gapText === "LEADER" ? "" : r.gapText : "";
       if (!gapText && backedIds.includes(id) && i > 0 && !r.finished) {
         const ahead = st.byId[st.order[i - 1]];
         const g = st.raceS - timeAtDistance(sim.byId[st.order[i - 1]].progress, r.m);
@@ -42020,7 +42080,8 @@ var RULES = {
   cooldownLiveRaces: 3,
   marketGapS: 6,
   battleGapS: 2,
-  battleWindowS: 3.5
+  battleWindowS: 3.5,
+  scrumM: 1e3
 };
 var HILLS = [[1720, 1960], [4220, 4460]];
 var ZONES = { start: [0, 600], avenue: [800, 1310], hill: [1720, 1960], lake: [1980, 2320] };
@@ -42132,7 +42193,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   const lapB = (racePlan.events || []).find((e) => e.type === "lap")?.broadcastS ?? null;
   const evts = (racePlan.events || []).filter((e) => e.type === "overtake" || e.type === "lead_change");
   const battle = (b) => {
-    if (evts.some((e) => Math.abs(e.broadcastS - b) <= RULES.battleWindowS)) return true;
+    if (leaderM(b) >= RULES.scrumM && evts.some((e) => Math.abs(e.broadcastS - b) <= RULES.battleWindowS)) return true;
     const t = broadcastToRace(tm, Math.max(0, b));
     const live = PR.filter((r) => t < r.officialS).map((r) => ({ r, d: distanceAt(r.progress, t) })).sort((a, c) => c.d - a.d);
     if (live.length < 2 || live[0].d < 3500) return false;

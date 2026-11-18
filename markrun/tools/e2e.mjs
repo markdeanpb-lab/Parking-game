@@ -73,7 +73,17 @@ async function ctx(opts, label) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${label} console: ${m.text()}`); });
   return page;
 }
-const shot = async (page, name) => { const t0 = Date.now(); try { await page.waitForFunction(() => !document.querySelector('#wipe.go'), null, { timeout: 3000 }).catch(() => {}); await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); console.log('  shot', name, `${Date.now() - t0}ms`); } catch (e) { console.log('  shot FAILED (slow headless GPU?)', name, e.message.split('\n')[0]); } };
+const overflow = [];
+// phones must never scroll or clip: the page and the one-job .main area must fit the viewport
+async function fitCheck(page, name) {
+  const r = await page.evaluate(() => {
+    const m = document.querySelector('.scr .main');
+    const se = document.scrollingElement;
+    return { page: se.scrollHeight - innerHeight, main: m ? m.scrollHeight - m.clientHeight : 0, w: innerWidth, h: innerHeight };
+  }).catch(() => null);
+  if (r && (r.page > 1 || r.main > 2)) overflow.push(`${name} @${r.w}x${r.h}: page +${r.page}px, main +${r.main}px`);
+}
+const shot = async (page, name) => { if (/phone/i.test(name)) await fitCheck(page, name); const t0 = Date.now(); try { await page.waitForFunction(() => !document.querySelector('#wipe.go'), null, { timeout: 3000 }).catch(() => {}); await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); console.log('  shot', name, `${Date.now() - t0}ms`); } catch (e) { console.log('  shot FAILED (slow headless GPU?)', name, e.message.split('\n')[0]); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let ok = false;
@@ -215,6 +225,11 @@ try {
     const leak = await tv.evaluate(() => document.body.innerText.includes('to WIN'));
     if (leak) throw new Error('TV shows bets before everyone locked');
     // phone B: jump to the 3rd runner and back it with the round's MAX
+    if (round === 1) { // the tightest screens at 360x740: this round's card and the head-to-head duel
+      await pb.click('.strip .tbtn'); await shot(pb, '13b-phoneB-round-card');
+      const d = await pb.$('.strip .sdots i');
+      if (d) { await d.click(); await shot(pb, '13c-phoneB-h2h'); }
+    }
     await pb.locator('.strip .face').nth(2).click();
     await pb.click('[data-open="win"]');
     await pb.click('[data-add="max"]');
@@ -328,6 +343,8 @@ try {
   stopping = true;
   srv.kill('SIGTERM');
 }
+if (overflow.length) { console.error('PHONE SCREENS THAT SCROLL OR CLIP:\n  ' + overflow.join('\n  ')); ok = false; }
+else console.log('phones: no vertical scrolling or clipping on any captured screen ✓');
 if (external.length) { console.error('EXTERNAL REQUESTS ATTEMPTED:\n  ' + external.join('\n  ')); ok = false; }
 else console.log('network: no external requests attempted ✓');
 const realErrors = errors.filter((e) => !/WebSocket|ERR_ABORTED|favicon/.test(e));
