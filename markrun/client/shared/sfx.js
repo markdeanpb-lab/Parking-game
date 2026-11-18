@@ -1,9 +1,22 @@
-// Synthesised WebAudio sound effects + a gentle generative music bed. No audio files.
-// Browsers need a user gesture first: call audio.unlock() from a click/keydown handler.
-export function createAudio() {
-  let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, comp = null;
-  let volume = 0.8, muted = false, musicOn = true;
-  let music = null; // { kind, timer, nextT, step }
+// MARKRUN sound: rendered music + stings (client/assets/audio/, composed by tools/compose_audio.mjs) with synthesised
+// WebAudio fallbacks for every cue, a looping stem player for the music beds, and a voice bus for the premium
+// commentary. Everything loads from the game's own files (no CDN). Browsers need a user gesture first: call
+// audio.unlock() from a click/keydown handler; the TV calls audio.preload() once unlocked.
+const DEFAULT_BASE = (() => { try { return new URL('../assets/audio/', import.meta.url).href; } catch { return '/assets/audio/'; } })();
+// cue name -> rendered asset (the synthesised version plays until the file has loaded, or if it can't)
+const ASSET_CUES = { theme: 'theme', fanfare: 'fanfare', coins: 'coins', sadtrombone: 'sadtrombone', heartbeat: 'heartbeat', drumroll: 'drumroll',
+  sting_in: 'sting_in', sting_comedy: 'sting_comedy', sting_drama: 'sting_drama', cardflip: 'cardflip' };
+const SYNTH_STANDIN = { theme: 'fanfare', sting_in: 'sting', sting_comedy: 'reveal', sting_drama: 'sting', cardflip: 'reveal' };
+const MUSIC_VOL = 0.32, MUSIC_DUCKED = 0.13;
+export function createAudio({ assetBase = DEFAULT_BASE } = {}) {
+  let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, comp = null, voiceBus = null;
+  let volume = 0.8, muted = false, musicOn = true, voiceGain = 1;
+  let music = null; // synth: { kind, timer, nextT, step, bus } | assets: { kind, assets: true, timer, nextT, bus, stems, sources }
+  let ducked = false;
+  // ---- rendered assets ----
+  let manifest = null, manifestP = null;
+  const buffers = new Map(); // file -> AudioBuffer | null (failed)
+  const loading = new Map(); // file -> Promise
 
   function ensure() {
     if (ctx) return ctx;
@@ -17,6 +30,11 @@ export function createAudio() {
     sfxBus = ctx.createGain(); sfxBus.gain.value = 0.9;
     musicBus = ctx.createGain(); musicBus.gain.value = 0.32;
     sfxBus.connect(comp); musicBus.connect(comp); comp.connect(master); master.connect(ctx.destination);
+    // voices skip the music compressor (no pumping): a gentle low cut and a touch of presence
+    voiceBus = ctx.createGain(); voiceBus.gain.value = voiceGain;
+    const vhp = ctx.createBiquadFilter(); vhp.type = 'highpass'; vhp.frequency.value = 75;
+    const vpk = ctx.createBiquadFilter(); vpk.type = 'peaking'; vpk.frequency.value = 3200; vpk.Q.value = 0.9; vpk.gain.value = 2.5;
+    voiceBus.connect(vhp); vhp.connect(vpk); vpk.connect(master);
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -163,9 +181,69 @@ export function createAudio() {
     boo(t) { const o = osc('sawtooth', 160, t, 0.7, { gain: 0.06, a: 0.1, rel: 0.3, filter: { freq: 600 } }); o.frequency.linearRampToValueAtTime(110, t + 0.8); },
   };
 
+  // ---- asset loading ----
+  function loadManifest() {
+    manifestP ||= (typeof fetch === 'function' ? fetch(`${assetBase}manifest.json`).then((r) => (r.ok ? r.json() : null)) : Promise.resolve(null))
+      .catch(() => null).then((m) => { manifest = m; return m; });
+    return manifestP;
+  }
+  function loadFile(file) {
+    if (buffers.has(file)) return Promise.resolve(buffers.get(file));
+    if (loading.has(file)) return loading.get(file);
+    const p = (async () => {
+      try {
+        if (!ensure()) return null;
+        const r = await fetch(assetBase + file);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.arrayBuffer();
+        const buf = await new Promise((res, rej) => { const q = ctx.decodeAudioData(data, res, rej); if (q?.then) q.then(res, rej); });
+        buffers.set(file, buf);
+        return buf;
+      } catch (e) { console.warn('audio asset', file, e?.message || e); buffers.set(file, null); return null; } finally { loading.delete(file); }
+    })();
+    loading.set(file, p);
+    return p;
+  }
+  const cueFile = (cue) => manifest?.cues?.[cue]?.file;
+  async function preload() { // every cue and music stem (TV only; phones stay on the tiny synthesised UI sounds)
+    const m = await loadManifest();
+    if (!m) return false;
+    // music first (it is needed first), then the stings
+    const files = [...Object.values(m.music || {}).flatMap((x) => Object.values(x.stems || {}).map((st) => st.file)), ...Object.values(m.cues || {}).map((c) => c.file)];
+    await Promise.all(files.map(loadFile));
+    return true;
+  }
+  function playBuffer(buf, t, { gain = 0.85, offset = 0, rate = 1, pan = 0, dest = sfxBus } = {}) {
+    const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
+    const g = ctx.createGain(); g.gain.value = gain;
+    src.connect(g);
+    let out = g;
+    if (pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
+    out.connect(dest);
+    src.start(t, Math.max(0, offset));
+    return src;
+  }
+  // asset cue: name -> { file, gain, offset, rate }
+  function assetFor(name, opts = {}) {
+    if (name === 'crowd') {
+      const dur = opts.dur ?? 3.5, peak = opts.peak ?? 0.32;
+      const cue = dur > 3.6 ? 'crowd_roar' : 'crowd_swell';
+      return { cue, gain: Math.max(0.35, Math.min(1.4, peak / 0.3)) * 0.75, rate: 0.94 + Math.random() * 0.12 };
+    }
+    if (name === 'drumroll') { const dur = opts.dur ?? 2.2; return { cue: 'drumroll', gain: 0.8, offset: Math.max(0, 2.4 - dur) }; }
+    if (name === 'heartbeat') return { cue: 'heartbeat', gain: 1 };
+    if (name === 'coins') return { cue: 'coins', gain: Math.min(1, 0.55 + (opts.n ?? 14) / 40) };
+    const cue = ASSET_CUES[name];
+    return cue ? { cue, gain: name === 'cardflip' ? 0.7 : 0.85 } : null;
+  }
   function play(name, opts) {
     if (!ready() || muted) return;
-    const fn = SFX[name];
+    const a = assetFor(name, opts || {});
+    const file = a && cueFile(a.cue);
+    const buf = file && buffers.get(file);
+    if (buf) { try { playBuffer(buf, ctx.currentTime + 0.01, a); return; } catch (e) { console.warn('sfx asset', name, e); } }
+    if (file && !buffers.has(file)) loadFile(file); // next time
+    const fn = SFX[name] || SFX[SYNTH_STANDIN[name]];
     if (!fn) return;
     try { fn(ctx.currentTime + 0.02, opts); } catch (e) { console.warn('sfx', name, e); }
   }
@@ -203,40 +281,123 @@ export function createAudio() {
       music.nextT += eighth;
     }
   }
+  // Rendered beds: kind -> manifest music entry + which stems start audible. 'final' is the race bed with its
+  // final-km layer; 'betting' adds its hurry layer via setMusicLayer('bet_b', true).
+  const BEDS = { lobby: { music: 'lobby', on: ['lobby'] }, betting: { music: 'betting', on: ['bet_a'] }, race: { music: 'race', on: ['race_a'] }, final: { music: 'race', on: ['race_a', 'race_b'] } };
+  let pendingKind = null;
+  let startTok = 0;
+  function newBus(target = MUSIC_VOL) {
+    const fresh = ctx.createGain(); fresh.gain.value = 0.0001; fresh.connect(comp);
+    fresh.gain.exponentialRampToValueAtTime(ducked ? MUSIC_DUCKED : target, ctx.currentTime + 1.2);
+    musicBus = fresh;
+    return fresh;
+  }
   function startMusic(kind = 'lobby') {
     if (!ensure()) return;
     if (music?.kind === kind) return;
+    // the race bed is already playing: the final km just brings in its extra layer, in time
+    if (kind === 'final' && music?.assets && music.kind === 'race') { setMusicLayer('race_b', true, 0.6); music.kind = 'final'; return; }
     stopMusic(0.6);
-    if (!musicOn) { music = null; pendingKind = kind; return; }
     pendingKind = kind;
-    const fresh = ctx.createGain(); fresh.gain.value = 0.0001; fresh.connect(comp);
-    const prevBus = musicBus; musicBus = fresh;
-    fresh.gain.exponentialRampToValueAtTime(0.32, ctx.currentTime + 1.5);
-    music = { kind, nextT: ctx.currentTime + 0.1, step: 0, bus: fresh };
-    music.timer = setInterval(() => { if (ready()) scheduleMusic(); }, 90);
-    void prevBus;
+    if (!musicOn) { music = null; return; }
+    const tok = ++startTok;
+    const bed = BEDS[kind];
+    const begin = () => {
+      if (tok !== startTok || !musicOn) return;
+      const m = bed && manifest?.music?.[bed.music];
+      const stems = m && Object.entries(m.stems || {}).map(([name, st]) => ({ name, buf: buffers.get(st.file), onsetS: st.onsetS || 0 }));
+      if (stems?.length && stems.every((x) => x.buf)) startBed(kind, m, stems, bed.on);
+      else startSynth(kind);
+    };
+    const m = bed && manifest?.music?.[bed.music];
+    if (bed && (!manifest || (m && Object.values(m.stems).some((st) => !buffers.has(st.file))))) {
+      // wait (briefly) for the rendered bed; fall back to the synthesised one if it isn't there in time
+      let done = false;
+      const go = () => { if (!done) { done = true; begin(); } };
+      setTimeout(go, 2500);
+      loadManifest().then((mm) => { const e = mm?.music?.[bed.music]; return e ? Promise.all(Object.values(e.stems).map((st) => loadFile(st.file))) : null; }).then(go, go);
+    } else begin();
   }
-  let pendingKind = null;
+  function startSynth(kind) {
+    if (!PROGS[kind]) { music = null; return; }
+    const bus = newBus();
+    music = { kind, nextT: ctx.currentTime + 0.1, step: 0, bus };
+    music.timer = setInterval(() => { if (ready()) scheduleMusic(); }, 90);
+  }
+  function startBed(kind, m, stems, on) {
+    const bus = newBus();
+    const st = {};
+    for (const x of stems) {
+      const g = ctx.createGain(); g.gain.value = on.includes(x.name) ? 1 : 0.0001; g.connect(bus);
+      // decoder alignment: the composer recorded where the first transient is; most decoders trim the encoder delay
+      let lead = 0;
+      if (x.onsetS > 0) { const d = x.buf.getChannelData(0); const thr = 0.0316 * 0.7; for (let i = 0; i < Math.min(d.length, x.buf.sampleRate); i++) if (Math.abs(d[i]) > thr) { const sh = i / x.buf.sampleRate - x.onsetS; lead = sh > 0.002 && sh < 0.1 ? sh : 0; break; } }
+      st[x.name] = { gain: g, buf: x.buf, lead };
+    }
+    music = { kind, assets: true, bus, stems: st, loopS: m.loopS, nextT: ctx.currentTime + 0.12, sources: [] };
+    const sched = () => {
+      if (!music?.assets || !ready()) return;
+      while (music.nextT < ctx.currentTime + 1.5) {
+        for (const x of Object.values(music.stems)) {
+          const src = ctx.createBufferSource(); src.buffer = x.buf; src.connect(x.gain);
+          src.start(music.nextT, x.lead);
+          music.sources.push({ src, end: music.nextT + x.buf.duration });
+        }
+        music.nextT += music.loopS;
+      }
+      music.sources = music.sources.filter((s) => s.end > ctx.currentTime);
+    };
+    sched();
+    music.timer = setInterval(sched, 250);
+  }
+  function setMusicLayer(name, on, fade = 1.2) {
+    const x = music?.stems?.[name];
+    if (!x || !ctx) return false;
+    x.gain.gain.cancelScheduledValues(ctx.currentTime);
+    x.gain.gain.setTargetAtTime(on ? 1 : 0.0001, ctx.currentTime, fade / 3);
+    return true;
+  }
   function stopMusic(fade = 0.8) {
-    if (!music) return;
+    if (!music) { startTok++; return; }
+    startTok++;
     clearInterval(music.timer);
     const bus = music.bus;
-    if (ctx && bus) { bus.gain.cancelScheduledValues(ctx.currentTime); bus.gain.setValueAtTime(bus.gain.value, ctx.currentTime); bus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + fade); setTimeout(() => bus.disconnect(), fade * 1000 + 500); }
+    const srcs = music.sources || [];
+    if (ctx && bus) {
+      bus.gain.cancelScheduledValues(ctx.currentTime); bus.gain.setValueAtTime(Math.max(0.0001, bus.gain.value), ctx.currentTime); bus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + fade);
+      setTimeout(() => { for (const s of srcs) { try { s.src.stop(); } catch { /* */ } } bus.disconnect(); }, fade * 1000 + 500);
+    }
     music = null;
   }
   function duck(on) { // lower music under commentary
+    ducked = !!on;
     if (!music || !ctx) return;
-    music.bus.gain.setTargetAtTime(on ? 0.14 : 0.32, ctx.currentTime, 0.25);
+    music.bus.gain.cancelScheduledValues(ctx.currentTime);
+    music.bus.gain.setTargetAtTime(on ? MUSIC_DUCKED : MUSIC_VOL, ctx.currentTime, on ? 0.12 : 0.4);
+  }
+  // premium commentary: play rendered PCM on the voice bus. Returns { stop(), durationMs } or null.
+  function playVoice(pcm, sampleRate = 24000, { onended } = {}) {
+    if (!ready() || !pcm?.length) return null;
+    const buf = ctx.createBuffer(1, pcm.length, sampleRate);
+    buf.copyToChannel(pcm instanceof Float32Array ? pcm : Float32Array.from(pcm), 0);
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(voiceBus);
+    let ended = false;
+    src.onended = () => { if (!ended) { ended = true; onended?.(); } };
+    src.start(ctx.currentTime + 0.03);
+    return { durationMs: Math.round(buf.duration * 1000), stop() { if (!ended) { ended = true; try { src.stop(); } catch { /* */ } } } };
   }
 
   return {
-    unlock, play, ready,
+    unlock, play, ready, preload, playVoice, setMusicLayer,
     get context() { return ctx; },
     setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (master) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.05); },
+    setVoiceVolume(v) { voiceGain = Math.max(0, Math.min(1.5, v)); if (voiceBus) voiceBus.gain.setTargetAtTime(voiceGain, ctx.currentTime, 0.05); },
     setMuted(m) { muted = !!m; if (master) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.05); },
     get muted() { return muted; },
     setMusicEnabled(on) { musicOn = !!on; if (!musicOn) { const k = music?.kind || pendingKind; stopMusic(); pendingKind = k; } else if (pendingKind && !music) startMusic(pendingKind); },
     startMusic, stopMusic, duck,
     get musicKind() { return music?.kind || null; },
+    get musicMode() { return music ? (music.assets ? 'assets' : 'synth') : null; },
+    get assetsLoaded() { return [...buffers.values()].filter(Boolean).length; },
   };
 }

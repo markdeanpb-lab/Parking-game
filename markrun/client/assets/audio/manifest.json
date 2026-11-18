@@ -1,0 +1,96 @@
+{
+ "version": 1,
+ "cues": {
+  "theme": {
+   "file": "theme.mp3",
+   "seconds": 5.443
+  },
+  "fanfare": {
+   "file": "fanfare.mp3",
+   "seconds": 3.6
+  },
+  "coins": {
+   "file": "coins.mp3",
+   "seconds": 2.6
+  },
+  "sadtrombone": {
+   "file": "sadtrombone.mp3",
+   "seconds": 3.6
+  },
+  "heartbeat": {
+   "file": "heartbeat.mp3",
+   "seconds": 4.6
+  },
+  "crowd_swell": {
+   "file": "crowd_swell.mp3",
+   "seconds": 3.4
+  },
+  "crowd_roar": {
+   "file": "crowd_roar.mp3",
+   "seconds": 6.5
+  },
+  "sting_in": {
+   "file": "sting_in.mp3",
+   "seconds": 2.2
+  },
+  "sting_comedy": {
+   "file": "sting_comedy.mp3",
+   "seconds": 2
+  },
+  "sting_drama": {
+   "file": "sting_drama.mp3",
+   "seconds": 3.4
+  },
+  "drumroll": {
+   "file": "drumroll.mp3",
+   "seconds": 4.2
+  },
+  "cardflip": {
+   "file": "cardflip.mp3",
+   "seconds": 1.4
+  }
+ },
+ "music": {
+  "lobby": {
+   "bpm": 96,
+   "loopS": 20,
+   "tailS": 2.5,
+   "stems": {
+    "lobby": {
+     "file": "lobby.mp3",
+     "onsetS": 0.0002
+    }
+   }
+  },
+  "betting": {
+   "bpm": 120,
+   "loopS": 16,
+   "tailS": 2,
+   "stems": {
+    "bet_a": {
+     "file": "bet_a.mp3",
+     "onsetS": 0.0002
+    },
+    "bet_b": {
+     "file": "bet_b.mp3",
+     "onsetS": 0.0002
+    }
+   }
+  },
+  "race": {
+   "bpm": 128,
+   "loopS": 15,
+   "tailS": 2,
+   "stems": {
+    "race_a": {
+     "file": "race_a.mp3",
+     "onsetS": 0.0001
+    },
+    "race_b": {
+     "file": "race_b.mp3",
+     "onsetS": 0.0008
+    }
+   }
+  }
+ }
+}

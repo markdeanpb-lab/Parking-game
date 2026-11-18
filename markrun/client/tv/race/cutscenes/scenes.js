@@ -135,11 +135,11 @@ function fairSetup(K, cs) {
 function popSign(fair) { if (!fair.pop) { fair.pop = 1; fair.popT = 0; } }
 
 // a carried plush goose on the REAL runner for the rest of the race (lap-1 prize, lap-2 upgrade)
-function carryPlush(K, who, scale) {
+function carryPlush(K, who, scale, kind = 'goose') {
   const P = K.persist; const r = K.runners[who]; if (!r) return;
   const old = P.store.get('plush'); if (old) { old.parent?.remove(old); }
   const g = new THREE.Group(); P.bag.roots.push(g);
-  const goose = makeGoose(P.bag, { plush: true, scale }); goose.root.rotation.y = Math.PI; goose.root.position.set(0, -0.35 * scale, 0.1);
+  const goose = kind === 'duck' ? { root: makeDuck(P.bag, scale * 2.6) } : makeGoose(P.bag, { plush: true, scale }); goose.root.rotation.y = Math.PI; goose.root.position.set(0, -0.35 * scale, 0.1);
   g.add(goose.root); g.position.set(0, r.hipH + 0.25, 0.55 + 0.2 * scale); r.root.add(g);
   P.store.set('plush', g);
   P.updaters.set('plush', () => {
@@ -207,7 +207,27 @@ SCENES.funfair_drone = (K, cs) => {
   const pub = K.pub(cs.who);
   const arrow = sprite(I.bag, arrowTexture(I.bag, pub?.colour?.primary || '#ffd23f'), 9, 128 / 160); g.add(arrow);
   const cue = cues();
-  I.update = (t, dt, b) => {
+  // beat 3a: a LOW wide establishing shot, rides filling the frame, the runner small among them
+  const rides = K.funfair?.anchors?.rides || [];
+  const fairC = K.funfair?.anchors?.center ? V(K.funfair.anchors.center.x, K.funfair.anchors.center.y, K.funfair.anchors.center.z) : centre.clone();
+  const EST = 2.5;
+  I.update = (t0, dt, b) => {
+    if (t0 < EST) {
+      const st = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
+      const rp = V(st.x, st.y, st.z);
+      // stand beyond his diverted line, looking back across him at the rides
+      const out = V(rp.x - fairC.x, 0, rp.z - fairC.z); if (out.lengthSq() < 1) out.copy(away).negate(); out.normalize();
+      const lookAt = fairC.clone().lerp(rp, 0.3); lookAt.y = C.heightAt(lookAt.x, lookAt.z) + 9;
+      const camP = rp.clone().addScaledVector(out, 26).add(V(0, 0, 0)).addScaledVector(V(-out.z, 0, out.x), -6 + t0 * 2.2); camP.y = C.heightAt(camP.x, camP.z) + 2.2;
+      K.cam(camP, lookAt, 58, 0, { sun: 120 });
+      arrow.position.set(st.x, st.y + 4.6 + Math.sin(t0 * 6) * 0.3, st.z); arrow.scale.set(1.6 * 128 / 160, 1.6, 1);
+      dots.visible = false; lab.visible = false; dashes.visible = false;
+      K.ov.caption(t0 > 0.3 ? 'MEANWHILE, AT THE FAIR…' : null, { yellow: true });
+      void rides;
+      return;
+    }
+    dots.visible = true; dashes.visible = true; arrow.scale.set(9 * 128 / 160, 9, 1);
+    const t = t0 - EST;
     const reveal = clamp01((t - 0.2) / 1.8);
     const n = Math.floor(pts.length * reveal);
     for (let i = 0; i < pts.length; i++) {
@@ -219,7 +239,7 @@ SCENES.funfair_drone = (K, cs) => {
     const st = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
     arrow.position.set(st.x, st.y + 8 + Math.sin(t * 6) * 0.8, st.z);
     cue('cap', true, () => {});
-    K.ov.caption(t > 0.4 && t < cs.durationS - 0.1 ? 'HIS REAL GPS ROUTE' : null, { yellow: true });
+    K.ov.caption(t > 0.2 && t0 < cs.durationS - 0.1 ? 'HIS REAL GPS ROUTE' : null, { yellow: true });
     // high drone, slow drift
     const dist = ext * 1.75 + 30, el = 0.82 + t * 0.02;
     const dir = away.clone().applyAxisAngle(V(0, 1, 0), -0.25 + t * 0.05);
@@ -298,8 +318,11 @@ SCENES.hook_a_duck = (K, cs) => {
   const rod = I.bag.M(new THREE.CylinderGeometry(0.035, 0.035, 2.4, 6).rotateX(Math.PI / 2).translate(0, 0, 1.2), '#c99a5a', 1.5); pole.add(rod);
   const line = I.bag.M(new THREE.CylinderGeometry(0.012, 0.012, 1, 4).translate(0, -0.5, 0), '#1a1420', 0); line.position.z = 2.4; pole.add(line);
   const hook = I.bag.M(new THREE.TorusGeometry(0.08, 0.02, 6, 10, Math.PI * 1.4), '#d0d6e0', 1.2); pole.add(hook);
-  const plushSmall = makeGoose(I.bag, { plush: true, scale: lap2 ? 1.25 : 0.42 }); root.add(plushSmall.root);
-  const plushBig = makeGoose(I.bag, { plush: true, scale: 2.3 }); root.add(plushBig.root); plushBig.root.visible = false;
+  const prizeKind = cs.params.prize === 'duck' ? 'duck' : 'goose';
+  const prize = (sc) => (prizeKind === 'duck' ? { root: makeDuck(I.bag, sc * 2.6), pose() {} } : makeGoose(I.bag, { plush: true, scale: sc }));
+  const plushSmall = prize(lap2 ? 1.25 : 0.42); root.add(plushSmall.root);
+  const plushBigScale = 2.9;
+  const plushBig = prize(plushBigScale); root.add(plushBig.root); plushBig.root.visible = false;
   const honk = sprite(I.bag, bubbleTexture(I.bag, 'HONK!', { burst: true, w: 512, h: 300, size: 120, bg: '#ffffff' }), 0.9, 512 / 300); root.add(honk); honk.visible = false;
   const ding = sprite(I.bag, bubbleTexture(I.bag, 'WINNER!', { burst: true, w: 512, h: 300, size: 110, bg: '#ffd23f' }), 1.1, 512 / 300); root.add(ding); ding.visible = false;
   const cue = cues();
@@ -330,7 +353,7 @@ SCENES.hook_a_duck = (K, cs) => {
     if (!lap2) {
       // Mark fishing, then the prize, then off he sprints with it
       if (t < 4.2) {
-        drive(A, dt, 'idle', null, { expr: t > 3.2 ? 'happy' : 'effort' });
+        drive(A, dt, 'idle', null, { expr: t > 3.2 ? 'happy' : t > 2.0 && t < 2.8 ? 'worried' : 'effort' });
         const r = A.rig; r.torso.rotation.x = 0.45; for (const a of r.arms) { a.sh.rotation.set(-1.25, 0, 0); a.el.rotation.x = -0.35; } r.head.rotation.x = 0.35;
         r.arms[0].sh.rotation.z = 0.25; r.arms[1].sh.rotation.z = -0.25;
         const chest = A.root.localToWorld(V(0, A.r.hipH + 0.5, 0.45));
@@ -357,51 +380,63 @@ SCENES.hook_a_duck = (K, cs) => {
       const arms = A.root.localToWorld(V(0, A.r.hipH + 0.1, 0.75));
       plushSmall.root.position.copy(shelf).lerp(arms, handK); plushSmall.root.scale.setScalar(lerp(0.42, 1.3, handK) / 0.42 * 0.42 / 0.42);
       plushSmall.root.rotation.y = handK > 0.5 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
-      plushSmall.root.scale.setScalar(lerp(0.42, 1.25, handK));
+      plushSmall.root.scale.setScalar(lerp(0.42, 1.25, handK) * (prizeKind === 'duck' ? 2.6 : 1));
       cue('line', t > 4.4, () => K.say(cs.lines?.[0]));
       // cameras
       if (t < 1.4) { shot(f.p(-7.5, -s2 * 2.6, 2.6), f.p(0, s2 * 3.2, 1.2), 42); K.ov.caption(t > 0.2 ? 'HOOK-A-DUCK!' : null, { yellow: true }); }
-      else if (t < 3.6) { shot(f.p(3.0, s2 * 0.9, 2.3), pool.clone().lerp(markPos, 0.35).add(V(0, 0.5, 0)), 44); K.ov.caption(t > 2.0 && t < 2.9 ? 'HANG ON…' : null); }
+      else if (t >= 2.05 && t < 2.8) {
+        // face reaction on the HONK: front three-quarter, close
+        const fd = pool.clone().sub(markPos).setY(0).normalize(), sd = V(-fd.z, 0, fd.x);
+        A.rig.torso.rotation.x = 0.0; A.rig.head.rotation.x = -0.2; A.rig.head.rotation.y = 0.35; // startled upright
+        const headP2 = A.root.localToWorld(V(0, A.r.height - 0.5, 0));
+        shot(headP2.clone().addScaledVector(fd, 2.3).addScaledVector(sd, 1.1).add(V(0, -0.15, 0)), headP2.clone().add(V(0, 0.05, 0)), 34);
+        honk.visible = false; A.r.setPop('!'); K.ov.caption('HANG ON…');
+      }
+      else if (t < 3.6) { A.r.setPop(null); shot(f.p(3.0, s2 * 0.9, 2.3), pool.clone().lerp(markPos, 0.35).add(V(0, 0.5, 0)), 44); K.ov.caption(null); }
       else if (t < 5.0) { shot(f.p(4.6, -s2 * 1.6, 2.0), markPos.clone().lerp(stallPos, 0.35).add(V(0, 1.4, 0)), 42); K.ov.caption(t > 4.3 ? 'WINNER!' : null, { yellow: true }); }
       else { const ap = A.root.position; shot(ap.clone().add(V(-f.rx * s2 * 6.5, 2.2, -f.rz * s2 * 6.5)).addScaledVector(V(f.tx, 0, f.tz), 1.5), ap.clone().add(V(0, 1.3, 0)), 40); K.ov.caption(null); }
-      if (t > 5.6 && !I._carry) { I._carry = true; carryPlush(K, cs.who, 1.3); }
+      if (t > 5.6 && !I._carry) { I._carry = true; carryPlush(K, cs.who, 1.3, prizeKind); }
     } else {
-      // lap 2: hand it back... and get a BIGGER one
+      // lap 2: the old prize goes back ON the counter (it stays there, for scale), a visibly bigger one comes out
       pole.visible = false;
       for (const dk of stall.ducks) dk.o.visible = true;
-      const give = smooth(0.3, 1.0, t), big = smooth(1.2, 2.2, t);
-      drive(A, dt, t < 2.4 ? 'idle' : 'run', null, { speed: 3.2, rate: 1, expr: t > 1.4 ? 'happy' : 'normal' });
-      const run = Math.max(0, t - 2.4);
-      const pos = f.p(run * 2.6, s2 * 1.75 * (1 - Math.min(1, run * 0.8)), Math.abs(Math.sin(run * 6)) * 0.08);
-      place(A, pos, t < 2.4 ? yawTo(markPos, pool) : f.yaw);
-      for (const [i, a] of A.rig.arms.entries()) { a.sh.rotation.set(t < 2.4 ? -1.35 : -1.9, 0, i ? 0.5 : -0.5); a.el.rotation.x = t < 2.4 ? -0.5 : -0.9; }
-      if (t > 2.4) A.rig.torso.rotation.x = -0.25 + Math.sin(t * 9) * 0.06; // staggering under it
+      const give = smooth(0.25, 0.9, t), big = smooth(1.3, 2.1, t);
+      const walking = t > 2.7;
+      drive(A, dt, walking ? 'run' : t > 1.9 ? 'celebrate' : 'idle', 'jump', { speed: 3.0, rate: 1, expr: t > 1.5 ? 'love' : 'normal' });
+      const run = Math.max(0, t - 2.7);
+      const pos = f.p(run * 2.4, s2 * 1.75 * (1 - Math.min(1, run * 0.8)), Math.abs(Math.sin(run * 6)) * 0.08);
+      place(A, pos, !walking ? yawTo(markPos, pool) : f.yaw);
+      if (t < 1.9 || walking) for (const [i, a] of A.rig.arms.entries()) { a.sh.rotation.set(walking ? -1.9 : -1.35 * (1 - give * 0.6), 0, i ? 0.5 : -0.5); a.el.rotation.x = walking ? -0.9 : -0.5; }
+      if (walking) A.rig.torso.rotation.x = -0.3 + Math.sin(t * 9) * 0.07; // staggering under it
       const arms = A.root.localToWorld(V(0, A.r.hipH + 0.15, 0.85));
-      const counterW = stall.g.localToWorld(V(-0.6, 1.25, 0.6));
-      plushSmall.root.position.copy(arms).lerp(counterW, give); plushSmall.root.visible = big < 0.5;
-      plushSmall.root.rotation.y = A.root.rotation.y + Math.PI;
+      const counterW = stall.g.localToWorld(V(-1.4, 1.15, 0.75));
+      plushSmall.root.position.copy(arms).lerp(counterW, give); plushSmall.root.visible = true;
+      plushSmall.root.rotation.y = give > 0.5 ? stall.g.rotation.y + Math.PI : A.root.rotation.y + Math.PI;
       plushBig.root.visible = big > 0;
-      const behind = stall.g.localToWorld(V(0.5, 0.6, -0.2));
-      plushBig.root.position.copy(behind).lerp(A.root.localToWorld(V(0, A.r.hipH - 0.3, 1.1)), smooth(1.6, 2.4, t));
-      plushBig.root.scale.setScalar(lerp(0.3, 1, big) * 2.3); plushBig.root.rotation.y = big > 0.6 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
-      plushBig.pose({ t });
+      const behind = stall.g.localToWorld(V(0.7, 0.4, 0.4));
+      const carry = smooth(2.2, 2.8, t);
+      plushBig.root.position.copy(behind).add(V(0, big * 0.6, 0)).lerp(A.root.localToWorld(V(0, A.r.hipH - 0.3, 1.2)), carry);
+      plushBig.root.scale.setScalar(lerp(0.3, 1, big) * plushBigScale); plushBig.root.rotation.y = carry > 0.5 ? A.root.rotation.y + Math.PI : stall.g.rotation.y + Math.PI;
+      plushBig.pose?.({ t });
       cue('line', t > 1.6, () => K.say(cs.lines?.[0]));
-      K.ov.caption(t > 1.5 ? 'TRADED UP!' : null, { yellow: true });
-      if (t < 2.4) shot(f.p(-6.2, -s2 * 2.2, 2.4), markPos.clone().lerp(stallPos, 0.45).add(V(0, 1.4, 0)), 44);
-      else { const ap = A.root.position; shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 5.5).add(V(-f.rx * s2 * 2.5, 2.2, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.6, 0)), 44); }
-      if (t > 3.5 && !I._carry) { I._carry = true; carryPlush(K, cs.who, 2.0); }
+      K.ov.caption(t < 1.3 ? (t > 0.3 ? 'SWAP?' : null) : 'TRADED UP!', { yellow: t >= 1.3 });
+      // side-on two-shot across the counter: the small prize and the giant one in the same frame
+      const mid = markPos.clone().lerp(stallPos, 0.5);
+      if (!walking) shot(mid.clone().addScaledVector(V(f.tx, 0, f.tz), -7.2).add(V(0, 2.3, 0)), mid.clone().add(V(0, 1.5, 0)), 46);
+      else { const ap = A.root.position; shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 6).add(V(-f.rx * s2 * 2.5, 2.4, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.8, 0)), 46); }
+      if (t > 3.6 && !I._carry) { I._carry = true; carryPlush(K, cs.who, 2.0, prizeKind); }
     }
   };
-  I.outro = () => { if (!I._carry) { I._carry = true; carryPlush(K, cs.who, lap2 ? 2.0 : 1.3); } };
+  I.outro = () => { if (!I._carry) { I._carry = true; carryPlush(K, cs.who, lap2 ? 2.0 : 1.3, prizeKind); } };
   return I;
 };
 
 // ---------- F1 Test Your Strength (lap 1: creep to PARKRUNNER / launch; lap 2: DING, bell into the boating lake) ----------
-function makeStrength(I) {
+function makeStrength(I, top = 'JEFF') {
   const bag = I.bag; const g = new THREE.Group();
   const H = 6.4;
   const base0 = bag.M(new RoundedBoxGeometry(1.8, 0.35, 1.8, 2, 0.08), '#2e6fe0'); base0.position.y = 0.17; g.add(base0);
-  const labels = [['JEFF', '#ff3d8b'], ['LEGEND', '#ff8a1f'], ['PARKRUNNER', '#ffd23f'], ['WOBBLY', '#8ee86b'], ['WEED', '#57c7ff']];
+  const labels = [[top, '#ff3d8b'], ['LEGEND', '#ff8a1f'], ['PARKRUNNER', '#ffd23f'], ['WOBBLY', '#8ee86b'], ['FEEBLE', '#57c7ff']];
   const tex = bag.tex(256, 1536, (c, w, h) => {
     c.fillStyle = '#1a1420'; roundRect(c, 0, 0, w, h, 30); c.fill();
     const n = labels.length;
@@ -433,7 +468,7 @@ SCENES.test_strength = (K, cs) => {
   const v = cs.params.variant || (cs.params.lap === 2 ? 'ding' : 'creep');
   const { f, s2 } = fairStage(K, cs);
   const root = I.bag.group();
-  const T = makeStrength(I); root.add(T.g);
+  const T = makeStrength(I, cs.params.top === 'pam' ? 'PAM' : 'JEFF'); root.add(T.g);
   const towerPos = f.p(0, s2 * 4.3, -0.16); T.g.position.copy(towerPos); T.g.rotation.y = Math.atan2(-s2 * f.rx, -s2 * f.rz);
   const strikerW = T.g.localToWorld(V(0, 0, 0.75));
   const pub = K.pub(cs.who);
@@ -514,7 +549,7 @@ SCENES.test_strength = (K, cs) => {
       if (t < 2.2) { shot(f.p(-6, -s2 * 1.8, 2.2), towerPos.clone().lerp(hPos, 0.4).add(V(0, 1.8, 0)), 48); K.ov.caption(t > 0.4 ? 'HOLD STILL…' : null); }
       else { shot(f.p(-7, -s2 * 6, 3), p, 52); K.ov.caption('LAUNCHED!', { yellow: true }); }
     } else {
-      // creep: swing, the puck creeps past WEED and WOBBLY... and stops at PARKRUNNER. A shrug. Off he jogs.
+      // creep: swing, the puck creeps past FEEBLE and WOBBLY... and stops at PARKRUNNER. A shrug. Off he jogs.
       place(A, markPos, faceTower);
       const sw = t < 1.0 ? lerp(-0.2, -0.9, smooth(0, 1, t)) : lerp(-0.9, 2.35, clamp01((t - 1.0) / 0.16));
       if (t < 3.6) {
@@ -528,14 +563,14 @@ SCENES.test_strength = (K, cs) => {
       }
       const tgt = (T.labelY(2) - 0.6) / (T.H - 1.35);
       puckF = t < 1.15 ? 0 : tgt * easeOut((t - 1.15) / 1.6) + (t > 2.75 ? Math.sin((t - 2.75) * 14) * 0.012 * Math.max(0, 1 - (t - 2.75) * 2) : 0);
-      whack.visible = t > 1.15 && t < 1.6; if (whack.visible) { whack.position.copy(strikerW).add(V(0, 1.4, 0)); popScale(whack, t, 1.15); }
+      whack.visible = t > 1.15 && t < 1.6; if (whack.visible) { whack.position.copy(strikerW).add(V(0, 3.2, 0)); popScale(whack, t, 1.15); }
       T.glow.material.opacity = t > 2.75 ? 0.75 + Math.sin(t * 12) * 0.2 : 0; T.glow.position.y = T.labelY(2);
       cue('line', t > 3.1, () => K.say(cs.lines?.[0]));
       if (t < 1.2) { shot(f.p(-6.4, -s2 * 2.0, 2.0), towerPos.clone().add(V(0, 2.2, 0)), 52); K.ov.caption(t > 0.3 ? 'TEST YOUR STRENGTH' : null, { yellow: true }); }
       else if (t < 3.6) {
         const py = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 6.2).addScaledVector(V(f.tx, 0, f.tz), 1.2).add(V(0, Math.max(4.0, py.y - towerPos.y + 1.0), 0)), py.clone().add(V(0, 0.1, 0)), 40);
-        K.ov.caption(t > 2.8 ? 'PARKRUNNER.' : t > 1.9 ? 'WOBBLY…' : t > 1.3 ? 'WEED…' : null, { yellow: t > 2.8 });
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 5.0).addScaledVector(V(f.tx, 0, f.tz), 3.6).add(V(0, Math.max(4.6, py.y - towerPos.y + 1.6), 0)), py.clone().add(V(0, 0.1, 0)), 40);
+        K.ov.caption(t > 2.8 ? 'PARKRUNNER.' : t > 1.9 ? 'WOBBLY…' : t > 1.3 ? 'FEEBLE…' : null, { yellow: t > 2.8 });
       } else { shot(f.p(-6, -s2 * 2.2, 2.0), A.root.position.clone().add(V(0, 1.3, 0)), 42); K.ov.caption(null); }
     }
     T.puck.position.set(0, T.puckY(puckF), 0.14);
@@ -574,7 +609,9 @@ SCENES.goose_toll = (K, cs) => {
   const goose = makeGoose(I.bag, { scale: 1.25 }); root.add(goose.root);
   const pub = K.pub(cs.who);
   const A = actor(K, I, pub);
-  const jelly = I.bag.M(new THREE.CapsuleGeometry(0.07, 0.12, 4, 8), '#ff3d3d', 2); root.add(jelly); jelly.visible = false;
+  const jelly = I.bag.M(new THREE.CapsuleGeometry(0.11, 0.2, 4, 10), '#ff2d55', 2.5); root.add(jelly); jelly.visible = false;
+  const peak = cs.params.variant === 'peak';
+  const goose2 = makeGoose(I.bag, { scale: 1.0 }); root.add(goose2.root); goose2.root.visible = peak;
   const stampP = new THREE.Group(); root.add(stampP);
   const sh = I.bag.M(new THREE.CylinderGeometry(0.05, 0.06, 0.3, 8).translate(0, 0.25, 0), '#7a4a2a', 1.5); stampP.add(sh);
   const sb = I.bag.M(new RoundedBoxGeometry(0.34, 0.12, 0.24, 2, 0.03), '#ff3d3d', 2); stampP.add(sb); stampP.visible = false;
@@ -607,50 +644,70 @@ SCENES.goose_toll = (K, cs) => {
     stampP.visible = t > 3.55 && t < 4.3;
     if (stampP.visible) { stampP.position.copy(hand).add(V(0, 0.25 + Math.abs(Math.sin((t - 3.55) * 9)) * 0.35, 0)); }
     cue('line', t > 1.25, () => K.say(cs.lines?.[0]));
-    cue('paid', t > 3.8, () => K.ov.big('PAID', '#ff3d3d'));
-    if (t > 4.4) K.ov.big(null);
+    cue('paid', t > 3.6, () => K.ov.big('PAID', '#ff3d3d'));
+    if (t > 3.95) K.ov.big(null);
     // cameras
+    if (peak) { goose2.root.position.copy(f.p(2.4, s * (PATH_W / 2 - 0.6))); goose2.root.rotation.y = f.yaw + Math.PI - s * 0.6; goose2.pose({ t: t + 0.4, honk: t > 1.0 && t < 1.4 ? 1 : 0, wingL: t > 1.3 && t < 3.6 ? 0.8 : 0 }); }
     if (t < 1.3) { shot(f.p(-2.2, -s * 7.8, 2.1), f.p(-0.6, s * 0.9, 1.1), 42); K.ov.caption(t > 0.55 ? 'TOLL BOOTH' : null, { yellow: true }); }
-    else if (t < 2.25) { shot(f.p(1.9, -s * 4.4, 1.5), f.p(0.3, s * 0.6, 1.2), 32); K.ov.caption('1 JELLY BABY', { yellow: true }); }
-    else if (t < 4.5) { shot(f.p(2.6, -s * 4.6, 1.6), f.p(-0.4, s * 0.3, 1.2), 36); K.ov.caption(t < 3.0 ? 'ER…' : null); }
+    else if (t < 2.25) { shot(f.p(1.9, -s * 4.4, 1.5), f.p(0.3, s * 0.6, 1.2), 32); K.ov.caption(peak ? 'PEAK TIME: TWO!' : '1 JELLY BABY', { yellow: true }); }
+    else if (t < 3.05) { shot(f.p(2.6, -s * 4.6, 1.6), f.p(-0.4, s * 0.3, 1.2), 36); K.ov.caption('ER…'); }
+    else if (t < 3.95) { shot(f.p(0.1, -s * 2.3, 1.35), f.p(0.1, s * 0.5, 1.2), 36); K.ov.caption('PAYMENT…', { yellow: true }); }
+    else if (t < 4.75) { shot(f.p(-4.8, -s * 6.2, 2.3), f.p(0.6, s * 0.4, 1.5), 44); K.ov.caption('BARRIER UP!', { yellow: true }); }
     else { shot(f.p(-2.5, -s * 7.8, 2.1), f.p(1.5, 0, 1.1), 44); K.ov.caption(null); }
   };
   return I;
 };
 
 // ---------- C2 The Treadmill Hill (Hanna-Barbera background loop) ----------
+// Locked-off side camera; he runs on the spot on the Hill while the SAME tree, bench and goose (or marshal) slide past
+// behind him three times, counted on screen. On the third pass he notices.
 SCENES.treadmill_hill = (K, cs) => {
   const I = asInset(K, cs, base(K, { camera: true }));
   const shot = shooter(K, cs);
   const f = stageAt(K.C, cs.params.atM || 4300, cs.who);
   const s = openSide(K.world, f, 9);
+  const marshal = cs.params.variant === 'marshal';
   const root = I.bag.group();
   const pub = K.pub(cs.who);
   const A = actor(K, I, pub);
-  const tree = makeTree(I.bag, 1.1), bench = makeBench(I.bag), goose = makeGoose(I.bag, { scale: 1.2 });
-  const hill = board(I.bag, signTexture(I.bag, ['THE HILL'], { bg: '#ffd23f', fg: '#ff3d8b', w: 512, h: 200 }), 2.2, 0.9); const hillG = new THREE.Group(); hillG.add(hill); hill.position.y = 1.8;
-  const hp = I.bag.M(new THREE.CylinderGeometry(0.06, 0.06, 1.4, 6).translate(0, 0.7, 0), '#f4f4f4', 1.5); hillG.add(hp);
-  root.add(tree, bench, goose.root, hillG);
-  const props = [{ o: tree, off: 0, l: -s * 4.2 }, { o: bench, off: 6.5, l: -s * 3.0 }, { o: hillG, off: 11, l: -s * 3.4 }, { o: goose.root, off: 15.5, l: -s * 2.6 }];
-  const span = 22, speed = 13; // three loops past him in ~5 s
+  const tree = makeTree(I.bag, 1.35), bench = makeBench(I.bag);
+  bench.scale.setScalar(1.6);
+  const goose = makeGoose(I.bag, { scale: 1.7 });
+  root.add(tree, bench, goose.root);
+  let third = goose.root, M = null, nearly = null;
+  if (marshal) {
+    goose.root.visible = false;
+    M = actor(K, I, CAST.maureen, { vest: '#d8ff1f' }); third = M.root;
+    nearly = sprite(I.bag, bubbleTexture(I.bag, 'NEARLY THERE!', { w: 640, h: 280, size: 96 }), 0.8, 640 / 280); root.add(nearly);
+  }
+  const SP = 7.5, SPAN = SP * 3, PASS = 1.55; // one pass of all three objects every PASS seconds
+  const props = [{ o: tree, k: 0 }, { o: bench, k: 1 }, { o: third, k: 2 }];
   const cue = cues();
   const NOM = 5.1;
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
     place(A, f.p(0, 0), f.yaw);
-    const third = t > 3.3;
-    drive(A, dt, 'run', null, { speed: 3.4, rate: 1, slope: 0.12, effort: 0.8, expr: third ? 'worried' : 'effort' });
-    if (third) { A.rig.head.rotation.y = s * Math.min(1.1, (t - 3.3) * 3); A.r.setPop(t > 3.5 ? '!' : null); } else A.r.setPop(null);
+    const loop = Math.min(2, Math.floor(t / PASS));
+    const noticing = t > PASS * 2 + 0.5;
+    drive(A, dt, 'run', null, { speed: 3.4, rate: 1, slope: 0.12, effort: 0.8, expr: noticing ? 'worried' : 'effort' });
+    if (noticing) { A.rig.head.rotation.y = s * Math.min(1.2, (t - PASS * 2 - 0.5) * 4); A.r.setPop('!'); } else A.r.setPop(null);
     for (const p of props) {
-      let a = ((p.off - t * speed) % span + span) % span - span / 2 + 2; // wraps behind him, right to left
-      if (third && t > 3.9) a = Math.max(a, -2.5); // the goose stops to wave
-      const pos = f.p(a, p.l, -0.16); p.o.position.copy(pos); p.o.rotation.y = f.yaw + (p.o === bench ? Math.PI / 2 * -s : p.o === hillG ? -s * Math.PI / 2 : -s * Math.PI / 2);
+      // enters from ahead of him (+a), exits behind (-a); wraps so the same three objects come round again
+      const u = ((t / PASS) * SPAN + (2 - p.k) * SP) % SPAN;
+      let a = SPAN / 2 - u;
+      if (noticing && p.k === 2) a = Math.max(a, -1.2); // the third object stops to wave
+      p.o.position.copy(f.p(a, p.k === 0 ? -s * 3.6 : s * (p.k === 1 ? 2.7 : 2.3), -0.16)); // tree behind him, bench + goose sweep past in the foreground
+      p.o.rotation.y = p.k === 1 ? Math.atan2(s * f.rx, s * f.rz) : p.k === 2 ? (marshal ? Math.atan2(s * f.rx, s * f.rz) : f.yaw + Math.PI - s * 0.7) : 0;
     }
-    goose.pose({ t, wingR: third ? Math.abs(Math.sin(t * 7)) : 0, waddle: 0.3 });
-    const loop = Math.floor((t * speed) / span);
-    K.ov.caption(loop === 0 ? 'THE HILL…' : loop === 1 ? 'THE HILL… AGAIN' : 'HANG ON A MINUTE', { yellow: loop >= 2 });
-    cue('line', t > 3.45, () => K.say(cs.lines?.[0]));
-    shot(f.p(0.4, s * 6.2, 1.45), f.p(0.4, -s * 1.4, 1.3), 46);
+    if (marshal) {
+      drive(M, dt, 'idle');
+      M.rig.arms[1].sh.rotation.set(-2.6 + Math.sin(t * 8) * 0.3, 0, 0.2);
+      nearly.visible = true; nearly.position.copy(M.root.position).add(V(0, 3.0, 0));
+    } else goose.pose({ t, wingR: noticing ? Math.abs(Math.sin(t * 7)) : 0, waddle: 0.4, look: noticing ? -s * 0.6 : 0 });
+    K.ov.banner(`PASS ${loop + 1} of 3`, loop === 2 ? '#ff3d8b' : '#2e6fe0');
+    K.ov.caption(noticing ? 'HANG ON A MINUTE…' : ['SAME TREE…', 'SAME BENCH…', marshal ? 'SAME MARSHAL…' : 'SAME GOOSE…'][Math.floor(((t / PASS) * 3) % 3)], { yellow: noticing });
+    cue('line', t > PASS * 2 + 0.6, () => K.say(cs.lines?.[0]));
+    shot(f.p(0.3, s * 7.4, 1.25), f.p(0.3, -s * 1.0, 1.4), 48);
   };
   return I;
 };
@@ -665,6 +722,11 @@ SCENES.everest = (K, cs) => {
   const A = actor(K, I, pub);
   const S = actor(K, I, CAST.sherpa, { vest: '#ff8a1f' });
   const flask = makeFlask(I.bag, 1.2); root.add(flask);
+  const rope = I.bag.M(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).rotateX(Math.PI / 2), '#ffd23f', 1.5); root.add(rope);
+  if (cs.params.variant === 'tent') {
+    const tent = I.bag.M(new THREE.ConeGeometry(1.9, 2.2, 4).rotateY(Math.PI / 4), '#ff8a1f', 3); tent.position.copy(f0.p(4, -s * (PATH_W / 2 + 2.4), 1.0)); root.add(tent);
+    const tflag = makeFlag(I.bag, 'BASE CAMP', '#2e6fe0'); tflag.root.position.copy(f0.p(5.6, -s * (PATH_W / 2 + 1.2), -0.2)); tflag.root.rotation.y = f0.yaw + Math.PI / 2; root.add(tflag.root);
+  }
   const flag = makeFlag(I.bag, 'SUMMIT!', '#ff3d8b'); root.add(flag.root);
   // snow: drifts on the crest + falling flakes
   const snowM = I.bag.mat('#ffffff');
@@ -696,9 +758,13 @@ SCENES.everest = (K, cs) => {
       place(A, f0.p(a, 0), f0.yaw);
       drive(A, dt, t < 1.8 ? 'run' : 'idle', null, { speed: 1.4, rate: 0.6, slope: 0.35, effort: 1, expr: t > 2.7 ? 'happy' : 'effort' });
       if (t < 1.8) A.rig.torso.rotation.x = 0.75;
-      place(S, f0.p(a + 1.3, s * 1.2), f0.yaw + Math.PI - s * 0.6);
-      drive(S, dt, 'idle');
-      S.root.visible = t > 1.6; flask.visible = t > 1.8;
+      // the sherpa leads him up on a rope, then turns back with the "oxygen"
+      const back = smooth(1.55, 1.9, t);
+      place(S, f0.p(a + lerp(3.0, 1.3, back), s * lerp(0.2, 1.2, back)), f0.yaw + back * (Math.PI - s * 0.6));
+      drive(S, dt, t < 1.6 ? 'run' : 'idle', null, { speed: 1.4, rate: 0.6, slope: 0.35, effort: 0.6 });
+      if (t < 1.6) S.rig.torso.rotation.x = 0.6;
+      S.root.visible = true; flask.visible = t > 1.8;
+      { const h1 = A.root.localToWorld(V(0, A.r.hipH + 0.1, 0)), h2 = S.root.localToWorld(V(0, S.r.hipH + 0.1, 0)); const mid = h1.clone().lerp(h2, 0.5); mid.y -= 0.25; rope.position.copy(mid); rope.lookAt(h2); rope.scale.set(1, 1, Math.max(0.1, h1.distanceTo(h2))); rope.visible = t < 1.9; }
       if (t > 1.8) {
         S.rig.arms[0].sh.rotation.set(-1.3, 0, 0); S.rig.arms[1].sh.rotation.set(-1.3, 0, 0);
         const sHand = wp(S.rig.arms[1].hand, V());
@@ -710,7 +776,7 @@ SCENES.everest = (K, cs) => {
       }
       const roll = -s * 0.42 * smooth(0, 1.6, t);
       peak.visible = true;
-      if (t < 1.8) { camPos = f0.p(a - 3.2, -s * 3.0, 0.7); camLook = V(f1.x, f1.y + 8, f1.z).lerp(A.root.position.clone().add(V(0, 1.3, 0)), 0.8); K.cam(camPos, camLook, 50, roll); K.ov.caption(t > 0.35 ? 'BASE CAMP' : null, { yellow: true }); }
+      if (t < 1.8) { camPos = f0.p(a + 1.0, -s * 3.4, 0.22); camLook = f0.p(a + 2.4, s * 0.4, 2.3); K.cam(camPos, camLook, 50, roll); K.ov.caption(t > 0.35 ? 'BASE CAMP' : null, { yellow: true }); }
       else { camPos = f0.p(a + 3.0, -s * 3.6, 1.5); camLook = f0.p(a + 0.6, s * 0.6, 1.45); K.cam(camPos, camLook, 40, roll * 0.5); K.ov.caption('OXYGEN?', { yellow: false }); }
     } else {
       // the summit: flag planted, arms aloft
@@ -753,7 +819,8 @@ SCENES.spaghetti_legs = (K, cs) => {
   for (const l of A.rig.legs) { for (const c of l.hp.children) if (c.isMesh && c.geometry.type === 'CapsuleGeometry') legMeshes.push({ m: c, orig: c.material }); for (const c of l.kn.children) if (c.isMesh) legMeshes.push({ m: c, orig: c.material }); }
   // a bundle of wobbly noodles per leg (replacing thigh + shin), drawn as instanced beads along a swinging curve
   const NSTR = 4, NSEG = 15;
-  const noodles = new THREE.InstancedMesh(I.bag.add(new THREE.SphereGeometry(0.05, 8, 6)), I.bag.mat('#f6d36b'), 2 * NSTR * NSEG); noodles.frustumCulled = false;
+  const jellyV = cs.params.variant === 'jelly';
+  const noodles = new THREE.InstancedMesh(I.bag.add(new THREE.SphereGeometry(jellyV ? 0.085 : 0.05, 8, 6)), I.bag.mat(jellyV ? '#5fe08a' : '#f6d36b'), 2 * NSTR * NSEG); noodles.frustumCulled = false;
   A.rig.hips.add(noodles); noodles.visible = false;
   const nO = new THREE.Object3D(), hipL = V(), ankL = V();
   const ball = new THREE.Group(); root.add(ball);
@@ -772,7 +839,7 @@ SCENES.spaghetti_legs = (K, cs) => {
     noodles.visible = w >= 0.5;
     A.rig.legs.forEach((l, i) => {
       const ph = t * 9 + i * 1.7;
-      l.hp.rotation.z += Math.sin(ph) * 0.55 * w * (i ? 1 : -1); l.hp.rotation.x += Math.sin(ph * 0.7) * 0.3 * w;
+      l.hp.rotation.z += Math.sin(ph) * 0.9 * w * (i ? 1 : -1); l.hp.rotation.x += Math.sin(ph * 0.7) * 0.45 * w;
       l.kn.rotation.z = Math.sin(ph * 1.3 + 1) * 0.9 * w; l.kn.rotation.x += Math.cos(ph) * 0.6 * w;
     });
     if (w >= 0.5) {
@@ -784,7 +851,7 @@ SCENES.spaghetti_legs = (K, cs) => {
           const ox = (sI % 2 ? 1 : -1) * 0.05 * (1 + (sI >> 1)), oz = ((sI >> 1) ? 1 : -1) * 0.04;
           for (let j = 0; j < NSEG; j++) {
             const u = j / (NSEG - 1);
-            const wig = Math.sin(u * Math.PI) * (0.3 + 0.07 * sI);
+            const wig = Math.sin(u * Math.PI) * (jellyV ? 0.22 : 0.45 + 0.07 * sI) * (jellyV ? 1 + 0.4 * Math.sin(t * 20) : 1);
             nO.position.set(lerp(hipL.x, ankL.x, u) + ox + Math.sin(t * 11 + u * 6 + sI + i * 2) * wig, lerp(hipL.y, ankL.y + 0.08, u), lerp(hipL.z, ankL.z, u) + oz + Math.cos(t * 9 + u * 5 + sI) * wig * 0.7);
             nO.updateMatrix(); noodles.setMatrixAt(k++, nO.matrix);
           }
@@ -799,123 +866,180 @@ SCENES.spaghetti_legs = (K, cs) => {
     ball.position.copy(f.p(a + 2.6, lerp(s * 6, -s * 6, mu), 0.26)); bm.rotation.set(0, 0, -mu * 14 * s);
     ball.visible = t > 1.6 && t < 3.3;
     cue('line', t > 1.4, () => K.say(cs.lines?.[0]));
-    K.ov.caption(t > 1.0 ? 'SPAGHETTI LEGS' : null, { yellow: true });
+    K.ov.caption(t > 1.0 ? (jellyV ? 'JELLY LEGS' : 'SPAGHETTI LEGS') : null, { yellow: true });
     const ap = A.root.position;
-    shot(ap.clone().addScaledVector(V(f.rx, 0, f.rz), s * 5.4).addScaledVector(V(f.tx, 0, f.tz), 1.0).add(V(0, 1.3, 0)), ap.clone().add(V(0, 0.95, 0)).addScaledVector(V(f.tx, 0, f.tz), 0.4), 44);
+    shot(ap.clone().addScaledVector(V(f.rx, 0, f.rz), s * 3.1).addScaledVector(V(f.tx, 0, f.tz), 0.9).add(V(0, 0.45, 0)), ap.clone().add(V(0, 0.95, 0)).addScaledVector(V(f.tx, 0, f.tz), 0.3), 50);
   };
   return I;
 };
 
 // ---------- E1 Human Cannonball (start pre-roll; live) ----------
+// He is LOADED into a circus cannon (or a catapult) behind the start line, face poking out; at the gun it BOOMs and he
+// flies, superhero-style, landing exactly where his real self is a second into the race (positions untouched).
+function makeCannon(I) {
+  const g = new THREE.Group();
+  const barrel = new THREE.Group(); g.add(barrel); barrel.position.y = 1.15;
+  const tube = I.bag.M(new THREE.CylinderGeometry(0.62, 0.78, 3.0, 20, 1, true).rotateX(Math.PI / 2), I.bag.mat('#ff3d3d', { side: THREE.DoubleSide }), 3); barrel.add(tube);
+  const back = I.bag.M(new THREE.SphereGeometry(0.78, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2), '#ff3d3d', 3); back.position.z = -1.5; barrel.add(back);
+  for (const z of [-0.9, 0.2, 1.3]) { const band = I.bag.M(new THREE.TorusGeometry(z > 1 ? 0.68 : z > 0 ? 0.72 : 0.76, 0.08, 6, 20), '#ffd23f', 0); band.position.z = z; barrel.add(band); }
+  const star = board(I.bag, signTexture(I.bag, ['★'], { bg: '#ffffff', fg: '#ff3d3d', w: 256, h: 256, round: 128 }), 0.6, 0.6, '#1a1420', 0.04); star.position.set(0.8, 0, -0.4); star.rotation.y = Math.PI / 2; barrel.add(star);
+  for (const sx of [-1, 1]) { const wh = I.bag.M(new THREE.CylinderGeometry(0.8, 0.8, 0.2, 18).rotateZ(Math.PI / 2), '#2e6fe0', 2.5); wh.position.set(sx * 0.95, 0.8, -0.3); g.add(wh); const hub = I.bag.M(new THREE.SphereGeometry(0.2, 8, 6), '#ffd23f', 1.5); hub.position.set(sx * 1.07, 0.8, -0.3); g.add(hub); }
+  const carriage = I.bag.M(new RoundedBoxGeometry(1.4, 0.55, 2.0, 2, 0.1), '#7a4a2a'); carriage.position.set(0, 0.65, -0.4); g.add(carriage);
+  return { g, barrel, len: 3.0 };
+}
+function makeCatapult(I) {
+  const g = new THREE.Group();
+  const base0 = I.bag.M(new RoundedBoxGeometry(1.6, 0.35, 3.0, 2, 0.08), '#a0662f'); base0.position.y = 0.3; g.add(base0);
+  for (const sx of [-1, 1]) { const up = I.bag.M(new THREE.BoxGeometry(0.22, 1.9, 0.22), '#7a4a2a'); up.position.set(sx * 0.65, 1.2, 0.3); g.add(up); }
+  const bar = I.bag.M(new THREE.CylinderGeometry(0.1, 0.1, 1.6, 8).rotateZ(Math.PI / 2), '#7a4a2a'); bar.position.set(0, 2.0, 0.3); g.add(bar);
+  const arm = new THREE.Group(); arm.position.set(0, 0.6, 0.6); g.add(arm);
+  const beam = I.bag.M(new THREE.BoxGeometry(0.24, 0.24, 3.0).translate(0, 0, -1.3), '#a0662f'); arm.add(beam);
+  const cup = I.bag.M(new THREE.SphereGeometry(0.55, 14, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), I.bag.mat('#7a4a2a', { side: THREE.DoubleSide }), 2.5); cup.position.set(0, 0.3, -2.7); arm.add(cup);
+  for (const sx of [-1, 1]) { const wh = I.bag.M(new THREE.CylinderGeometry(0.5, 0.5, 0.18, 14).rotateZ(Math.PI / 2), '#ff3d3d', 2.5); wh.position.set(sx * 0.9, 0.5, sx > 0 ? 1.0 : -1.0); g.add(wh); }
+  return { g, arm, cup };
+}
 SCENES.cannonball = (K, cs) => {
   const I = base(K, { camera: false, hide: 'none' });
   const r = K.runners[cs.who];
   const st0 = K.stage(0);
+  const cata = cs.params.variant === 'catapult';
   const root = I.bag.group();
-  const g = new THREE.Group(); root.add(g);
-  const barrel = I.bag.M(new THREE.CylinderGeometry(0.42, 0.62, 2.6, 18).rotateX(Math.PI / 2), '#ff3d3d', 3); barrel.position.set(0, 1.2, 0); g.add(barrel);
-  for (const z of [-0.8, 0.2, 1.1]) { const band = I.bag.M(new THREE.TorusGeometry(z > 1 ? 0.47 : z > 0 ? 0.53 : 0.6, 0.07, 6, 18), '#ffd23f', 0); band.position.set(0, 1.2, z); g.add(band); }
-  const mouth = I.bag.M(new THREE.TorusGeometry(0.44, 0.1, 8, 18), '#ffd23f', 2); mouth.position.set(0, 1.2, 1.3); g.add(mouth);
-  for (const sx of [-1, 1]) { const wh = I.bag.M(new THREE.CylinderGeometry(0.72, 0.72, 0.18, 16).rotateZ(Math.PI / 2), '#2e6fe0', 2.5); wh.position.set(sx * 0.75, 0.72, -0.2); g.add(wh); const hub = I.bag.M(new THREE.SphereGeometry(0.18, 8, 6), '#ffd23f', 1.5); hub.position.set(sx * 0.86, 0.72, -0.2); g.add(hub); }
-  const carriage = I.bag.M(new RoundedBoxGeometry(1.1, 0.5, 1.8, 2, 0.1), '#7a4a2a'); carriage.position.set(0, 0.6, -0.3); g.add(carriage);
-  const star = board(I.bag, signTexture(I.bag, ['★'], { bg: '#ffffff', fg: '#ff3d3d', w: 256, h: 256, round: 128 }), 0.55, 0.55, '#1a1420', 0.04); star.position.set(0.66, 1.25, -0.4); star.rotation.y = Math.PI / 2; g.add(star);
-  const puffs = makePuffs(I.bag, 9, '#ffffff'); root.add(puffs.root);
-  const boom = sprite(I.bag, bubbleTexture(I.bag, 'BOOM!', { burst: true, w: 512, h: 300, size: 140, bg: '#ffd23f' }), 2.2, 512 / 300); root.add(boom); boom.visible = false;
-  let placed = false; let side = 1; let slot = null;
+  const C0 = cata ? makeCatapult(I) : makeCannon(I); root.add(C0.g);
+  const pub = K.pub(cs.who);
+  const A = actor(K, I, pub); A.root.visible = false;
+  const puffs = makePuffs(I.bag, 10, '#ffffff'); root.add(puffs.root);
+  const boom = sprite(I.bag, bubbleTexture(I.bag, cata ? 'TWANG!' : 'BOOM!', { burst: true, w: 512, h: 300, size: 140, bg: '#ffd23f' }), 1.5, 512 / 300); root.add(boom); boom.visible = false;
+  const fwd = V(st0.tx, 0, st0.tz), right = V(st0.rx, 0, st0.rz);
+  const ELEV = 0.42;
+  let placed = false, slot = null, side = 1, land = null, muzzle = null, dir = null;
   const cue = cues();
-  I.camera = false;
   I.update = (t, dt, b) => {
     if (!placed && r) {
       placed = true; slot = r.root.position.clone();
-      const back = V(st0.tx, 0, st0.tz);
-      const p = slot.clone().addScaledVector(back, -2.3); p.y = K.C.heightAt(p.x, p.z) + 0.05;
-      g.position.copy(p); g.rotation.set(-0.28, Math.atan2(back.x, back.z), 0);
+      const p = slot.clone().addScaledVector(fwd, -4.6); p.y = K.C.heightAt(p.x, p.z) + 0.05;
+      C0.g.position.copy(p); C0.g.rotation.set(0, Math.atan2(fwd.x, fwd.z), 0);
       side = openSide(K.world, st0, 9);
+      const s1 = K.sim.stateAt(1.1).byId[cs.who]; land = V(s1.x, s1.y, s1.z);
+      if (!cata) C0.barrel.rotation.x = -ELEV;
     }
-    const bb = b; // broadcast time: the gun is at 0
-    I.camera = bb > -1.4 && bb < 2.0;
-    I.hide = 'none';
-    const muzzle = g.localToWorld(V(0, 1.2, 1.5));
-    puffs.root.position.copy(muzzle); puffs.update(clamp01(bb / 1.3), 2.4, 1.0);
-    boom.visible = bb > 0 && bb < 1.0; if (boom.visible) { boom.position.copy(muzzle).add(V(0, 1.6, 0)); popScale(boom, bb, 0, 0.2); }
-    g.position.addScaledVector(V(st0.tx, 0, st0.tz), bb > 0 && bb < 0.25 ? -dt * 2 : 0); // recoil
-    if (bb > 0 && bb < 1.2 && r) {
-      // visual-only hop + dive out of the barrel (his distance along the course is untouched)
-      const u = bb / 1.2;
-      r.root.position.y += Math.sin(Math.PI * u) * 1.5;
-      const rig = rigFor(r); if (rig) { rig.body.rotation.x = Math.sin(Math.PI * u) * 0.9; for (const a of rig.arms) { a.sh.rotation.set(-2.9, 0, 0); a.el.rotation.x = 0; } }
+    if (!slot) return;
+    const bb = b;
+    I.camera = bb > -2.0 && bb < 2.1;
+    I.hide = bb < 1.1 ? [cs.who] : 'none'; // the real runner appears where he lands
+    C0.g.updateMatrixWorld(true);
+    if (cata) {
+      const sw = bb < 0 ? 0 : Math.min(1, bb / 0.18);
+      C0.arm.rotation.x = -0.05 + sw * 1.9;
+      muzzle = wp(C0.cup, V()).add(V(0, 0.4, 0)); dir = fwd.clone().add(V(0, Math.tan(0.7), 0)).normalize();
+    } else {
+      muzzle = C0.barrel.localToWorld(V(0, 0, 1.45)); dir = muzzle.clone().sub(C0.barrel.localToWorld(V(0, 0, 0))).normalize();
     }
-    cue('flash', bb > 0, () => K.ov.flash(0.55));
-    cue('line', bb > 0.15, () => K.say(cs.lines?.[0]));
-    K.ov.caption(bb > 0.05 && bb < 1.9 ? 'HUMAN CANNONBALL!' : null, { yellow: true });
-    if (I.camera && slot) {
-      const look = slot.clone().addScaledVector(V(st0.tx, 0, st0.tz), Math.max(0, bb) * 3.5 + 0.5).add(V(0, 1.3, 0));
-      const lat = slot ? ((slot.x - st0.x) * st0.rx + (slot.z - st0.z) * st0.rz) : 0;
-      K.cam(st0.p(-9.5 + Math.max(0, bb) * 1.5, lat + side * 1.6, 3.0), look, 44);
+    // loaded: head and shoulders out of the muzzle (or sitting in the catapult cup), waving
+    const flyU = clamp01(bb / 1.1);
+    A.root.visible = bb < 1.1;
+    if (bb < 0) {
+      if (cata) { A.root.position.copy(muzzle).add(V(0, -0.85, 0)); A.root.rotation.set(0, Math.atan2(-side * right.x, -side * right.z), 0); drive(A, dt, 'wave', null, { expr: 'happy' }); }
+      else {
+        // lying along the barrel, head out of the muzzle, facing the camera side
+        A.root.position.copy(muzzle).addScaledVector(dir, -(A.r.height - 0.45));
+        A.root.quaternion.setFromUnitVectors(V(0, 1, 0), dir); A.root.rotateY(side > 0 ? -Math.PI / 2 : Math.PI / 2);
+        drive(A, dt, 'idle', null, { expr: bb > -1.0 ? 'effort' : 'happy' });
+        A.rig.arms[1].sh.rotation.set(-2.9 + Math.sin(t * 9) * 0.3, 0, 0);
+      }
+    } else if (bb < 1.1) {
+      // the flight: an arc from the muzzle to where he really is at 1.1 s, superhero pose
+      const p = muzzle.clone().lerp(land, flyU); p.y += Math.sin(Math.PI * flyU) * 4.5;
+      A.root.position.copy(p);
+      A.root.rotation.set(0, Math.atan2(fwd.x, fwd.z), 0); A.rig.body.rotation.x = 1.25;
+      drive(A, dt, 'idle', null, { expr: 'happy' });
+      A.rig.body.rotation.x = 1.25 - flyU * 0.6;
+      for (const a of A.rig.arms) { a.sh.rotation.set(-3.0, 0, 0); a.el.rotation.x = 0; }
+      for (const l of A.rig.legs) { l.hp.rotation.x = 0.2; l.kn.rotation.x = 0.3; }
+    }
+    puffs.root.position.copy(muzzle); puffs.update(clamp01(bb / 1.3), 2.2, 0.8);
+    boom.visible = bb > 0 && bb < 0.9; if (boom.visible) { boom.position.copy(muzzle).addScaledVector(fwd, -1.2).add(V(0, -0.2, 0)); popScale(boom, bb, 0, 0.2); }
+    cue('flash', bb > 0, () => K.ov.flash(0.5));
+    cue('line', bb > 0.35, () => K.say(cs.lines?.[0]));
+    // captions avoid the countdown numbers (centre) and GO! (until ~0.8 s)
+    K.ov.caption(bb < -0.25 ? 'LOADED…' : bb > 0.85 && bb < 2.0 ? 'HUMAN CANNONBALL!' : null, { yellow: bb > 0 });
+    if (I.camera) {
+      // side-on, wide: the cannon at left, his arc across the frame
+      const mid = C0.g.position.clone().lerp(land, 0.42);
+      K.cam(mid.clone().addScaledVector(right, side * 15).add(V(0, 2.6, 0)).addScaledVector(fwd, -1.5), mid.clone().add(V(0, 2.2, 0)), 46);
     }
   };
   return I;
 };
 
-// ---------- W1 Personal Raincloud (live picture-in-picture) ----------
+// ---------- W1 Personal Raincloud (live, full frame) ----------
 SCENES.raincloud = (K, cs) => {
-  const I = base(K, { camera: false, pip: true, hide: 'none', pipLabel: 'HIS WEATHER', pipCaption: null });
+  const I = base(K, { camera: true, hide: 'none' });
   const r = K.runners[cs.who];
+  const zap = cs.params.variant === 'lightning';
   const root = I.bag.group();
-  const cloud = makeCloud(I.bag, { scale: 1.05 }); root.add(cloud);
-  const rain = makeRain(I.bag, 70, { w: 1.7, h: 2.9 }); cloud.add(rain.mesh); rain.mesh.position.y = -0.4;
+  const cloud = makeCloud(I.bag, { scale: 1.15 }); root.add(cloud);
+  const rain = makeRain(I.bag, 80, { w: 1.8, h: 3.0 }); cloud.add(rain.mesh); rain.mesh.position.y = -0.4;
   const umb = makeUmbrella(I.bag); umb.visible = false; root.add(umb);
+  // a tiny cartoon lightning bolt (variant)
+  const bolt = new THREE.Mesh(I.bag.add(new THREE.ExtrudeGeometry((() => { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(0.35, 0.9); sh.lineTo(0.12, 0.9); sh.lineTo(0.42, 1.8); sh.lineTo(-0.05, 0.7); sh.lineTo(0.16, 0.7); sh.lineTo(-0.2, 0); return sh; })(), { depth: 0.08, bevelEnabled: false })), I.bag.basic('#ffe23f'));
+  bolt.visible = false; root.add(bolt);
+  const zapB = sprite(I.bag, bubbleTexture(I.bag, 'ZAP!', { burst: true, w: 512, h: 300, size: 140, bg: '#ffe23f' }), 1.0, 512 / 300); root.add(zapB); zapB.visible = false;
   const cloudPos = V(); let init = false;
   const cue = cues();
-  const tmp = V();
   I.update = (t, dt, b) => {
     if (!r) return;
     const st = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
-    const right = V(-st.tz, 0, st.tx);
-    // sidestep left (1.0-1.6 s), right (2.0-2.6 s): lateral, visual only
-    const lat = (smooth(0.9, 1.3, t) - smooth(1.8, 2.3, t)) * -1.0 + (smooth(1.8, 2.3, t) - smooth(3.0, 3.4, t)) * 1.0;
+    const right = V(-st.tz, 0, st.tx), fwd = V(st.tx, 0, st.tz);
+    // sidestep left (0.9-1.3 s), then right (1.8-2.3 s): lateral, visual only
+    const lat = (smooth(0.8, 1.2, t) - smooth(1.7, 2.2, t)) * -1.1 + (smooth(1.7, 2.2, t) - smooth(3.1, 3.5, t)) * 1.1;
     r.root.position.addScaledVector(right, lat);
-    const head = r.root.position.clone().add(V(0, r.height + 1.5, 0));
+    const head = r.root.position.clone().add(V(0, r.height + 1.45, 0));
     if (!init) { cloudPos.copy(head); init = true; }
-    cloudPos.lerp(head, Math.min(1, dt * (t > 0.9 && t < 2.6 ? 3.2 : 8)));
+    cloudPos.lerp(head, Math.min(1, dt * (t > 0.8 && t < 2.6 ? 3.0 : 8)));
     cloud.position.copy(cloudPos);
-    const tilt = smooth(3.0, 3.5, t) * 1.15;
-    cloud.rotation.set(0, Math.atan2(st.tx, st.tz) + Math.PI / 2 * 0, -tilt);
+    const tilt = zap ? 0 : smooth(3.0, 3.5, t) * 1.15;
+    cloud.rotation.set(0, Math.atan2(st.tx, st.tz), -tilt);
     if (tilt > 0.05) cloud.position.addScaledVector(right, -tilt * 1.6).add(V(0, -tilt * 0.9, 0));
     rain.update(t, 0);
-    cloud.scale.setScalar(1.05 * backOut(clamp01(t / 0.4)));
-    if (cloud.userData.face) cloud.userData.face.lookAt(K.pipCam.position);
-    // Pam's tartan umbrella pops up; the cloud tilts and rains sideways under it
-    umb.visible = t > 2.6;
-    if (umb.visible) {
-      const rig = rigFor(r); if (rig) { rig.arms[1].sh.rotation.set(-2.9, 0, 0.15); rig.arms[1].el.rotation.x = -0.1; }
-      umb.position.copy(r.root.position).add(V(0, r.height + 0.2, 0)); umb.scale.setScalar(backOut(clamp01((t - 2.6) / 0.3)));
+    cloud.scale.setScalar(1.15 * backOut(clamp01(t / 0.4)));
+    if (cloud.userData.face) cloud.userData.face.lookAt(K.camera.position);
+    const rig = rigFor(r);
+    if (!zap) {
+      // Pam's tartan umbrella pops up; the cloud tilts and rains sideways under it
+      umb.visible = t > 2.6;
+      if (umb.visible) { if (rig) { rig.arms[1].sh.rotation.set(-2.9, 0, 0.15); rig.arms[1].el.rotation.x = -0.1; } umb.position.copy(r.root.position).add(V(0, r.height + 0.2, 0)); umb.scale.setScalar(backOut(clamp01((t - 2.6) / 0.3))); }
+    } else {
+      // a tiny bolt singes his hair; he blinks, carries on
+      bolt.visible = t > 3.0 && t < 3.45 && Math.floor(t * 20) % 2 === 0;
+      bolt.position.copy(cloud.position).add(V(-0.2, -2.0, 0)); bolt.lookAt(K.camera.position);
+      zapB.visible = t > 3.0 && t < 3.8; if (zapB.visible) { zapB.position.copy(r.root.position).add(V(0, r.height + 0.4, 0)).addScaledVector(right, 1.2); popScale(zapB, t, 3.0); }
+      if (t > 3.0 && t < 3.8) r.setPop?.('!');
     }
     cue('line', t > 0.4, () => K.say(cs.lines?.[0]));
-    I.pipCaption = t > 0.5 ? (t > 3.1 ? 'NICE TRY' : 'HIS OWN WEATHER') : null;
-    // PiP: close side-on
+    K.ov.caption(t > 0.4 ? (t > 3.0 ? (zap ? 'ZAP.' : 'NICE TRY') : 'HIS OWN WEATHER') : null, { yellow: t > 3.0 });
     const ap = r.root.position;
-    K.pipCamSet(tmp.copy(ap).addScaledVector(right, 4.4).addScaledVector(V(st.tx, 0, st.tz), 1.6).add(V(0, 2.3, 0)), ap.clone().add(V(0, 2.1, 0)), 48);
+    K.cam(ap.clone().addScaledVector(right, 4.6).addScaledVector(fwd, 2.0).add(V(0, 2.1, 0)), ap.clone().add(V(0, 2.0, 0)).addScaledVector(fwd, 0.4), 46, 0, { sun: 30 });
   };
   return I;
 };
 
-// ---------- D1 Mirror, Signal, Manoeuvre (live picture-in-picture) ----------
+// ---------- D1 Mirror, Signal, Manoeuvre (one full-frame live beat) ----------
 SCENES.mirror_signal = (K, cs) => {
-  const I = base(K, { camera: false, pip: true, hide: 'none', pipLabel: 'OVERTAKE!' });
+  const I = base(K, { camera: true, hide: 'none' });
   const by = K.runners[cs.who], on = K.runners[cs.params.on];
+  const lplate = cs.params.variant === 'lplate';
   const root = I.bag.group();
   const rigB = by && rigFor(by);
-  // wing mirror on a stalk, on the shoulder he pulls out on
+  // a GIANT wing mirror on his shoulder
   const mirror = new THREE.Group();
-  const stalk = I.bag.M(new THREE.CylinderGeometry(0.025, 0.025, 0.45, 6).rotateZ(Math.PI / 2).translate(0.22, 0, 0), '#1a1420', 0); mirror.add(stalk);
-  const housing = I.bag.M(new RoundedBoxGeometry(0.34, 0.24, 0.14, 2, 0.05), '#1a1420', 2); housing.position.set(0.5, 0.05, 0); mirror.add(housing);
-  const glass = I.bag.M(new THREE.PlaneGeometry(0.28, 0.18), '#bfe9ff', 0); glass.position.set(0.5, 0.05, -0.075); glass.rotation.y = Math.PI; mirror.add(glass);
-  const blink = new THREE.Mesh(I.bag.add(new THREE.SphereGeometry(0.14, 10, 8)), I.bag.basic('#ff9a1f'));
+  const stalk = I.bag.M(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6).rotateZ(Math.PI / 2).translate(0.35, 0, 0), '#1a1420', 0); mirror.add(stalk);
+  const housing = I.bag.M(new RoundedBoxGeometry(0.85, 0.6, 0.3, 3, 0.12), '#1a1420', 3); housing.position.set(0.95, 0.1, 0); mirror.add(housing);
+  const glass = new THREE.Mesh(I.bag.add(new THREE.PlaneGeometry(0.72, 0.48)), I.bag.basic('#bfe9ff')); glass.position.set(0.95, 0.1, -0.16); glass.rotation.y = Math.PI; mirror.add(glass);
+  const glint = new THREE.Mesh(I.bag.add(new THREE.PlaneGeometry(0.5, 0.08)), I.bag.basic('#ffffff')); glint.position.set(0.95, 0.2, -0.17); glint.rotation.set(0, Math.PI, 0.5); mirror.add(glint);
+  const blink = new THREE.Mesh(I.bag.add(new THREE.SphereGeometry(0.24, 12, 8)), I.bag.basic('#ff9a1f'));
+  const L = board(I.bag, signTexture(I.bag, ['L'], { bg: '#ffffff', fg: '#e8333f', w: 256, h: 256, round: 20, sizes: [210] }), 0.55, 0.55, '#e8333f', 0.04);
   const parp = sprite(I.bag, bubbleTexture(I.bag, 'PARP PARP!', { w: 640, h: 280, size: 110, bg: '#ffffff' }), 0.9, 640 / 280); root.add(parp); parp.visible = false;
   const tick = sprite(I.bag, bubbleTexture(I.bag, 'TICK-TOCK', { w: 640, h: 280, size: 100, bg: '#ff9a1f', fg: '#ffffff' }), 0.75, 640 / 280); root.add(tick); tick.visible = false;
-  const dust = makePuffs(I.bag, 7, '#e8d9b5'); root.add(dust.root);
-  I.pipOnly = [parp, tick, dust.root]; // the sound-effect bubbles live inside the inset
   let side = 1, attached = false;
   const cue = cues();
   I.update = (t, dt, b) => {
@@ -924,27 +1048,26 @@ SCENES.mirror_signal = (K, cs) => {
     const sB = sim.byId[cs.who], sO = sim.byId[cs.params.on];
     if (!attached) {
       attached = true;
-      // pulls out on the side away from the runner he is passing
       side = (sB.lat ?? 0) >= (sO.lat ?? 0) ? 1 : -1;
       const sh = side > 0 ? rigB.arms[1] : rigB.arms[0];
-      rigB.torso.add(mirror); mirror.position.copy(sh.sh.position).add(V(0, 0.12, 0)); mirror.scale.set(side > 0 ? 1 : -1, 1, 1);
+      rigB.torso.add(mirror); mirror.position.copy(sh.sh.position).add(V(0, 0.18, 0)); mirror.scale.set(side > 0 ? 1 : -1, 1, 1);
       sh.hand.add(blink); blink.position.set(0, -0.1, 0);
-      I.cleanup = () => { mirror.parent?.remove(mirror); blink.parent?.remove(blink); };
+      if (lplate) { rigB.torso.add(L); L.position.set(0, 0.45, -0.42); L.rotation.y = Math.PI; }
+      I.cleanup = () => { mirror.parent?.remove(mirror); blink.parent?.remove(blink); L.parent?.remove(L); };
     }
-    // a runner's "right" (+x local) is arms[1]; arm out to signal, head checks the mirror
     const arm = side > 0 ? rigB.arms[1] : rigB.arms[0];
-    const sig = smooth(0.5, 0.8, t) * (1 - smooth(2.6, 3.0, t));
-    if (sig > 0) { arm.sh.rotation.set(0, 0, (side > 0 ? 1 : -1) * 1.45 * sig); arm.el.rotation.x = -0.1; }
-    if (t > 0.2 && t < 1.0) rigB.head.rotation.y = (side > 0 ? -1 : 1) * 0.9;
+    const sig = smooth(0.5, 0.8, t) * (1 - smooth(3.0, 3.4, t));
+    if (sig > 0) { arm.sh.rotation.set(0, 0, (side > 0 ? 1 : -1) * 1.5 * sig); arm.el.rotation.x = -0.05; }
+    if (t > 0.15 && t < 0.9) rigB.head.rotation.y = (side > 0 ? -1 : 1) * 1.0;
     blink.visible = sig > 0.5 && Math.floor(t * 4) % 2 === 0;
-    tick.visible = sig > 0.5 && t < 2.2; if (tick.visible) { tick.position.copy(by.root.position).add(V(0, by.height + 0.9, 0)); popScale(tick, t, 0.8); }
-    parp.visible = t > 1.9 && t < 3.4; if (parp.visible) { parp.position.copy(on.root.position).add(V(0, on.height + 0.9, 0)); popScale(parp, t, 1.9); }
-    dust.root.position.copy(by.root.position).add(V(-sB.tx * 0.9, 0.25, -sB.tz * 0.9)); dust.root.scale.setScalar(0.45); dust.update(clamp01((t - 1.5) / 1.4), 1.2, -1);
+    tick.visible = sig > 0.5 && t < 2.2; if (tick.visible) { tick.position.copy(by.root.position).add(V(0, by.height + 1.0, 0)); popScale(tick, t, 0.8); }
+    parp.visible = t > 2.0 && t < 3.6; if (parp.visible) { parp.position.copy(on.root.position).add(V(0, on.height + 0.9, 0)); popScale(parp, t, 2.0); }
     cue('line', t > 0.25, () => K.say(cs.lines?.[0]));
-    I.pipCaption = t < 1.3 ? 'MIRROR' : t < 2.4 ? 'SIGNAL' : 'MANOEUVRE';
-    const c = by.root.position.clone().lerp(on.root.position, 0.5);
+    K.ov.caption(t < 0.4 ? null : t < 1.4 ? 'MIRROR…' : t < 2.3 ? 'SIGNAL…' : 'MANOEUVRE!', { yellow: t >= 2.3 });
+    // over his shoulder from behind, on the mirror side: the mirror big in frame, the man he is passing beyond it
     const fwd = V(sB.tx, 0, sB.tz), right = V(-sB.tz, 0, sB.tx);
-    K.pipCamSet(c.clone().addScaledVector(fwd, -4.6).addScaledVector(right, side * 2.2).add(V(0, 2.1, 0)), c.clone().addScaledVector(fwd, 0.8).add(V(0, 1.35, 0)), 46);
+    const bp = by.root.position;
+    K.cam(bp.clone().addScaledVector(fwd, -3.1).addScaledVector(right, side * 2.3).add(V(0, 2.5, 0)), bp.clone().addScaledVector(fwd, 2.2).addScaledVector(right, side * 0.2).add(V(0, 1.7, 0)), 52, 0, { sun: 30 });
   };
   const d0 = I.dispose; I.dispose = () => { I.cleanup?.(); d0(); };
   return I;
@@ -982,7 +1105,8 @@ SCENES.ice_cream_van = (K, cs) => {
   const tune = (t, anchor) => notes.forEach((n, i) => { const u = (t * 0.8 + i / notes.length) % 1; n.position.copy(anchor).add(V(Math.sin(u * 9 + i) * 0.8, 3.0 + u * 3, 0)); n.material.opacity = 1 - u; n.visible = true; n.scale.setScalar(0.9 + u * 0.4); n.scale.x *= 1; });
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
-    const vanA = t < 1.4 ? lerp(-26, 2, easeOut(t / 1.4)) : t < 2.6 ? 2 : 2 + (t - 2.6) * 6.5;
+    const rev = cs.params.variant === 'reverse'; // reverses into view from ahead, SOLD OUT sign first
+    const vanA = t < 1.4 ? (rev ? lerp(26, 4, easeOut(t / 1.4)) : lerp(-26, 2, easeOut(t / 1.4))) : t < 2.6 ? (rev ? 4 : 2) : (rev ? 4 : 2) + (t - 2.6) * 6.5;
     placeVan(f.p(vanA, s * (PATH_W / 2 + 2.4)), f.yaw, t);
     tune(t, van.position);
     const run = Math.max(0, t - 2.7);
@@ -993,7 +1117,7 @@ SCENES.ice_cream_van = (K, cs) => {
     cue('line', t > 1.45, () => K.say(cs.lines?.[0]));
     if (t < 1.4) { K.cam(f.p(-9.5, -s * 3.2, 3.1), f.p(-1.5, s * 1.8, 1.3), 46); K.ov.caption(t > 0.4 ? 'DING-A-LING!' : null, { yellow: true }); }
     else if (t < 2.7) { K.cam(A.root.position.clone().addScaledVector(V(f.tx, 0, f.tz), 3.4).addScaledVector(V(f.rx, 0, f.rz), -s * 1.2).add(V(0, 2.0, 0)), A.root.position.clone().add(V(0, 2.05, 0)), 36); K.ov.caption('THE VAN!', { yellow: true }); }
-    else { K.cam(f.p(run * 6.2 - 7.5, -s * 1.8, 2.3), f.p(run * 6.2 + 3, s * 1.6, 1.6), 44); K.ov.caption('SO CLOSE…'); }
+    else { const vb = f.p(vanA - 2.5, s * (PATH_W / 2 + 2.4), 1.9); K.cam(f.p(run * 6.2 - 4.5, -s * 0.6, 2.2), vb, 40); K.ov.caption('SOLD OUT OF 99s', { yellow: true }); }
   };
   // live tail: the race has resumed; the van keeps exactly his pace, just out of reach (back sign readable)
   I.tail = (u, dt, b) => {
@@ -1003,8 +1127,8 @@ SCENES.ice_cream_van = (K, cs) => {
     const rp = V(st.x, st.y, st.z);
     placeVan(rp.clone().addScaledVector(fwd, 7).addScaledVector(right, s * (PATH_W / 2 + 1.6)), Math.atan2(st.tx, st.tz), u);
     tune(u + 3, van.position);
-    K.cam(rp.clone().addScaledVector(fwd, -8.5).addScaledVector(right, -s * 1.5).add(V(0, 2.6, 0)), rp.clone().addScaledVector(fwd, 5).addScaledVector(right, s * 1.5).add(V(0, 1.6, 0)), 42);
-    K.ov.caption(u < 2.6 ? 'JUST OUT OF REACH' : null);
+    K.cam(rp.clone().addScaledVector(fwd, -5.5).addScaledVector(right, -s * 0.8).add(V(0, 2.3, 0)), rp.clone().addScaledVector(fwd, 4.6).addScaledVector(right, s * (PATH_W / 2 + 1.6)).add(V(0, 1.8, 0)), 40);
+    K.ov.caption(u < 1.8 ? 'SOLD OUT OF 99s' : u < 3.6 ? 'JUST OUT OF REACH' : null, { yellow: u < 1.8 });
   };
   return I;
 };
@@ -1081,14 +1205,24 @@ SCENES.photographer = (K, cs) => {
   const gp = V(fin.x, fin.y, fin.z).addScaledVector(V(fin.rx, 0, fin.rz), s * 1.2);
   goose.root.position.copy(gp); goose.root.rotation.y = Math.atan2(-fin.rx * s, -fin.rz * s);
   gooseCam.position.copy(gp).add(V(fin.rx * s * 2.1, 0.75, fin.rz * s * 2.1)); gooseCam.lookAt(gp.clone().add(V(0, 0.75, 0)));
-  const print1 = renderToCanvas(K, gooseCam, 960, 540, () => { K.scene.add(goose.root); goose.pose({ wingL: 0.3, wingR: 0.3 }); return () => K.scene.remove(goose.root); });
+  const thumb = cs.params.variant === 'thumb';
+  const print1 = renderToCanvas(K, gooseCam, 960, 540, () => { if (!thumb) K.scene.add(goose.root); goose.pose({ wingL: 0.3, wingR: 0.3 }); return () => K.scene.remove(goose.root); });
+  if (thumb) {
+    // variant: print 1 is Jeff's thumb over the lens
+    const g = print1.getContext('2d'); g.fillStyle = '#f1b98f'; g.strokeStyle = '#1a1420'; g.lineWidth = 10;
+    g.beginPath(); g.ellipse(250, 470, 260, 330, -0.5, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = '#ffd9c8'; g.beginPath(); g.ellipse(330, 260, 90, 70, -0.5, 0, 7); g.fill(); g.lineWidth = 6; g.stroke();
+  }
   const a = K.pub(cs.who), o = K.pub(cs.params.other);
   const print2 = finishFrame(K, cs.params.finishRaceS ?? K.sim.byId[cs.who].officialS, 960, 540, s);
   // Jeff's ruler against the line
   drawRuler(print2, print2.width * 0.47);
-  const lab = print2.getContext('2d'); lab.font = '44px "Lilita One", sans-serif'; lab.textAlign = 'center'; lab.lineWidth = 8; lab.strokeStyle = '#1a1420'; lab.fillStyle = '#ffd23f';
+  const lab = print2.getContext('2d');
   const t2 = `${(a?.shortName || a?.nickname || 'HIM').toUpperCase()} BY ${Number(cs.params.marginS ?? 0).toFixed(1)} s`;
-  lab.strokeText(t2, print2.width / 2, 60); lab.fillText(t2, print2.width / 2, 60);
+  // a big margin plate across the top of the print
+  lab.font = '78px "Lilita One", sans-serif'; const tw = Math.min(print2.width - 40, lab.measureText(t2).width + 60);
+  lab.fillStyle = '#1a1420'; roundRect(lab, (print2.width - tw) / 2, 14, tw, 104, 24); lab.fill();
+  lab.textAlign = 'center'; lab.textBaseline = 'middle'; lab.fillStyle = '#ffd23f'; lab.fillText(t2, print2.width / 2, 70, print2.width - 80);
   let p1 = null, p2 = null;
   const cue = cues();
   const NOM = 6.6;
@@ -1103,7 +1237,7 @@ SCENES.photographer = (K, cs) => {
     camG.position.copy(P.root.localToWorld(V(0, P.r.hipH + 0.75, 0.35))); camG.rotation.set(0, P.root.rotation.y, 0);
     click.visible = t > 1.3 && t < 1.8; if (click.visible) { click.position.copy(camG.position).add(V(0, 1.1, 0)); popScale(click, t, 1.3); }
     cue('flash', t > 1.3, () => K.ov.flash(1));
-    cue('p1', t > 1.6, () => { p1 = K.ov.print(print1, 'PRINT 1', -4); p1.show(); });
+    cue('p1', t > 1.6, () => { p1 = K.ov.print(print1, thumb ? 'PRINT 1: THUMB' : 'PRINT 1', -4); p1.show(); });
     cue('line', t > 2.0, () => K.say(cs.lines?.[0]));
     cue('p1off', t > 3.5, () => p1?.hide());
     cue('p2', t > 3.6, () => { p2 = K.ov.print(print2, 'PRINT 2', 3); p2.show(); });
@@ -1136,8 +1270,19 @@ function drawSquirrel(g, x, y, s) {
   g.fillStyle = '#1a1420'; g.beginPath(); g.arc(-30, -50, 3.5, 0, 7); g.fill();
   g.restore();
 }
+function drawPigeon(g, x, y, s) {
+  g.save(); g.translate(x, y); g.scale(s, s); g.strokeStyle = '#1a1420'; g.lineWidth = 5;
+  g.fillStyle = '#8a93a8'; g.beginPath(); g.ellipse(0, -30, 40, 28, -0.2, 0, 7); g.fill(); g.stroke();
+  g.beginPath(); g.ellipse(-8, -34, 26, 14, 0.5, 0, 7); g.fillStyle = '#6f7891'; g.fill(); g.stroke();
+  g.fillStyle = '#8a93a8'; g.beginPath(); g.arc(36, -62, 17, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = '#ff9a1f'; g.beginPath(); g.moveTo(50, -62); g.lineTo(66, -58); g.lineTo(50, -54); g.fill();
+  g.fillStyle = '#1a1420'; g.beginPath(); g.arc(40, -66, 3.5, 0, 7); g.fill();
+  g.strokeStyle = '#ff9a1f'; g.beginPath(); g.moveTo(-6, -4); g.lineTo(-10, 12); g.moveTo(8, -4); g.lineTo(10, 12); g.stroke();
+  g.restore();
+}
 SCENES.sore_loser_var = (K, cs) => {
   const I = base(K, { camera: true, postBanner: 'HE WANTS A REVIEW' });
+  const pigeon = cs.params.variant === 'pigeon';
   const fs = stageAt(K.C, K.C.finishM);
   const s = openSide(K.world, fs, 8);
   const root = I.bag.group();
@@ -1151,18 +1296,18 @@ SCENES.sore_loser_var = (K, cs) => {
   // the replay on the VAR monitor: the real finish frame, plus a squirrel "offside"
   const frame = finishFrame(K, cs.params.finishRaceS ?? K.sim.byId[cs.params.winner].officialS, 768, 432, s);
   { const g = frame.getContext('2d'); g.setLineDash([18, 12]); g.strokeStyle = '#ff2d55'; g.lineWidth = 7; g.beginPath(); g.moveTo(frame.width * 0.3, 0); g.lineTo(frame.width * 0.3, frame.height); g.stroke(); g.setLineDash([]);
-    drawSquirrel(g, frame.width * 0.26, frame.height * 0.86, 1.3);
-    g.font = '48px "Lilita One", sans-serif'; g.textAlign = 'center'; g.lineWidth = 8; g.strokeStyle = '#1a1420'; g.fillStyle = '#ff2d55'; g.strokeText('OFFSIDE?', frame.width / 2, 58); g.fillText('OFFSIDE?', frame.width / 2, 58); }
+    if (pigeon) drawPigeon(g, frame.width * 0.24, frame.height * 0.84, 1.3); else drawSquirrel(g, frame.width * 0.26, frame.height * 0.86, 1.3);
+    g.font = '48px "Lilita One", sans-serif'; g.textAlign = 'center'; g.lineWidth = 8; g.strokeStyle = '#1a1420'; g.fillStyle = '#ff2d55'; g.strokeText((pigeon ? 'HANDBALL?' : 'OFFSIDE?'), frame.width / 2, 58); g.fillText((pigeon ? 'HANDBALL?' : 'OFFSIDE?'), frame.width / 2, 58); }
   const scrTex = I.bag.add(new THREE.CanvasTexture(frame)); scrTex.colorSpace = THREE.SRGBColorSpace;
   const booth = makeVarBooth(I, scrTex); root.add(booth.g);
   const bPos = fs.p(-32, s * 16, -0.16); booth.g.position.copy(bPos); booth.g.rotation.y = fs.yaw + s * Math.PI / 2;
   const cone = makeCone(I.bag, 0.75); root.add(cone);
   const boink = sprite(I.bag, bubbleTexture(I.bag, 'BOINK!', { burst: true, w: 512, h: 300, size: 120 }), 0.9, 512 / 300); root.add(boink); boink.visible = false;
   const cue = cues();
-  const NOM = 6.1;
+  const NOM = 4.4; // trimmed: straight to the screen, the verdict, then the cone
   const aPos = fs.p(7, s * 0.5, 0);
   I.update = (g0, dt, b, { gagDur }) => {
-    const t = tscale(g0, gagDur, NOM);
+    const t = tscale(g0, gagDur, NOM) + 1.7;
     const jp = booth.g.localToWorld(V(t < 3.2 ? -0.95 : 0, 0.05, -0.25)); place(J, jp, booth.g.rotation.y + (t < 3.2 ? 0.35 : 0));
     drive(J, dt, t > 3.6 && t < 4.3 ? 'pose' : 'idle', 'point', { expr: t > 3.6 ? 'happy' : 'effort' });
     if (t < 3.6) { J.rig.arms[1].sh.rotation.set(-0.9, 0, 0.2); J.rig.arms[1].el.rotation.x = -1.6; J.rig.head.rotation.x = 0.15; }
@@ -1178,7 +1323,7 @@ SCENES.sore_loser_var = (K, cs) => {
       K.ov.caption(t > 0.3 ? 'VAR CHECK!' : null, { yellow: true });
     } else if (t < 4.3) {
       // the booth: over Jeff's shoulder at the replay, then his verdict
-      if (t < 3.2) { const sc = booth.screen.getWorldPosition(V()); K.cam(booth.g.localToWorld(V(0.95, 2.35, -1.25)), sc, 40, 0, { occlude: false }); K.ov.caption('SQUIRREL OFFSIDE?', { yellow: true }); }
+      if (t < 3.2) { const sc = booth.screen.getWorldPosition(V()); K.cam(booth.g.localToWorld(V(0.35, 1.95, -0.75)), sc, 42, 0, { occlude: false }); K.ov.caption(pigeon ? 'PIGEON HANDBALL?' : 'SQUIRREL OFFSIDE?', { yellow: true }); }
       else { K.cam(booth.g.localToWorld(V(2.3, 1.9, 0.9)), J.root.localToWorld(V(0, J.r.height - 0.5, 0.1)), 38, 0, { occlude: false }); K.ov.caption(null); }
       cue('line', t > 1.9, () => K.say(cs.lines?.[0]));
       cue('stamp', t > 3.5, () => K.ov.big('RESULT STANDS', '#2ec27e'));

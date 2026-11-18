@@ -84,8 +84,8 @@ test('pacing: <= 3 pausing, <= 18 s pause, >= 20 s apart, nothing in the last 30
 
 test('triggers come from real data', () => {
   const seen = new Set();
-  for (const { plan, runners, perfs } of F) {
-    const cs = planCutscenes({ racePlan: plan, runners, rng: 11 });
+  for (const [k, { plan, runners, perfs }] of F.entries()) {
+    const cs = planCutscenes({ racePlan: plan, runners, rng: 11 + k });
     const S = Object.fromEntries(plan.runners.map((r) => [r.id, runnerStats(r)]));
     const facts = (id) => perfs[Number(id.slice(1)) - 1].facts;
     for (const c of cs) {

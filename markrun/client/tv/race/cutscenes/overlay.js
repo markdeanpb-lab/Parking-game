@@ -15,7 +15,7 @@ const CSS = `
 .mrc-banner b{display:inline-block;font-weight:400;font-size:calc(var(--u)*4.6);padding:calc(var(--u)*.25) calc(var(--u)*2.2);background:var(--bg,#ff3d8b);border:calc(var(--u)*.45) solid var(--ink);
   border-radius:calc(var(--u)*1.2);transform:skewX(var(--sk));box-shadow:0 calc(var(--u)*.7) 0 var(--ink);-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill}
 .mrc-banner b span{display:inline-block;transform:skewX(var(--usk))}
-.mrc-cap{position:absolute;left:50%;bottom:19%;transform:translate(-50%,40%) scale(.85);opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);white-space:nowrap;
+.mrc-cap{position:absolute;left:50%;bottom:23%;transform:translate(-50%,40%) scale(.85);opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);white-space:nowrap;
   font-size:calc(var(--u)*3.6);color:#fff;-webkit-text-stroke:calc(var(--u)*.42) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
 .mrc-cap.on{opacity:1;transform:translate(-50%,0) scale(1)}
 .mrc-cap.y{color:#ffd23f}
@@ -83,7 +83,7 @@ export function createOverlay(container, hudRoot) {
     },
     paused(on) { el.chip.classList.toggle('on', !!on); hudRoot?.classList.toggle('mrc-paused', !!on); },
     // any cutscene on screen: the HUD's closing-gap chip (which sits where the inset goes) steps aside
-    cut(on) { hudRoot?.classList.toggle('mrc-cut', !!on); },
+    cut(on) { hudRoot?.classList.toggle('mrc-cut', !!on); document.body.classList.toggle('mrc-active', !!on); },
     tint(on) { el.tint.classList.toggle('on', !!on); },
     pip(rect, { label = 'MEANWHILE…', caption = null } = {}) {
       if (!rect) { el.pip.classList.remove('on'); el.pipCap.classList.remove('on'); return; }
@@ -118,12 +118,16 @@ export function createOverlay(container, hudRoot) {
       el.flash.style.opacity = '0';
     },
     later,
-    dispose() { for (const t of timers) clearTimeout(t); timers.clear(); hudRoot?.classList.remove('mrc-paused'); root.remove(); },
+    dispose() { for (const t of timers) clearTimeout(t); timers.clear(); hudRoot?.classList.remove('mrc-paused'); document.body.classList.remove('mrc-active'); root.remove(); },
   };
   // greyed HUD while the race is paused (positions stay visible, per the catalogue)
   if (!document.getElementById('mrc-style2')) {
     const s2 = document.createElement('style'); s2.id = 'mrc-style2';
-    s2.textContent = '.mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close{opacity:0!important}';
+    s2.textContent = '.mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner{opacity:0!important}' +
+      // sofa legibility while a cutscene plays: one big outlined commentary plate, low, never under the caption
+      'body.mrc-active #subs{bottom:14px!important}body.mrc-active #subs .sub:not(:last-child){display:none}' +
+      'body.mrc-active #subs .sub{font-size:48px;padding:12px 34px 14px 18px;border-width:5px;background:rgba(20,24,60,.94);text-shadow:0 3px 0 #000}' +
+      'body.mrc-active #subs .sub .who{font-size:30px}';
     document.head.appendChild(s2);
   }
   void flashT;

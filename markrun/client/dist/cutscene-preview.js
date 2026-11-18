@@ -24495,7 +24495,7 @@ var TubeGeometry = class _TubeGeometry extends BufferGeometry {
     const vertex2 = new Vector3();
     const normal = new Vector3();
     const uv = new Vector2();
-    let P = new Vector3();
+    let P2 = new Vector3();
     const vertices = [];
     const normals = [];
     const uvs = [];
@@ -24514,7 +24514,7 @@ var TubeGeometry = class _TubeGeometry extends BufferGeometry {
       generateIndices();
     }
     function generateSegment(i) {
-      P = path.getPointAt(i / tubularSegments, P);
+      P2 = path.getPointAt(i / tubularSegments, P2);
       const N = frames.normals[i];
       const B = frames.binormals[i];
       for (let j2 = 0; j2 <= radialSegments; j2++) {
@@ -24526,9 +24526,9 @@ var TubeGeometry = class _TubeGeometry extends BufferGeometry {
         normal.z = cos * N.z + sin * B.z;
         normal.normalize();
         normals.push(normal.x, normal.y, normal.z);
-        vertex2.x = P.x + radius * normal.x;
-        vertex2.y = P.y + radius * normal.y;
-        vertex2.z = P.z + radius * normal.z;
+        vertex2.x = P2.x + radius * normal.x;
+        vertex2.y = P2.y + radius * normal.y;
+        vertex2.z = P2.z + radius * normal.z;
         vertices.push(vertex2.x, vertex2.y, vertex2.z);
       }
     }
@@ -31603,13 +31603,13 @@ var smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 function buildCourse(course, park, plan) {
-  const P = course.points;
-  const N = P.length - 1;
+  const P2 = course.points;
+  const N = P2.length - 1;
   const step = course.lengthM / N;
   const raw = (m) => {
     const x = Math.max(0, Math.min(N, m / step));
     const i = Math.min(N - 1, Math.floor(x)), f = x - i;
-    const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(N, i + 2)];
+    const p0 = P2[Math.max(0, i - 1)], p1 = P2[i], p2 = P2[i + 1], p3 = P2[Math.min(N, i + 2)];
     const cr = (k) => 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * f + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * f * f + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * f * f * f);
     return [cr(0), cr(2), p1[1] + (p2[1] - p1[1]) * f];
   };
@@ -31717,7 +31717,7 @@ function buildCourse(course, park, plan) {
   T.nz = Math.ceil((bz1 + 60 - T.z0) / T.cell) + 1;
   T.h = new Float32Array(T.nx * T.nz);
   const src = [];
-  for (let i = 0; i <= N; i += 2) src.push(P[i]);
+  for (let i = 0; i <= N; i += 2) src.push(P2[i]);
   let meanY = 0;
   for (const p of src) meanY += p[1];
   meanY /= src.length;
@@ -31840,7 +31840,7 @@ function buildCourse(course, park, plan) {
   const ribbons = [{ from: 0, to: LAP1_END_DRAW, lift: 0 }, { from: 2540, to: 2690, lift: 0.02 }, { from: MAP_TO - 80, to: course.lengthM + 45, lift: 0.035 }];
   const finishM = course.lengthM;
   const geoOf = (m) => m >= MAP_FROM && m <= MAP_TO ? mapLap2(m) : m;
-  return { P, raw, rawExt, baseXZ, LAP1_END_DRAW, xzAt, sample, heading, heightAt, terrain: T, ribbons, finishM, lake, flat, geoOf, diversions, setPlan, LAP1_END, MAP_FROM, MAP_TO };
+  return { P: P2, raw, rawExt, baseXZ, LAP1_END_DRAW, xzAt, sample, heading, heightAt, terrain: T, ribbons, finishM, lake, flat, geoOf, diversions, setPlan, LAP1_END, MAP_FROM, MAP_TO };
 }
 function bbox(pts) {
   let a = [1e9, 1e9, -1e9, -1e9];
@@ -33851,7 +33851,7 @@ function crowdStyleFor(vis) {
   return "default";
 }
 function palette(vis) {
-  const P = {
+  const P2 = {
     sky: [3116287, 9425919, 15333631],
     fog: [13496063, 700, 3200],
     hemi: [14676223, 9420912, 1.45],
@@ -33877,7 +33877,7 @@ function palette(vis) {
   };
   switch (vis.season) {
     case "winter":
-      Object.assign(P, {
+      Object.assign(P2, {
         sky: [6135528, 12377332, 15923455],
         fog: [14872312, 380, 2400],
         hemi: [15134975, 9085104, 1.5],
@@ -33893,7 +33893,7 @@ function palette(vis) {
       });
       break;
     case "summer":
-      Object.assign(P, {
+      Object.assign(P2, {
         sky: [1734911, 7128319, 16773590],
         fog: [16773336, 800, 3600],
         hemi: [16774364, 10141792, 1.5],
@@ -33907,7 +33907,7 @@ function palette(vis) {
       });
       break;
     case "autumn":
-      Object.assign(P, {
+      Object.assign(P2, {
         sky: [4163286, 10473710, 16509650],
         fog: [15983304, 520, 2800],
         hemi: [16773340, 10127952, 1.4],
@@ -33922,14 +33922,14 @@ function palette(vis) {
       });
       break;
     default:
-      Object.assign(P, {
+      Object.assign(P2, {
         crowns: [3978315, 5031250, 6539594, 8376650, 16758485, 16765412, 16773366],
         particles: { kind: 1, n: 260, vel: [0.4, -0.7, 0.2], sway: 0.7, size: 0.2, cols: [16761564, 16770030, 16777215, 16752584] }
       });
   }
   switch (vis.weather) {
     case "rain":
-      Object.assign(P, {
+      Object.assign(P2, {
         sky: [7307157, 10398651, 13226200],
         fog: [11845321, 140, 1300],
         hemi: [14081768, 7178858, 1.55],
@@ -33941,63 +33941,63 @@ function palette(vis) {
         cloudScale: 1.6,
         particles: { kind: 0, n: 1800, vel: [0.6, -15, 0.3], sway: 0, size: 0.04, cols: [14674687] }
       });
-      P.grass = P.grass.map((v) => v * 0.92);
+      P2.grass = P2.grass.map((v) => v * 0.92);
       break;
     case "fog":
-      Object.assign(P, { sky: [13226972, 14673386, 15659507], fog: [15002093, 22, 230], hemi: [15791352, 9083528, 1.6], sun: [16774888, 1.1], cloudScale: 1e-3 });
-      if (vis.season === "winter" || vis.season === "autumn") P.breath = true;
+      Object.assign(P2, { sky: [13226972, 14673386, 15659507], fog: [15002093, 22, 230], hemi: [15791352, 9083528, 1.6], sun: [16774888, 1.1], cloudScale: 1e-3 });
+      if (vis.season === "winter" || vis.season === "autumn") P2.breath = true;
       break;
     case "frost":
-      Object.assign(P, { frost: Math.max(P.frost, 0.72), breath: true, sky: [6135528, 12837110, 16186367] });
+      Object.assign(P2, { frost: Math.max(P2.frost, 0.72), breath: true, sky: [6135528, 12837110, 16186367] });
       break;
     case "wind":
-      Object.assign(P, { wind: 1, cloudScale: 1.2, particles: { kind: 2, n: 340, vel: [7, -0.6, 2.5], sway: 1.4, size: 0.3, cols: vis.season === "spring" ? [8376650, 11065418] : [15231519, 15900967, 14173483, 15319610, 10272842] } });
+      Object.assign(P2, { wind: 1, cloudScale: 1.2, particles: { kind: 2, n: 340, vel: [7, -0.6, 2.5], sway: 1.4, size: 0.3, cols: vis.season === "spring" ? [8376650, 11065418] : [15231519, 15900967, 14173483, 15319610, 10272842] } });
       break;
     case "sun":
-      Object.assign(P, { sunDisc: true, heat: vis.season === "summer" || vis.season === "spring", sun: [16773320, Math.max(P.sun[1], 2.6)] });
+      Object.assign(P2, { sunDisc: true, heat: vis.season === "summer" || vis.season === "spring", sun: [16773320, Math.max(P2.sun[1], 2.6)] });
       break;
   }
-  return P;
+  return P2;
 }
 function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
   const vis = visual || themeVisual(null);
-  const P = palette(vis);
+  const P2 = palette(vis);
   const T = world.theme;
   const disposables = [];
   const R = mulberry(4242);
   const col2 = (h) => new Color(h);
-  T.skyMat.uniforms.top.value.set(P.sky[0]);
-  T.skyMat.uniforms.mid.value.set(P.sky[1]);
-  T.skyMat.uniforms.bot.value.set(P.sky[2]);
-  scene.fog.color.set(P.fog[0]);
-  scene.fog.near = P.fog[1];
-  scene.fog.far = P.fog[2];
-  hemi.color.set(P.hemi[0]);
-  hemi.groundColor.set(P.hemi[1]);
-  hemi.intensity = P.hemi[2];
-  sun.color.set(P.sun[0]);
-  sun.intensity = P.sun[1];
-  sunDir.set(...P.sunDir).normalize();
+  T.skyMat.uniforms.top.value.set(P2.sky[0]);
+  T.skyMat.uniforms.mid.value.set(P2.sky[1]);
+  T.skyMat.uniforms.bot.value.set(P2.sky[2]);
+  scene.fog.color.set(P2.fog[0]);
+  scene.fog.near = P2.fog[1];
+  scene.fog.far = P2.fog[2];
+  hemi.color.set(P2.hemi[0]);
+  hemi.groundColor.set(P2.hemi[1]);
+  hemi.intensity = P2.hemi[2];
+  sun.color.set(P2.sun[0]);
+  sun.intensity = P2.sun[1];
+  sunDir.set(...P2.sunDir).normalize();
   if (vis.weather === "rain" || vis.weather === "fog") sun.shadow.radius = 6;
-  T.cloudMat.color.set(P.cloud[0]);
-  T.cloudMat.emissive.set(P.cloud[1]);
-  T.cloudMat.emissiveIntensity = P.cloud[2];
-  if (T.cloudMesh) T.cloudMesh.scale.set(1, P.cloudScale < 0.01 ? 1e-3 : 1, 1), T.cloudMesh.visible = P.cloudScale > 0.01;
-  T.groundU.uGrassTint.value.setRGB(...P.grass);
-  T.groundU.uFrost.value = P.frost;
-  T.groundU.uWet.value = P.wet;
-  T.groundU.uLitter.value = P.litter;
-  T.tuftMat.color.set(P.tuft);
-  T.farMats.forEach((m, i) => m.color.set(P.far[i] ?? P.far[0]));
-  if (T.pathMat) T.pathMat.color.set(P.path);
-  if (P.crowns) for (const im of T.crowns) {
-    for (let i = 0; i < im.count; i++) im.setColorAt(i, col2(P.crowns[Math.floor(R() * P.crowns.length)]));
+  T.cloudMat.color.set(P2.cloud[0]);
+  T.cloudMat.emissive.set(P2.cloud[1]);
+  T.cloudMat.emissiveIntensity = P2.cloud[2];
+  if (T.cloudMesh) T.cloudMesh.scale.set(1, P2.cloudScale < 0.01 ? 1e-3 : 1, 1), T.cloudMesh.visible = P2.cloudScale > 0.01;
+  T.groundU.uGrassTint.value.setRGB(...P2.grass);
+  T.groundU.uFrost.value = P2.frost;
+  T.groundU.uWet.value = P2.wet;
+  T.groundU.uLitter.value = P2.litter;
+  T.tuftMat.color.set(P2.tuft);
+  T.farMats.forEach((m, i) => m.color.set(P2.far[i] ?? P2.far[0]));
+  if (T.pathMat) T.pathMat.color.set(P2.path);
+  if (P2.crowns) for (const im of T.crowns) {
+    for (let i = 0; i < im.count; i++) im.setColorAt(i, col2(P2.crowns[Math.floor(R() * P2.crowns.length)]));
     im.instanceColor.needsUpdate = true;
   }
   if (vis.season === "winter" || vis.season === "autumn") for (const im of T.flowers) im.visible = vis.season !== "winter";
-  T.windU.value = P.wind;
+  T.windU.value = P2.wind;
   let sunSprite = null;
-  if (P.sunDisc) {
+  if (P2.sunDisc) {
     const tex = canvasTexture(256, 256, (g, w, h) => {
       g.translate(w / 2, h / 2);
       g.fillStyle = "rgba(255,230,120,0.35)";
@@ -34101,9 +34101,9 @@ function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
     disposables.push(geo2, mat, base2);
     systems.push({ mesh: mesh2, uni, cfg });
   }
-  if (P.particles) particles(P.particles);
-  if (P.heat) particles({ kind: 3, n: 60, vel: [0, 0.7, 0], sway: 0.2, size: 0.55, box: [30, 2.2, 30], cols: [16777215], heat: true });
-  if (P.puddles) {
+  if (P2.particles) particles(P2.particles);
+  if (P2.heat) particles({ kind: 3, n: 60, vel: [0, 0.7, 0], sway: 0.2, size: 0.55, box: [30, 2.2, 30], cols: [16777215], heat: true });
+  if (P2.puddles) {
     const tex = canvasTexture(128, 128, (g, w, h) => {
       g.translate(w / 2, h / 2);
       g.beginPath();
@@ -34158,7 +34158,7 @@ function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
   }
   const puffs = [];
   let puffTex = null;
-  if (P.breath) {
+  if (P2.breath) {
     puffTex = canvasTexture(64, 64, (g, w, h) => {
       g.beginPath();
       g.arc(32, 32, 26, 0, 7);
@@ -34211,7 +34211,7 @@ function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
   }
   function breathe(dt, runners) {
     var _a;
-    if (P.breath) for (const r of runners) {
+    if (P2.breath) for (const r of runners) {
       if (!r.root.visible) continue;
       const L = puffFor(r);
       L.t -= dt;
@@ -34247,7 +34247,7 @@ function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
     for (const L of puffs) for (const sp of L.sprites) scene.remove(sp);
     for (const d of disposables) d.dispose?.();
   }
-  return { vis, update, dispose, palette: P };
+  return { vis, update, dispose, palette: P2 };
 }
 
 // client/shared/portrait.js
@@ -34333,14 +34333,14 @@ function runnerPortrait(runner, { size = 120, idSuffix = "" } = {}) {
   const lane = runner?.lane ?? "";
   const clipId = `pc${h.toString(36)}${idSuffix}`;
   const parts = [];
-  const P = (d, fill2, sw = SW, extra = "") => `<path d="${d}" fill="${fill2}" stroke="${INK}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"${extra}/>`;
+  const P2 = (d, fill2, sw = SW, extra = "") => `<path d="${d}" fill="${fill2}" stroke="${INK}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"${extra}/>`;
   parts.push(`<defs><clipPath id="${clipId}"><circle cx="60" cy="60" r="56"/></clipPath></defs>`);
   parts.push(`<circle cx="60" cy="60" r="56" fill="${shade(c1, 0.6)}"/>`);
   parts.push(`<g clip-path="url(#${clipId})">`);
   parts.push(`<path d="M0 ${92} L120 ${70} L120 120 L0 120Z" fill="${shade(c1, 0.4)}" opacity=".7"/>`);
   const sy = cy + headR + neck - 4;
-  if (L.prop === "cape") parts.push(P(`M${cx - 20} ${sy - 2} Q${cx - shoulders - 26} ${sy + 18} ${cx - shoulders - 22} 124 L${cx + shoulders + 22} 124 Q${cx + shoulders + 26} ${sy + 18} ${cx + 20} ${sy - 2}Z`, c2));
-  parts.push(P(`M${cx - shoulders} 124 Q${cx - shoulders} ${sy + 6} ${cx - 14} ${sy} L${cx + 14} ${sy} Q${cx + shoulders} ${sy + 6} ${cx + shoulders} 124Z`, c1));
+  if (L.prop === "cape") parts.push(P2(`M${cx - 20} ${sy - 2} Q${cx - shoulders - 26} ${sy + 18} ${cx - shoulders - 22} 124 L${cx + shoulders + 22} 124 Q${cx + shoulders + 26} ${sy + 18} ${cx + 20} ${sy - 2}Z`, c2));
+  parts.push(P2(`M${cx - shoulders} 124 Q${cx - shoulders} ${sy + 6} ${cx - 14} ${sy} L${cx + 14} ${sy} Q${cx + shoulders} ${sy + 6} ${cx + shoulders} 124Z`, c1));
   parts.push(`<path d="M${cx - shoulders + 7} 124 Q${cx - shoulders + 8} ${sy + 16} ${cx - shoulders + 14} ${sy + 8}" fill="none" stroke="${c2}" stroke-width="5"/><path d="M${cx + shoulders - 7} 124 Q${cx + shoulders - 8} ${sy + 16} ${cx + shoulders - 14} ${sy + 8}" fill="none" stroke="${c2}" stroke-width="5"/>`);
   parts.push(`<g transform="rotate(-4 ${cx} ${sy + 18})"><rect x="${cx - 13}" y="${sy + 7}" width="26" height="20" rx="3" fill="#fff" stroke="${INK}" stroke-width="3"/><rect x="${cx - 11.5}" y="${sy + 8.5}" width="23" height="4.5" fill="${c1}"/>`);
   parts.push(`<text x="${cx}" y="${sy + 25}" font-family="Lilita One, Arial Black, sans-serif" font-size="13" text-anchor="middle" fill="${INK}">${lane}</text></g>`);
@@ -34352,10 +34352,10 @@ function runnerPortrait(runner, { size = 120, idSuffix = "" } = {}) {
   }
   const hair = L.hair;
   if (["long", "ponytail"].includes(hair)) {
-    parts.push(P(`M${cx - headR - 4} ${cy} Q${cx - headR - 6} ${cy + headR + 14} ${cx - headR + 10} ${cy + headR + 10} L${cx + headR - 10} ${cy + headR + 10} Q${cx + headR + 6} ${cy + headR + 14} ${cx + headR + 4} ${cy}Z`, hairCol));
+    parts.push(P2(`M${cx - headR - 4} ${cy} Q${cx - headR - 6} ${cy + headR + 14} ${cx - headR + 10} ${cy + headR + 10} L${cx + headR - 10} ${cy + headR + 10} Q${cx + headR + 6} ${cy + headR + 14} ${cx + headR + 4} ${cy}Z`, hairCol));
   }
   if (hair === "ponytail") parts.push(`<ellipse cx="${cx + headR + 8}" cy="${cy - 2}" rx="10" ry="18" fill="${hairCol}" stroke="${INK}" stroke-width="${SW}" transform="rotate(28 ${cx + headR + 8} ${cy - 2})"/>`);
-  if (hair === "mullet") parts.push(P(`M${cx - headR + 2} ${cy + 4} Q${cx - headR - 8} ${cy + headR + 8} ${cx - headR + 6} ${cy + headR + 14} L${cx + headR - 6} ${cy + headR + 14} Q${cx + headR + 8} ${cy + headR + 8} ${cx + headR - 2} ${cy + 4}Z`, hairCol));
+  if (hair === "mullet") parts.push(P2(`M${cx - headR + 2} ${cy + 4} Q${cx - headR - 8} ${cy + headR + 8} ${cx - headR + 6} ${cy + headR + 14} L${cx + headR - 6} ${cy + headR + 14} Q${cx + headR + 8} ${cy + headR + 8} ${cx + headR - 2} ${cy + 4}Z`, hairCol));
   if (hair === "afro") parts.push(`<circle cx="${cx}" cy="${cy - 10}" r="${headR + 12}" fill="${hairCol}" stroke="${INK}" stroke-width="${SW}"/>`);
   if (hair === "curly") parts.push(`<g fill="${hairCol}" stroke="${INK}" stroke-width="${SW}">${[[-24, -8], [24, -8], [-19, -22], [19, -22], [-6, -30], [8, -30]].map(([dx, dy]) => `<circle cx="${cx + dx}" cy="${cy + dy}" r="11"/>`).join("")}</g>`);
   parts.push(`<circle cx="${cx - headR + 1}" cy="${cy + 4}" r="7" fill="${skin}" stroke="${INK}" stroke-width="${SW}"/>`);
@@ -34453,29 +34453,29 @@ function runnerPortrait(runner, { size = 120, idSuffix = "" } = {}) {
   const hat = L.hat;
   const dark = shade(c1, -0.22);
   if (hat === "backwards-cap") {
-    parts.push(P(`M${cx - headR + 1} ${cy - 8} Q${cx - headR + 2} ${top - 10} ${cx} ${top - 10} Q${cx + headR - 2} ${top - 10} ${cx + headR - 1} ${cy - 8}Z`, c1));
-    parts.push(P(`M${cx - headR + 4} ${cy - 12} Q${cx - headR - 14} ${cy - 14} ${cx - headR - 18} ${cy - 4} L${cx - headR + 2} ${cy - 4}Z`, dark));
+    parts.push(P2(`M${cx - headR + 1} ${cy - 8} Q${cx - headR + 2} ${top - 10} ${cx} ${top - 10} Q${cx + headR - 2} ${top - 10} ${cx + headR - 1} ${cy - 8}Z`, c1));
+    parts.push(P2(`M${cx - headR + 4} ${cy - 12} Q${cx - headR - 14} ${cy - 14} ${cx - headR - 18} ${cy - 4} L${cx - headR + 2} ${cy - 4}Z`, dark));
     parts.push(`<rect x="${cx + 4}" y="${cy - 14}" width="12" height="5" rx="2" fill="${c2}" stroke="${INK}" stroke-width="2.5"/>`);
   } else if (hat === "cap") {
-    parts.push(P(`M${cx - headR + 1} ${cy - 8} Q${cx - headR + 2} ${top - 10} ${cx} ${top - 10} Q${cx + headR - 2} ${top - 10} ${cx + headR - 1} ${cy - 8}Z`, c1));
-    parts.push(P(`M${cx - 6} ${cy - 10} Q${cx + 24} ${cy - 18} ${cx + headR + 16} ${cy - 6} L${cx + headR - 2} ${cy - 4}Z`, dark));
+    parts.push(P2(`M${cx - headR + 1} ${cy - 8} Q${cx - headR + 2} ${top - 10} ${cx} ${top - 10} Q${cx + headR - 2} ${top - 10} ${cx + headR - 1} ${cy - 8}Z`, c1));
+    parts.push(P2(`M${cx - 6} ${cy - 10} Q${cx + 24} ${cy - 18} ${cx + headR + 16} ${cy - 6} L${cx + headR - 2} ${cy - 4}Z`, dark));
     parts.push(`<circle cx="${cx}" cy="${top - 10}" r="3.5" fill="${c2}" stroke="${INK}" stroke-width="2.5"/>`);
     parts.push(`<path d="M${cx - 14} ${cy - 15} Q${cx - 4} ${top - 6} ${cx + 8} ${cy - 17}" fill="none" stroke="${c2}" stroke-width="4"/>`);
   } else if (hat === "bobble") {
-    parts.push(P(`M${cx - headR} ${cy - 6} Q${cx - headR} ${top - 18} ${cx} ${top - 18} Q${cx + headR} ${top - 18} ${cx + headR} ${cy - 6}Z`, c1));
+    parts.push(P2(`M${cx - headR} ${cy - 6} Q${cx - headR} ${top - 18} ${cx} ${top - 18} Q${cx + headR} ${top - 18} ${cx + headR} ${cy - 6}Z`, c1));
     parts.push(`<path d="M${cx - 12} ${top - 14} L${cx - 12} ${cy - 10} M${cx} ${top - 17} L${cx} ${cy - 10} M${cx + 12} ${top - 14} L${cx + 12} ${cy - 10}" stroke="${dark}" stroke-width="3"/>`);
     parts.push(`<rect x="${cx - headR - 2}" y="${cy - 13}" width="${headR * 2 + 4}" height="12" rx="5" fill="${c2}" stroke="${INK}" stroke-width="${SW}"/>`);
     parts.push(`<circle cx="${cx}" cy="${top - 22}" r="11" fill="${c2}" stroke="${INK}" stroke-width="${SW}"/>`);
   } else if (hat === "headband" || hat === "sweatband") {
-    parts.push(P(`M${cx - headR} ${cy - 13} Q${cx} ${cy - 22} ${cx + headR} ${cy - 13} L${cx + headR + 1} ${cy - 4} Q${cx} ${cy - 13} ${cx - headR - 1} ${cy - 4}Z`, c1, 4));
+    parts.push(P2(`M${cx - headR} ${cy - 13} Q${cx} ${cy - 22} ${cx + headR} ${cy - 13} L${cx + headR + 1} ${cy - 4} Q${cx} ${cy - 13} ${cx - headR - 1} ${cy - 4}Z`, c1, 4));
     parts.push(`<path d="M${cx - 10} ${cy - 15} L${cx + 10} ${cy - 15}" stroke="${c2}" stroke-width="3" stroke-linecap="round"/>`);
-    if (hat === "headband") parts.push(P(`M${cx + headR} ${cy - 9} l12 -5 l-1 11z`, c1, 3.5));
+    if (hat === "headband") parts.push(P2(`M${cx + headR} ${cy - 9} l12 -5 l-1 11z`, c1, 3.5));
   } else if (hat === "visor") {
     parts.push(`<path d="M${cx - headR} ${cy - 12} Q${cx} ${cy - 20} ${cx + headR} ${cy - 12} L${cx + headR} ${cy - 5} Q${cx} ${cy - 12} ${cx - headR} ${cy - 5}Z" fill="${c1}" stroke="${INK}" stroke-width="4"/>`);
-    parts.push(P(`M${cx - 18} ${cy - 10} Q${cx + 4} ${cy - 2} ${cx + 30} ${cy - 10} L${cx + 20} ${cy - 15}Z`, dark, 4));
+    parts.push(P2(`M${cx - 18} ${cy - 10} Q${cx + 4} ${cy - 2} ${cx + 30} ${cy - 10} L${cx + 20} ${cy - 15}Z`, dark, 4));
   } else if (hat === "bucket") {
-    parts.push(P(`M${cx - headR + 4} ${cy - 10} L${cx - headR + 7} ${top - 12} Q${cx} ${top - 19} ${cx + headR - 7} ${top - 12} L${cx + headR - 4} ${cy - 10}Z`, c1));
-    parts.push(P(`M${cx - headR - 13} ${cy - 2} Q${cx} ${cy - 18} ${cx + headR + 13} ${cy - 2} Q${cx} ${cy - 9} ${cx - headR - 13} ${cy - 2}Z`, dark));
+    parts.push(P2(`M${cx - headR + 4} ${cy - 10} L${cx - headR + 7} ${top - 12} Q${cx} ${top - 19} ${cx + headR - 7} ${top - 12} L${cx + headR - 4} ${cy - 10}Z`, c1));
+    parts.push(P2(`M${cx - headR - 13} ${cy - 2} Q${cx} ${cy - 18} ${cx + headR + 13} ${cy - 2} Q${cx} ${cy - 9} ${cx - headR - 13} ${cy - 2}Z`, dark));
     parts.push(`<path d="M${cx - headR + 5} ${cy - 13} Q${cx} ${cy - 18} ${cx + headR - 5} ${cy - 13}" fill="none" stroke="${c2}" stroke-width="4"/>`);
   }
   parts.push("</g>");
@@ -35296,9 +35296,9 @@ function createRunner(info, opts = {}) {
     }
   }
   const st = { phase: R() * 6.28, t: R() * 10, lean: 0, j: {}, look: 0, lookPitch: 0 };
-  const J = st.j;
+  const J2 = st.j;
   const names = ["hipLx", "hipRx", "kneeL", "kneeR", "ankL", "ankR", "shLx", "shRx", "shLz", "shRz", "elL", "elR", "twist", "lean", "bob", "roll", "headY", "headX", "bodyX", "bodyY", "bodyZ", "hipSpread"];
-  for (const n of names) J[n] = 0;
+  for (const n of names) J2[n] = 0;
   const target = {};
   let state = "idle", variant = null, stateT = 0;
   function set(s, v = null) {
@@ -35498,30 +35498,30 @@ function createRunner(info, opts = {}) {
     const a = 1 - Math.exp(-k * dt);
     for (const n of names) {
       if (n === "bodyY" && state === "pose" && variant === "spin") {
-        J[n] = target[n];
+        J2[n] = target[n];
         continue;
       }
-      J[n] += (target[n] - J[n]) * a;
+      J2[n] += (target[n] - J2[n]) * a;
     }
     if (!(state === "pose" && variant === "spin")) {
-      J.bodyY = J.bodyY % (Math.PI * 2);
-      if (J.bodyY > Math.PI) J.bodyY -= Math.PI * 2;
+      J2.bodyY = J2.bodyY % (Math.PI * 2);
+      if (J2.bodyY > Math.PI) J2.bodyY -= Math.PI * 2;
     }
-    legs[0].hp.rotation.set(J.hipLx, 0, -J.hipSpread);
-    legs[1].hp.rotation.set(J.hipRx, 0, J.hipSpread);
-    legs[0].kn.rotation.x = J.kneeL;
-    legs[1].kn.rotation.x = J.kneeR;
-    legs[0].an.rotation.x = J.ankL - J.kneeL * 0.35;
-    legs[1].an.rotation.x = J.ankR - J.kneeR * 0.35;
-    arms[0].sh.rotation.set(J.shLx, 0, J.shLz - 0);
-    arms[1].sh.rotation.set(J.shRx, 0, J.shRz);
-    arms[0].el.rotation.x = J.elL;
-    arms[1].el.rotation.x = J.elR;
-    torso.rotation.set(J.lean, J.twist, 0);
-    hips.rotation.set(0, -J.twist * 0.5, J.roll);
-    hips.position.y = hipH + J.bob;
-    head.rotation.set(J.headX, J.headY, 0);
-    body.rotation.set(J.bodyX, J.bodyY, J.bodyZ);
+    legs[0].hp.rotation.set(J2.hipLx, 0, -J2.hipSpread);
+    legs[1].hp.rotation.set(J2.hipRx, 0, J2.hipSpread);
+    legs[0].kn.rotation.x = J2.kneeL;
+    legs[1].kn.rotation.x = J2.kneeR;
+    legs[0].an.rotation.x = J2.ankL - J2.kneeL * 0.35;
+    legs[1].an.rotation.x = J2.ankR - J2.kneeR * 0.35;
+    arms[0].sh.rotation.set(J2.shLx, 0, J2.shLz - 0);
+    arms[1].sh.rotation.set(J2.shRx, 0, J2.shRz);
+    arms[0].el.rotation.x = J2.elL;
+    arms[1].el.rotation.x = J2.elR;
+    torso.rotation.set(J2.lean, J2.twist, 0);
+    hips.rotation.set(0, -J2.twist * 0.5, J2.roll);
+    hips.position.y = hipH + J2.bob;
+    head.rotation.set(J2.headX, J2.headY, 0);
+    body.rotation.set(J2.bodyX, J2.bodyY, J2.bodyZ);
     body.position.y += ((state === "celebrate" && variant === "collapse" ? B.torso[2] * 0.5 + 0.08 : 0) - body.position.y) * a;
     if (head.userData.bobble) head.userData.bobble.position.y = hr * 2.45 + Math.abs(Math.sin(st.phase)) * 0.04;
     if (head.userData.pony) head.userData.pony.rotation.x = 0.4 + Math.sin(st.phase * 2) * 0.35;
@@ -37383,10 +37383,10 @@ function buildPodium(scene, C, world, runners, order, { camera, offsetX = 3.2 })
   const R = mulberry(3);
   const N = 420;
   const conf = new InstancedMesh(new PlaneGeometry(0.16, 0.26), new MeshBasicMaterial({ side: DoubleSide }), N);
-  const P = [];
+  const P2 = [];
   const cols = ["#ff3d8b", "#ffd23f", "#2e9bff", "#3ddc84", "#ff8a3d", "#ffffff", "#b07bff"];
   for (let i = 0; i < N; i++) {
-    P.push({ x: (R() - 0.5) * 14, y: R() * 12, z: (R() - 0.5) * 8, vy: 1 + R() * 1.6, sp: R() * 6, ph: R() * 6.28 });
+    P2.push({ x: (R() - 0.5) * 14, y: R() * 12, z: (R() - 0.5) * 8, vy: 1 + R() * 1.6, sp: R() * 6, ph: R() * 6.28 });
     conf.setColorAt(i, new Color(cols[i % cols.length]));
   }
   conf.frustumCulled = false;
@@ -37396,7 +37396,7 @@ function buildPodium(scene, C, world, runners, order, { camera, offsetX = 3.2 })
   function update(dt, wall) {
     t += dt;
     for (let i = 0; i < N; i++) {
-      const p = P[i];
+      const p = P2[i];
       p.y -= p.vy * dt;
       if (p.y < 0) p.y += 12;
       d.position.set(p.x + Math.sin(t * 1.3 + p.ph) * 0.5, p.y, p.z + Math.cos(t + p.ph) * 0.4);
@@ -37816,7 +37816,7 @@ var CSS2 = `
 .mrc-banner b{display:inline-block;font-weight:400;font-size:calc(var(--u)*4.6);padding:calc(var(--u)*.25) calc(var(--u)*2.2);background:var(--bg,#ff3d8b);border:calc(var(--u)*.45) solid var(--ink);
   border-radius:calc(var(--u)*1.2);transform:skewX(var(--sk));box-shadow:0 calc(var(--u)*.7) 0 var(--ink);-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill}
 .mrc-banner b span{display:inline-block;transform:skewX(var(--usk))}
-.mrc-cap{position:absolute;left:50%;bottom:19%;transform:translate(-50%,40%) scale(.85);opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);white-space:nowrap;
+.mrc-cap{position:absolute;left:50%;bottom:23%;transform:translate(-50%,40%) scale(.85);opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);white-space:nowrap;
   font-size:calc(var(--u)*3.6);color:#fff;-webkit-text-stroke:calc(var(--u)*.42) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
 .mrc-cap.on{opacity:1;transform:translate(-50%,0) scale(1)}
 .mrc-cap.y{color:#ffd23f}
@@ -37932,6 +37932,7 @@ function createOverlay(container, hudRoot) {
     // any cutscene on screen: the HUD's closing-gap chip (which sits where the inset goes) steps aside
     cut(on) {
       hudRoot?.classList.toggle("mrc-cut", !!on);
+      document.body.classList.toggle("mrc-active", !!on);
     },
     tint(on) {
       el.tint.classList.toggle("on", !!on);
@@ -38025,13 +38026,14 @@ function createOverlay(container, hudRoot) {
       for (const t of timers) clearTimeout(t);
       timers.clear();
       hudRoot?.classList.remove("mrc-paused");
+      document.body.classList.remove("mrc-active");
       root.remove();
     }
   };
   if (!document.getElementById("mrc-style2")) {
     const s2 = document.createElement("style");
     s2.id = "mrc-style2";
-    s2.textContent = ".mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close{opacity:0!important}";
+    s2.textContent = ".mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner{opacity:0!important}body.mrc-active #subs{bottom:14px!important}body.mrc-active #subs .sub:not(:last-child){display:none}body.mrc-active #subs .sub{font-size:48px;padding:12px 34px 14px 18px;border-width:5px;background:rgba(20,24,60,.94);text-shadow:0 3px 0 #000}body.mrc-active #subs .sub .who{font-size:30px}";
     document.head.appendChild(s2);
   }
   void flashT;
@@ -38734,13 +38736,13 @@ function fairSide(K, cs) {
   const d = divOf(K, cs);
   if (!d) return 1;
   const mid = (d.fromM + d.toM) / 2, f = stageAt(K.C, mid);
-  const P = d.path[Math.floor(d.path.length / 2)];
-  return (P[0] - f.x) * f.rx + (P[1] - f.z) * f.rz >= 0 ? 1 : -1;
+  const P2 = d.path[Math.floor(d.path.length / 2)];
+  return (P2[0] - f.x) * f.rx + (P2[1] - f.z) * f.rz >= 0 ? 1 : -1;
 }
 function fairSetup(K, cs) {
-  const P = K.persist;
-  if (P.store.has("fair")) return P.store.get("fair");
-  const bag = P.bag;
+  const P2 = K.persist;
+  if (P2.store.has("fair")) return P2.store.get("fair");
+  const bag = P2.bag;
   const d = (K.C.diversions[cs.who] || [])[0];
   const lap1 = d || { fromM: cs.params.fromM, toM: cs.params.toM };
   const s = fairSide(K, cs);
@@ -38823,7 +38825,7 @@ function fairSetup(K, cs) {
   }
   const fair = { g, sign: sign2, M, s, fSign, pop: 0, popT: 0, arch };
   sign2.scale.setScalar(1e-3);
-  P.updaters.set("fair", (dt) => {
+  P2.updaters.set("fair", (dt) => {
     fair.popT += dt;
     const k = fair.pop > 0 ? backOut(Math.min(1, fair.popT / 0.45)) : 1e-3;
     sign2.scale.setScalar(Math.max(1e-3, k));
@@ -38834,7 +38836,7 @@ function fairSetup(K, cs) {
     M.rig.L.sh.rotation.set(0, 0, -0.5 - Math.max(0, Math.sin(t * 5)) * 0.3);
     M.rig.head.rotation.y = Math.sin(t * 2) * 0.3;
   });
-  P.store.set("fair", fair);
+  P2.store.set("fair", fair);
   return fair;
 }
 function popSign(fair) {
@@ -38843,27 +38845,27 @@ function popSign(fair) {
     fair.popT = 0;
   }
 }
-function carryPlush(K, who, scale) {
-  const P = K.persist;
+function carryPlush(K, who, scale, kind = "goose") {
+  const P2 = K.persist;
   const r = K.runners[who];
   if (!r) return;
-  const old = P.store.get("plush");
+  const old = P2.store.get("plush");
   if (old) {
     old.parent?.remove(old);
   }
   const g = new Group();
-  P.bag.roots.push(g);
-  const goose = makeGoose(P.bag, { plush: true, scale });
+  P2.bag.roots.push(g);
+  const goose = kind === "duck" ? { root: makeDuck(P2.bag, scale * 2.6) } : makeGoose(P2.bag, { plush: true, scale });
   goose.root.rotation.y = Math.PI;
   goose.root.position.set(0, -0.35 * scale, 0.1);
   g.add(goose.root);
   g.position.set(0, r.hipH + 0.25, 0.55 + 0.2 * scale);
   r.root.add(g);
-  P.store.set("plush", g);
-  P.updaters.set("plush", () => {
-    const rig = P.store.get("plushRig") || (() => {
+  P2.store.set("plush", g);
+  P2.updaters.set("plush", () => {
+    const rig = P2.store.get("plushRig") || (() => {
       const x = rigFor(r);
-      P.store.set("plushRig", x);
+      P2.store.set("plushRig", x);
       return x;
     })();
     if (!rig || r.root.visible === false) return;
@@ -38958,7 +38960,34 @@ SCENES.funfair_drone = (K, cs) => {
   const arrow = sprite(I.bag, arrowTexture(I.bag, pub?.colour?.primary || "#ffd23f"), 9, 128 / 160);
   g.add(arrow);
   const cue = cues();
-  I.update = (t, dt, b) => {
+  const rides = K.funfair?.anchors?.rides || [];
+  const fairC = K.funfair?.anchors?.center ? V(K.funfair.anchors.center.x, K.funfair.anchors.center.y, K.funfair.anchors.center.z) : centre.clone();
+  const EST = 2.5;
+  I.update = (t0, dt, b) => {
+    if (t0 < EST) {
+      const st2 = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
+      const rp = V(st2.x, st2.y, st2.z);
+      const out = V(rp.x - fairC.x, 0, rp.z - fairC.z);
+      if (out.lengthSq() < 1) out.copy(away).negate();
+      out.normalize();
+      const lookAt = fairC.clone().lerp(rp, 0.3);
+      lookAt.y = C.heightAt(lookAt.x, lookAt.z) + 9;
+      const camP = rp.clone().addScaledVector(out, 26).add(V(0, 0, 0)).addScaledVector(V(-out.z, 0, out.x), -6 + t0 * 2.2);
+      camP.y = C.heightAt(camP.x, camP.z) + 2.2;
+      K.cam(camP, lookAt, 58, 0, { sun: 120 });
+      arrow.position.set(st2.x, st2.y + 4.6 + Math.sin(t0 * 6) * 0.3, st2.z);
+      arrow.scale.set(1.6 * 128 / 160, 1.6, 1);
+      dots.visible = false;
+      lab.visible = false;
+      dashes.visible = false;
+      K.ov.caption(t0 > 0.3 ? "MEANWHILE, AT THE FAIR\u2026" : null, { yellow: true });
+      void rides;
+      return;
+    }
+    dots.visible = true;
+    dashes.visible = true;
+    arrow.scale.set(9 * 128 / 160, 9, 1);
+    const t = t0 - EST;
     const reveal = clamp01((t - 0.2) / 1.8);
     const n = Math.floor(pts.length * reveal);
     for (let i = 0; i < pts.length; i++) {
@@ -38976,7 +39005,7 @@ SCENES.funfair_drone = (K, cs) => {
     arrow.position.set(st.x, st.y + 8 + Math.sin(t * 6) * 0.8, st.z);
     cue("cap", true, () => {
     });
-    K.ov.caption(t > 0.4 && t < cs.durationS - 0.1 ? "HIS REAL GPS ROUTE" : null, { yellow: true });
+    K.ov.caption(t > 0.2 && t0 < cs.durationS - 0.1 ? "HIS REAL GPS ROUTE" : null, { yellow: true });
     const dist2 = ext * 1.75 + 30, el = 0.82 + t * 0.02;
     const dir = away.clone().applyAxisAngle(V(0, 1, 0), -0.25 + t * 0.05);
     const pos = centre.clone().addScaledVector(dir, Math.cos(el) * dist2).add(V(0, Math.sin(el) * dist2, 0));
@@ -39091,9 +39120,13 @@ SCENES.hook_a_duck = (K, cs) => {
   pole.add(line);
   const hook = I.bag.M(new TorusGeometry(0.08, 0.02, 6, 10, Math.PI * 1.4), "#d0d6e0", 1.2);
   pole.add(hook);
-  const plushSmall = makeGoose(I.bag, { plush: true, scale: lap2 ? 1.25 : 0.42 });
+  const prizeKind = cs.params.prize === "duck" ? "duck" : "goose";
+  const prize = (sc) => prizeKind === "duck" ? { root: makeDuck(I.bag, sc * 2.6), pose() {
+  } } : makeGoose(I.bag, { plush: true, scale: sc });
+  const plushSmall = prize(lap2 ? 1.25 : 0.42);
   root.add(plushSmall.root);
-  const plushBig = makeGoose(I.bag, { plush: true, scale: 2.3 });
+  const plushBigScale = 2.9;
+  const plushBig = prize(plushBigScale);
   root.add(plushBig.root);
   plushBig.root.visible = false;
   const honk = sprite(I.bag, bubbleTexture(I.bag, "HONK!", { burst: true, w: 512, h: 300, size: 120, bg: "#ffffff" }), 0.9, 512 / 300);
@@ -39135,7 +39168,7 @@ SCENES.hook_a_duck = (K, cs) => {
     drive(H, dt, t > (lap2 ? 1 : 4) && t < (lap2 ? 2.6 : 5.2) ? "pose" : "idle", "point");
     if (!lap2) {
       if (t < 4.2) {
-        drive(A, dt, "idle", null, { expr: t > 3.2 ? "happy" : "effort" });
+        drive(A, dt, "idle", null, { expr: t > 3.2 ? "happy" : t > 2 && t < 2.8 ? "worried" : "effort" });
         const r = A.rig;
         r.torso.rotation.x = 0.45;
         for (const a of r.arms) {
@@ -39183,14 +39216,25 @@ SCENES.hook_a_duck = (K, cs) => {
       plushSmall.root.position.copy(shelf).lerp(arms, handK);
       plushSmall.root.scale.setScalar(lerp2(0.42, 1.3, handK) / 0.42 * 0.42 / 0.42);
       plushSmall.root.rotation.y = handK > 0.5 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
-      plushSmall.root.scale.setScalar(lerp2(0.42, 1.25, handK));
+      plushSmall.root.scale.setScalar(lerp2(0.42, 1.25, handK) * (prizeKind === "duck" ? 2.6 : 1));
       cue("line", t > 4.4, () => K.say(cs.lines?.[0]));
       if (t < 1.4) {
         shot(f.p(-7.5, -s2 * 2.6, 2.6), f.p(0, s2 * 3.2, 1.2), 42);
         K.ov.caption(t > 0.2 ? "HOOK-A-DUCK!" : null, { yellow: true });
+      } else if (t >= 2.05 && t < 2.8) {
+        const fd = pool.clone().sub(markPos).setY(0).normalize(), sd = V(-fd.z, 0, fd.x);
+        A.rig.torso.rotation.x = 0;
+        A.rig.head.rotation.x = -0.2;
+        A.rig.head.rotation.y = 0.35;
+        const headP2 = A.root.localToWorld(V(0, A.r.height - 0.5, 0));
+        shot(headP2.clone().addScaledVector(fd, 2.3).addScaledVector(sd, 1.1).add(V(0, -0.15, 0)), headP2.clone().add(V(0, 0.05, 0)), 34);
+        honk.visible = false;
+        A.r.setPop("!");
+        K.ov.caption("HANG ON\u2026");
       } else if (t < 3.6) {
+        A.r.setPop(null);
         shot(f.p(3, s2 * 0.9, 2.3), pool.clone().lerp(markPos, 0.35).add(V(0, 0.5, 0)), 44);
-        K.ov.caption(t > 2 && t < 2.9 ? "HANG ON\u2026" : null);
+        K.ov.caption(null);
       } else if (t < 5) {
         shot(f.p(4.6, -s2 * 1.6, 2), markPos.clone().lerp(stallPos, 0.35).add(V(0, 1.4, 0)), 42);
         K.ov.caption(t > 4.3 ? "WINNER!" : null, { yellow: true });
@@ -39201,61 +39245,64 @@ SCENES.hook_a_duck = (K, cs) => {
       }
       if (t > 5.6 && !I._carry) {
         I._carry = true;
-        carryPlush(K, cs.who, 1.3);
+        carryPlush(K, cs.who, 1.3, prizeKind);
       }
     } else {
       pole.visible = false;
       for (const dk of stall.ducks) dk.o.visible = true;
-      const give = smooth3(0.3, 1, t), big = smooth3(1.2, 2.2, t);
-      drive(A, dt, t < 2.4 ? "idle" : "run", null, { speed: 3.2, rate: 1, expr: t > 1.4 ? "happy" : "normal" });
-      const run = Math.max(0, t - 2.4);
-      const pos = f.p(run * 2.6, s2 * 1.75 * (1 - Math.min(1, run * 0.8)), Math.abs(Math.sin(run * 6)) * 0.08);
-      place2(A, pos, t < 2.4 ? yawTo(markPos, pool) : f.yaw);
-      for (const [i, a] of A.rig.arms.entries()) {
-        a.sh.rotation.set(t < 2.4 ? -1.35 : -1.9, 0, i ? 0.5 : -0.5);
-        a.el.rotation.x = t < 2.4 ? -0.5 : -0.9;
+      const give = smooth3(0.25, 0.9, t), big = smooth3(1.3, 2.1, t);
+      const walking = t > 2.7;
+      drive(A, dt, walking ? "run" : t > 1.9 ? "celebrate" : "idle", "jump", { speed: 3, rate: 1, expr: t > 1.5 ? "love" : "normal" });
+      const run = Math.max(0, t - 2.7);
+      const pos = f.p(run * 2.4, s2 * 1.75 * (1 - Math.min(1, run * 0.8)), Math.abs(Math.sin(run * 6)) * 0.08);
+      place2(A, pos, !walking ? yawTo(markPos, pool) : f.yaw);
+      if (t < 1.9 || walking) for (const [i, a] of A.rig.arms.entries()) {
+        a.sh.rotation.set(walking ? -1.9 : -1.35 * (1 - give * 0.6), 0, i ? 0.5 : -0.5);
+        a.el.rotation.x = walking ? -0.9 : -0.5;
       }
-      if (t > 2.4) A.rig.torso.rotation.x = -0.25 + Math.sin(t * 9) * 0.06;
+      if (walking) A.rig.torso.rotation.x = -0.3 + Math.sin(t * 9) * 0.07;
       const arms = A.root.localToWorld(V(0, A.r.hipH + 0.15, 0.85));
-      const counterW = stall.g.localToWorld(V(-0.6, 1.25, 0.6));
+      const counterW = stall.g.localToWorld(V(-1.4, 1.15, 0.75));
       plushSmall.root.position.copy(arms).lerp(counterW, give);
-      plushSmall.root.visible = big < 0.5;
-      plushSmall.root.rotation.y = A.root.rotation.y + Math.PI;
+      plushSmall.root.visible = true;
+      plushSmall.root.rotation.y = give > 0.5 ? stall.g.rotation.y + Math.PI : A.root.rotation.y + Math.PI;
       plushBig.root.visible = big > 0;
-      const behind = stall.g.localToWorld(V(0.5, 0.6, -0.2));
-      plushBig.root.position.copy(behind).lerp(A.root.localToWorld(V(0, A.r.hipH - 0.3, 1.1)), smooth3(1.6, 2.4, t));
-      plushBig.root.scale.setScalar(lerp2(0.3, 1, big) * 2.3);
-      plushBig.root.rotation.y = big > 0.6 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
-      plushBig.pose({ t });
+      const behind = stall.g.localToWorld(V(0.7, 0.4, 0.4));
+      const carry = smooth3(2.2, 2.8, t);
+      plushBig.root.position.copy(behind).add(V(0, big * 0.6, 0)).lerp(A.root.localToWorld(V(0, A.r.hipH - 0.3, 1.2)), carry);
+      plushBig.root.scale.setScalar(lerp2(0.3, 1, big) * plushBigScale);
+      plushBig.root.rotation.y = carry > 0.5 ? A.root.rotation.y + Math.PI : stall.g.rotation.y + Math.PI;
+      plushBig.pose?.({ t });
       cue("line", t > 1.6, () => K.say(cs.lines?.[0]));
-      K.ov.caption(t > 1.5 ? "TRADED UP!" : null, { yellow: true });
-      if (t < 2.4) shot(f.p(-6.2, -s2 * 2.2, 2.4), markPos.clone().lerp(stallPos, 0.45).add(V(0, 1.4, 0)), 44);
+      K.ov.caption(t < 1.3 ? t > 0.3 ? "SWAP?" : null : "TRADED UP!", { yellow: t >= 1.3 });
+      const mid = markPos.clone().lerp(stallPos, 0.5);
+      if (!walking) shot(mid.clone().addScaledVector(V(f.tx, 0, f.tz), -7.2).add(V(0, 2.3, 0)), mid.clone().add(V(0, 1.5, 0)), 46);
       else {
         const ap = A.root.position;
-        shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 5.5).add(V(-f.rx * s2 * 2.5, 2.2, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.6, 0)), 44);
+        shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 6).add(V(-f.rx * s2 * 2.5, 2.4, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.8, 0)), 46);
       }
-      if (t > 3.5 && !I._carry) {
+      if (t > 3.6 && !I._carry) {
         I._carry = true;
-        carryPlush(K, cs.who, 2);
+        carryPlush(K, cs.who, 2, prizeKind);
       }
     }
   };
   I.outro = () => {
     if (!I._carry) {
       I._carry = true;
-      carryPlush(K, cs.who, lap2 ? 2 : 1.3);
+      carryPlush(K, cs.who, lap2 ? 2 : 1.3, prizeKind);
     }
   };
   return I;
 };
-function makeStrength(I) {
+function makeStrength(I, top = "JEFF") {
   const bag = I.bag;
   const g = new Group();
   const H = 6.4;
   const base0 = bag.M(new RoundedBoxGeometry(1.8, 0.35, 1.8, 2, 0.08), "#2e6fe0");
   base0.position.y = 0.17;
   g.add(base0);
-  const labels = [["JEFF", "#ff3d8b"], ["LEGEND", "#ff8a1f"], ["PARKRUNNER", "#ffd23f"], ["WOBBLY", "#8ee86b"], ["WEED", "#57c7ff"]];
+  const labels = [[top, "#ff3d8b"], ["LEGEND", "#ff8a1f"], ["PARKRUNNER", "#ffd23f"], ["WOBBLY", "#8ee86b"], ["FEEBLE", "#57c7ff"]];
   const tex = bag.tex(256, 1536, (c, w, h) => {
     c.fillStyle = "#1a1420";
     roundRect(c, 0, 0, w, h, 30);
@@ -39317,7 +39364,7 @@ SCENES.test_strength = (K, cs) => {
   const v = cs.params.variant || (cs.params.lap === 2 ? "ding" : "creep");
   const { f, s2 } = fairStage(K, cs);
   const root = I.bag.group();
-  const T = makeStrength(I);
+  const T = makeStrength(I, cs.params.top === "pam" ? "PAM" : "JEFF");
   root.add(T.g);
   const towerPos = f.p(0, s2 * 4.3, -0.16);
   T.g.position.copy(towerPos);
@@ -39488,7 +39535,7 @@ SCENES.test_strength = (K, cs) => {
       puckF = t < 1.15 ? 0 : tgt * easeOut((t - 1.15) / 1.6) + (t > 2.75 ? Math.sin((t - 2.75) * 14) * 0.012 * Math.max(0, 1 - (t - 2.75) * 2) : 0);
       whack.visible = t > 1.15 && t < 1.6;
       if (whack.visible) {
-        whack.position.copy(strikerW).add(V(0, 1.4, 0));
+        whack.position.copy(strikerW).add(V(0, 3.2, 0));
         popScale(whack, t, 1.15);
       }
       T.glow.material.opacity = t > 2.75 ? 0.75 + Math.sin(t * 12) * 0.2 : 0;
@@ -39499,8 +39546,8 @@ SCENES.test_strength = (K, cs) => {
         K.ov.caption(t > 0.3 ? "TEST YOUR STRENGTH" : null, { yellow: true });
       } else if (t < 3.6) {
         const py2 = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 6.2).addScaledVector(V(f.tx, 0, f.tz), 1.2).add(V(0, Math.max(4, py2.y - towerPos.y + 1), 0)), py2.clone().add(V(0, 0.1, 0)), 40);
-        K.ov.caption(t > 2.8 ? "PARKRUNNER." : t > 1.9 ? "WOBBLY\u2026" : t > 1.3 ? "WEED\u2026" : null, { yellow: t > 2.8 });
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 5).addScaledVector(V(f.tx, 0, f.tz), 3.6).add(V(0, Math.max(4.6, py2.y - towerPos.y + 1.6), 0)), py2.clone().add(V(0, 0.1, 0)), 40);
+        K.ov.caption(t > 2.8 ? "PARKRUNNER." : t > 1.9 ? "WOBBLY\u2026" : t > 1.3 ? "FEEBLE\u2026" : null, { yellow: t > 2.8 });
       } else {
         shot(f.p(-6, -s2 * 2.2, 2), A.root.position.clone().add(V(0, 1.3, 0)), 42);
         K.ov.caption(null);
@@ -39580,9 +39627,13 @@ SCENES.goose_toll = (K, cs) => {
   root.add(goose.root);
   const pub = K.pub(cs.who);
   const A = actor(K, I, pub);
-  const jelly = I.bag.M(new CapsuleGeometry(0.07, 0.12, 4, 8), "#ff3d3d", 2);
+  const jelly = I.bag.M(new CapsuleGeometry(0.11, 0.2, 4, 10), "#ff2d55", 2.5);
   root.add(jelly);
   jelly.visible = false;
+  const peak = cs.params.variant === "peak";
+  const goose2 = makeGoose(I.bag, { scale: 1 });
+  root.add(goose2.root);
+  goose2.root.visible = peak;
   const stampP = new Group();
   root.add(stampP);
   const sh = I.bag.M(new CylinderGeometry(0.05, 0.06, 0.3, 8).translate(0, 0.25, 0), "#7a4a2a", 1.5);
@@ -39640,17 +39691,28 @@ SCENES.goose_toll = (K, cs) => {
       stampP.position.copy(hand).add(V(0, 0.25 + Math.abs(Math.sin((t - 3.55) * 9)) * 0.35, 0));
     }
     cue("line", t > 1.25, () => K.say(cs.lines?.[0]));
-    cue("paid", t > 3.8, () => K.ov.big("PAID", "#ff3d3d"));
-    if (t > 4.4) K.ov.big(null);
+    cue("paid", t > 3.6, () => K.ov.big("PAID", "#ff3d3d"));
+    if (t > 3.95) K.ov.big(null);
+    if (peak) {
+      goose2.root.position.copy(f.p(2.4, s * (PATH_W / 2 - 0.6)));
+      goose2.root.rotation.y = f.yaw + Math.PI - s * 0.6;
+      goose2.pose({ t: t + 0.4, honk: t > 1 && t < 1.4 ? 1 : 0, wingL: t > 1.3 && t < 3.6 ? 0.8 : 0 });
+    }
     if (t < 1.3) {
       shot(f.p(-2.2, -s * 7.8, 2.1), f.p(-0.6, s * 0.9, 1.1), 42);
       K.ov.caption(t > 0.55 ? "TOLL BOOTH" : null, { yellow: true });
     } else if (t < 2.25) {
       shot(f.p(1.9, -s * 4.4, 1.5), f.p(0.3, s * 0.6, 1.2), 32);
-      K.ov.caption("1 JELLY BABY", { yellow: true });
-    } else if (t < 4.5) {
+      K.ov.caption(peak ? "PEAK TIME: TWO!" : "1 JELLY BABY", { yellow: true });
+    } else if (t < 3.05) {
       shot(f.p(2.6, -s * 4.6, 1.6), f.p(-0.4, s * 0.3, 1.2), 36);
-      K.ov.caption(t < 3 ? "ER\u2026" : null);
+      K.ov.caption("ER\u2026");
+    } else if (t < 3.95) {
+      shot(f.p(0.1, -s * 2.3, 1.35), f.p(0.1, s * 0.5, 1.2), 36);
+      K.ov.caption("PAYMENT\u2026", { yellow: true });
+    } else if (t < 4.75) {
+      shot(f.p(-4.8, -s * 6.2, 2.3), f.p(0.6, s * 0.4, 1.5), 44);
+      K.ov.caption("BARRIER UP!", { yellow: true });
     } else {
       shot(f.p(-2.5, -s * 7.8, 2.1), f.p(1.5, 0, 1.1), 44);
       K.ov.caption(null);
@@ -39663,42 +39725,53 @@ SCENES.treadmill_hill = (K, cs) => {
   const shot = shooter(K, cs);
   const f = stageAt(K.C, cs.params.atM || 4300, cs.who);
   const s = openSide(K.world, f, 9);
+  const marshal = cs.params.variant === "marshal";
   const root = I.bag.group();
   const pub = K.pub(cs.who);
   const A = actor(K, I, pub);
-  const tree = makeTree(I.bag, 1.1), bench = makeBench(I.bag), goose = makeGoose(I.bag, { scale: 1.2 });
-  const hill = board(I.bag, signTexture(I.bag, ["THE HILL"], { bg: "#ffd23f", fg: "#ff3d8b", w: 512, h: 200 }), 2.2, 0.9);
-  const hillG = new Group();
-  hillG.add(hill);
-  hill.position.y = 1.8;
-  const hp = I.bag.M(new CylinderGeometry(0.06, 0.06, 1.4, 6).translate(0, 0.7, 0), "#f4f4f4", 1.5);
-  hillG.add(hp);
-  root.add(tree, bench, goose.root, hillG);
-  const props = [{ o: tree, off: 0, l: -s * 4.2 }, { o: bench, off: 6.5, l: -s * 3 }, { o: hillG, off: 11, l: -s * 3.4 }, { o: goose.root, off: 15.5, l: -s * 2.6 }];
-  const span = 22, speed = 13;
+  const tree = makeTree(I.bag, 1.35), bench = makeBench(I.bag);
+  bench.scale.setScalar(1.6);
+  const goose = makeGoose(I.bag, { scale: 1.7 });
+  root.add(tree, bench, goose.root);
+  let third = goose.root, M = null, nearly = null;
+  if (marshal) {
+    goose.root.visible = false;
+    M = actor(K, I, CAST.maureen, { vest: "#d8ff1f" });
+    third = M.root;
+    nearly = sprite(I.bag, bubbleTexture(I.bag, "NEARLY THERE!", { w: 640, h: 280, size: 96 }), 0.8, 640 / 280);
+    root.add(nearly);
+  }
+  const SP = 7.5, SPAN = SP * 3, PASS = 1.55;
+  const props = [{ o: tree, k: 0 }, { o: bench, k: 1 }, { o: third, k: 2 }];
   const cue = cues();
   const NOM = 5.1;
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
     place2(A, f.p(0, 0), f.yaw);
-    const third = t > 3.3;
-    drive(A, dt, "run", null, { speed: 3.4, rate: 1, slope: 0.12, effort: 0.8, expr: third ? "worried" : "effort" });
-    if (third) {
-      A.rig.head.rotation.y = s * Math.min(1.1, (t - 3.3) * 3);
-      A.r.setPop(t > 3.5 ? "!" : null);
+    const loop = Math.min(2, Math.floor(t / PASS));
+    const noticing = t > PASS * 2 + 0.5;
+    drive(A, dt, "run", null, { speed: 3.4, rate: 1, slope: 0.12, effort: 0.8, expr: noticing ? "worried" : "effort" });
+    if (noticing) {
+      A.rig.head.rotation.y = s * Math.min(1.2, (t - PASS * 2 - 0.5) * 4);
+      A.r.setPop("!");
     } else A.r.setPop(null);
     for (const p of props) {
-      let a = ((p.off - t * speed) % span + span) % span - span / 2 + 2;
-      if (third && t > 3.9) a = Math.max(a, -2.5);
-      const pos = f.p(a, p.l, -0.16);
-      p.o.position.copy(pos);
-      p.o.rotation.y = f.yaw + (p.o === bench ? Math.PI / 2 * -s : p.o === hillG ? -s * Math.PI / 2 : -s * Math.PI / 2);
+      const u = (t / PASS * SPAN + (2 - p.k) * SP) % SPAN;
+      let a = SPAN / 2 - u;
+      if (noticing && p.k === 2) a = Math.max(a, -1.2);
+      p.o.position.copy(f.p(a, p.k === 0 ? -s * 3.6 : s * (p.k === 1 ? 2.7 : 2.3), -0.16));
+      p.o.rotation.y = p.k === 1 ? Math.atan2(s * f.rx, s * f.rz) : p.k === 2 ? marshal ? Math.atan2(s * f.rx, s * f.rz) : f.yaw + Math.PI - s * 0.7 : 0;
     }
-    goose.pose({ t, wingR: third ? Math.abs(Math.sin(t * 7)) : 0, waddle: 0.3 });
-    const loop = Math.floor(t * speed / span);
-    K.ov.caption(loop === 0 ? "THE HILL\u2026" : loop === 1 ? "THE HILL\u2026 AGAIN" : "HANG ON A MINUTE", { yellow: loop >= 2 });
-    cue("line", t > 3.45, () => K.say(cs.lines?.[0]));
-    shot(f.p(0.4, s * 6.2, 1.45), f.p(0.4, -s * 1.4, 1.3), 46);
+    if (marshal) {
+      drive(M, dt, "idle");
+      M.rig.arms[1].sh.rotation.set(-2.6 + Math.sin(t * 8) * 0.3, 0, 0.2);
+      nearly.visible = true;
+      nearly.position.copy(M.root.position).add(V(0, 3, 0));
+    } else goose.pose({ t, wingR: noticing ? Math.abs(Math.sin(t * 7)) : 0, waddle: 0.4, look: noticing ? -s * 0.6 : 0 });
+    K.ov.banner(`PASS ${loop + 1} of 3`, loop === 2 ? "#ff3d8b" : "#2e6fe0");
+    K.ov.caption(noticing ? "HANG ON A MINUTE\u2026" : ["SAME TREE\u2026", "SAME BENCH\u2026", marshal ? "SAME MARSHAL\u2026" : "SAME GOOSE\u2026"][Math.floor(t / PASS * 3 % 3)], { yellow: noticing });
+    cue("line", t > PASS * 2 + 0.6, () => K.say(cs.lines?.[0]));
+    shot(f.p(0.3, s * 7.4, 1.25), f.p(0.3, -s * 1, 1.4), 48);
   };
   return I;
 };
@@ -39712,6 +39785,17 @@ SCENES.everest = (K, cs) => {
   const S = actor(K, I, CAST.sherpa, { vest: "#ff8a1f" });
   const flask = makeFlask(I.bag, 1.2);
   root.add(flask);
+  const rope = I.bag.M(new CylinderGeometry(0.035, 0.035, 1, 6).rotateX(Math.PI / 2), "#ffd23f", 1.5);
+  root.add(rope);
+  if (cs.params.variant === "tent") {
+    const tent = I.bag.M(new ConeGeometry(1.9, 2.2, 4).rotateY(Math.PI / 4), "#ff8a1f", 3);
+    tent.position.copy(f0.p(4, -s * (PATH_W / 2 + 2.4), 1));
+    root.add(tent);
+    const tflag = makeFlag(I.bag, "BASE CAMP", "#2e6fe0");
+    tflag.root.position.copy(f0.p(5.6, -s * (PATH_W / 2 + 1.2), -0.2));
+    tflag.root.rotation.y = f0.yaw + Math.PI / 2;
+    root.add(tflag.root);
+  }
   const flag = makeFlag(I.bag, "SUMMIT!", "#ff3d8b");
   root.add(flag.root);
   const snowM = I.bag.mat("#ffffff");
@@ -39757,10 +39841,21 @@ SCENES.everest = (K, cs) => {
       place2(A, f0.p(a, 0), f0.yaw);
       drive(A, dt, t < 1.8 ? "run" : "idle", null, { speed: 1.4, rate: 0.6, slope: 0.35, effort: 1, expr: t > 2.7 ? "happy" : "effort" });
       if (t < 1.8) A.rig.torso.rotation.x = 0.75;
-      place2(S, f0.p(a + 1.3, s * 1.2), f0.yaw + Math.PI - s * 0.6);
-      drive(S, dt, "idle");
-      S.root.visible = t > 1.6;
+      const back = smooth3(1.55, 1.9, t);
+      place2(S, f0.p(a + lerp2(3, 1.3, back), s * lerp2(0.2, 1.2, back)), f0.yaw + back * (Math.PI - s * 0.6));
+      drive(S, dt, t < 1.6 ? "run" : "idle", null, { speed: 1.4, rate: 0.6, slope: 0.35, effort: 0.6 });
+      if (t < 1.6) S.rig.torso.rotation.x = 0.6;
+      S.root.visible = true;
       flask.visible = t > 1.8;
+      {
+        const h1 = A.root.localToWorld(V(0, A.r.hipH + 0.1, 0)), h2 = S.root.localToWorld(V(0, S.r.hipH + 0.1, 0));
+        const mid = h1.clone().lerp(h2, 0.5);
+        mid.y -= 0.25;
+        rope.position.copy(mid);
+        rope.lookAt(h2);
+        rope.scale.set(1, 1, Math.max(0.1, h1.distanceTo(h2)));
+        rope.visible = t < 1.9;
+      }
       if (t > 1.8) {
         S.rig.arms[0].sh.rotation.set(-1.3, 0, 0);
         S.rig.arms[1].sh.rotation.set(-1.3, 0, 0);
@@ -39779,8 +39874,8 @@ SCENES.everest = (K, cs) => {
       const roll = -s * 0.42 * smooth3(0, 1.6, t);
       peak.visible = true;
       if (t < 1.8) {
-        camPos = f0.p(a - 3.2, -s * 3, 0.7);
-        camLook = V(f1.x, f1.y + 8, f1.z).lerp(A.root.position.clone().add(V(0, 1.3, 0)), 0.8);
+        camPos = f0.p(a + 1, -s * 3.4, 0.22);
+        camLook = f0.p(a + 2.4, s * 0.4, 2.3);
         K.cam(camPos, camLook, 50, roll);
         K.ov.caption(t > 0.35 ? "BASE CAMP" : null, { yellow: true });
       } else {
@@ -39836,7 +39931,8 @@ SCENES.spaghetti_legs = (K, cs) => {
     for (const c of l.kn.children) if (c.isMesh) legMeshes.push({ m: c, orig: c.material });
   }
   const NSTR = 4, NSEG = 15;
-  const noodles = new InstancedMesh(I.bag.add(new SphereGeometry(0.05, 8, 6)), I.bag.mat("#f6d36b"), 2 * NSTR * NSEG);
+  const jellyV = cs.params.variant === "jelly";
+  const noodles = new InstancedMesh(I.bag.add(new SphereGeometry(jellyV ? 0.085 : 0.05, 8, 6)), I.bag.mat(jellyV ? "#5fe08a" : "#f6d36b"), 2 * NSTR * NSEG);
   noodles.frustumCulled = false;
   A.rig.hips.add(noodles);
   noodles.visible = false;
@@ -39866,8 +39962,8 @@ SCENES.spaghetti_legs = (K, cs) => {
     noodles.visible = w >= 0.5;
     A.rig.legs.forEach((l, i) => {
       const ph = t * 9 + i * 1.7;
-      l.hp.rotation.z += Math.sin(ph) * 0.55 * w * (i ? 1 : -1);
-      l.hp.rotation.x += Math.sin(ph * 0.7) * 0.3 * w;
+      l.hp.rotation.z += Math.sin(ph) * 0.9 * w * (i ? 1 : -1);
+      l.hp.rotation.x += Math.sin(ph * 0.7) * 0.45 * w;
       l.kn.rotation.z = Math.sin(ph * 1.3 + 1) * 0.9 * w;
       l.kn.rotation.x += Math.cos(ph) * 0.6 * w;
     });
@@ -39881,7 +39977,7 @@ SCENES.spaghetti_legs = (K, cs) => {
           const ox = (sI % 2 ? 1 : -1) * 0.05 * (1 + (sI >> 1)), oz = (sI >> 1 ? 1 : -1) * 0.04;
           for (let j2 = 0; j2 < NSEG; j2++) {
             const u = j2 / (NSEG - 1);
-            const wig = Math.sin(u * Math.PI) * (0.3 + 0.07 * sI);
+            const wig = Math.sin(u * Math.PI) * (jellyV ? 0.22 : 0.45 + 0.07 * sI) * (jellyV ? 1 + 0.4 * Math.sin(t * 20) : 1);
             nO.position.set(lerp2(hipL.x, ankL.x, u) + ox + Math.sin(t * 11 + u * 6 + sI + i * 2) * wig, lerp2(hipL.y, ankL.y + 0.08, u), lerp2(hipL.z, ankL.z, u) + oz + Math.cos(t * 9 + u * 5 + sI) * wig * 0.7);
             nO.updateMatrix();
             noodles.setMatrixAt(k++, nO.matrix);
@@ -39902,178 +39998,275 @@ SCENES.spaghetti_legs = (K, cs) => {
     bm.rotation.set(0, 0, -mu * 14 * s);
     ball.visible = t > 1.6 && t < 3.3;
     cue("line", t > 1.4, () => K.say(cs.lines?.[0]));
-    K.ov.caption(t > 1 ? "SPAGHETTI LEGS" : null, { yellow: true });
+    K.ov.caption(t > 1 ? jellyV ? "JELLY LEGS" : "SPAGHETTI LEGS" : null, { yellow: true });
     const ap = A.root.position;
-    shot(ap.clone().addScaledVector(V(f.rx, 0, f.rz), s * 5.4).addScaledVector(V(f.tx, 0, f.tz), 1).add(V(0, 1.3, 0)), ap.clone().add(V(0, 0.95, 0)).addScaledVector(V(f.tx, 0, f.tz), 0.4), 44);
+    shot(ap.clone().addScaledVector(V(f.rx, 0, f.rz), s * 3.1).addScaledVector(V(f.tx, 0, f.tz), 0.9).add(V(0, 0.45, 0)), ap.clone().add(V(0, 0.95, 0)).addScaledVector(V(f.tx, 0, f.tz), 0.3), 50);
   };
   return I;
 };
+function makeCannon(I) {
+  const g = new Group();
+  const barrel = new Group();
+  g.add(barrel);
+  barrel.position.y = 1.15;
+  const tube = I.bag.M(new CylinderGeometry(0.62, 0.78, 3, 20, 1, true).rotateX(Math.PI / 2), I.bag.mat("#ff3d3d", { side: DoubleSide }), 3);
+  barrel.add(tube);
+  const back = I.bag.M(new SphereGeometry(0.78, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2), "#ff3d3d", 3);
+  back.position.z = -1.5;
+  barrel.add(back);
+  for (const z of [-0.9, 0.2, 1.3]) {
+    const band = I.bag.M(new TorusGeometry(z > 1 ? 0.68 : z > 0 ? 0.72 : 0.76, 0.08, 6, 20), "#ffd23f", 0);
+    band.position.z = z;
+    barrel.add(band);
+  }
+  const star = board(I.bag, signTexture(I.bag, ["\u2605"], { bg: "#ffffff", fg: "#ff3d3d", w: 256, h: 256, round: 128 }), 0.6, 0.6, "#1a1420", 0.04);
+  star.position.set(0.8, 0, -0.4);
+  star.rotation.y = Math.PI / 2;
+  barrel.add(star);
+  for (const sx of [-1, 1]) {
+    const wh = I.bag.M(new CylinderGeometry(0.8, 0.8, 0.2, 18).rotateZ(Math.PI / 2), "#2e6fe0", 2.5);
+    wh.position.set(sx * 0.95, 0.8, -0.3);
+    g.add(wh);
+    const hub = I.bag.M(new SphereGeometry(0.2, 8, 6), "#ffd23f", 1.5);
+    hub.position.set(sx * 1.07, 0.8, -0.3);
+    g.add(hub);
+  }
+  const carriage = I.bag.M(new RoundedBoxGeometry(1.4, 0.55, 2, 2, 0.1), "#7a4a2a");
+  carriage.position.set(0, 0.65, -0.4);
+  g.add(carriage);
+  return { g, barrel, len: 3 };
+}
+function makeCatapult(I) {
+  const g = new Group();
+  const base0 = I.bag.M(new RoundedBoxGeometry(1.6, 0.35, 3, 2, 0.08), "#a0662f");
+  base0.position.y = 0.3;
+  g.add(base0);
+  for (const sx of [-1, 1]) {
+    const up = I.bag.M(new BoxGeometry(0.22, 1.9, 0.22), "#7a4a2a");
+    up.position.set(sx * 0.65, 1.2, 0.3);
+    g.add(up);
+  }
+  const bar = I.bag.M(new CylinderGeometry(0.1, 0.1, 1.6, 8).rotateZ(Math.PI / 2), "#7a4a2a");
+  bar.position.set(0, 2, 0.3);
+  g.add(bar);
+  const arm = new Group();
+  arm.position.set(0, 0.6, 0.6);
+  g.add(arm);
+  const beam = I.bag.M(new BoxGeometry(0.24, 0.24, 3).translate(0, 0, -1.3), "#a0662f");
+  arm.add(beam);
+  const cup = I.bag.M(new SphereGeometry(0.55, 14, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), I.bag.mat("#7a4a2a", { side: DoubleSide }), 2.5);
+  cup.position.set(0, 0.3, -2.7);
+  arm.add(cup);
+  for (const sx of [-1, 1]) {
+    const wh = I.bag.M(new CylinderGeometry(0.5, 0.5, 0.18, 14).rotateZ(Math.PI / 2), "#ff3d3d", 2.5);
+    wh.position.set(sx * 0.9, 0.5, sx > 0 ? 1 : -1);
+    g.add(wh);
+  }
+  return { g, arm, cup };
+}
 SCENES.cannonball = (K, cs) => {
   const I = base(K, { camera: false, hide: "none" });
   const r = K.runners[cs.who];
   const st0 = K.stage(0);
+  const cata = cs.params.variant === "catapult";
   const root = I.bag.group();
-  const g = new Group();
-  root.add(g);
-  const barrel = I.bag.M(new CylinderGeometry(0.42, 0.62, 2.6, 18).rotateX(Math.PI / 2), "#ff3d3d", 3);
-  barrel.position.set(0, 1.2, 0);
-  g.add(barrel);
-  for (const z of [-0.8, 0.2, 1.1]) {
-    const band = I.bag.M(new TorusGeometry(z > 1 ? 0.47 : z > 0 ? 0.53 : 0.6, 0.07, 6, 18), "#ffd23f", 0);
-    band.position.set(0, 1.2, z);
-    g.add(band);
-  }
-  const mouth = I.bag.M(new TorusGeometry(0.44, 0.1, 8, 18), "#ffd23f", 2);
-  mouth.position.set(0, 1.2, 1.3);
-  g.add(mouth);
-  for (const sx of [-1, 1]) {
-    const wh = I.bag.M(new CylinderGeometry(0.72, 0.72, 0.18, 16).rotateZ(Math.PI / 2), "#2e6fe0", 2.5);
-    wh.position.set(sx * 0.75, 0.72, -0.2);
-    g.add(wh);
-    const hub = I.bag.M(new SphereGeometry(0.18, 8, 6), "#ffd23f", 1.5);
-    hub.position.set(sx * 0.86, 0.72, -0.2);
-    g.add(hub);
-  }
-  const carriage = I.bag.M(new RoundedBoxGeometry(1.1, 0.5, 1.8, 2, 0.1), "#7a4a2a");
-  carriage.position.set(0, 0.6, -0.3);
-  g.add(carriage);
-  const star = board(I.bag, signTexture(I.bag, ["\u2605"], { bg: "#ffffff", fg: "#ff3d3d", w: 256, h: 256, round: 128 }), 0.55, 0.55, "#1a1420", 0.04);
-  star.position.set(0.66, 1.25, -0.4);
-  star.rotation.y = Math.PI / 2;
-  g.add(star);
-  const puffs = makePuffs(I.bag, 9, "#ffffff");
+  const C0 = cata ? makeCatapult(I) : makeCannon(I);
+  root.add(C0.g);
+  const pub = K.pub(cs.who);
+  const A = actor(K, I, pub);
+  A.root.visible = false;
+  const puffs = makePuffs(I.bag, 10, "#ffffff");
   root.add(puffs.root);
-  const boom = sprite(I.bag, bubbleTexture(I.bag, "BOOM!", { burst: true, w: 512, h: 300, size: 140, bg: "#ffd23f" }), 2.2, 512 / 300);
+  const boom = sprite(I.bag, bubbleTexture(I.bag, cata ? "TWANG!" : "BOOM!", { burst: true, w: 512, h: 300, size: 140, bg: "#ffd23f" }), 1.5, 512 / 300);
   root.add(boom);
   boom.visible = false;
-  let placed = false;
-  let side = 1;
-  let slot = null;
+  const fwd = V(st0.tx, 0, st0.tz), right = V(st0.rx, 0, st0.rz);
+  const ELEV = 0.42;
+  let placed = false, slot = null, side = 1, land = null, muzzle = null, dir = null;
   const cue = cues();
-  I.camera = false;
   I.update = (t, dt, b) => {
     if (!placed && r) {
       placed = true;
       slot = r.root.position.clone();
-      const back = V(st0.tx, 0, st0.tz);
-      const p = slot.clone().addScaledVector(back, -2.3);
+      const p = slot.clone().addScaledVector(fwd, -4.6);
       p.y = K.C.heightAt(p.x, p.z) + 0.05;
-      g.position.copy(p);
-      g.rotation.set(-0.28, Math.atan2(back.x, back.z), 0);
+      C0.g.position.copy(p);
+      C0.g.rotation.set(0, Math.atan2(fwd.x, fwd.z), 0);
       side = openSide(K.world, st0, 9);
+      const s1 = K.sim.stateAt(1.1).byId[cs.who];
+      land = V(s1.x, s1.y, s1.z);
+      if (!cata) C0.barrel.rotation.x = -ELEV;
     }
+    if (!slot) return;
     const bb = b;
-    I.camera = bb > -1.4 && bb < 2;
-    I.hide = "none";
-    const muzzle = g.localToWorld(V(0, 1.2, 1.5));
-    puffs.root.position.copy(muzzle);
-    puffs.update(clamp01(bb / 1.3), 2.4, 1);
-    boom.visible = bb > 0 && bb < 1;
-    if (boom.visible) {
-      boom.position.copy(muzzle).add(V(0, 1.6, 0));
-      popScale(boom, bb, 0, 0.2);
+    I.camera = bb > -2 && bb < 2.1;
+    I.hide = bb < 1.1 ? [cs.who] : "none";
+    C0.g.updateMatrixWorld(true);
+    if (cata) {
+      const sw = bb < 0 ? 0 : Math.min(1, bb / 0.18);
+      C0.arm.rotation.x = -0.05 + sw * 1.9;
+      muzzle = wp(C0.cup, V()).add(V(0, 0.4, 0));
+      dir = fwd.clone().add(V(0, Math.tan(0.7), 0)).normalize();
+    } else {
+      muzzle = C0.barrel.localToWorld(V(0, 0, 1.45));
+      dir = muzzle.clone().sub(C0.barrel.localToWorld(V(0, 0, 0))).normalize();
     }
-    g.position.addScaledVector(V(st0.tx, 0, st0.tz), bb > 0 && bb < 0.25 ? -dt * 2 : 0);
-    if (bb > 0 && bb < 1.2 && r) {
-      const u = bb / 1.2;
-      r.root.position.y += Math.sin(Math.PI * u) * 1.5;
-      const rig = rigFor(r);
-      if (rig) {
-        rig.body.rotation.x = Math.sin(Math.PI * u) * 0.9;
-        for (const a of rig.arms) {
-          a.sh.rotation.set(-2.9, 0, 0);
-          a.el.rotation.x = 0;
-        }
+    const flyU = clamp01(bb / 1.1);
+    A.root.visible = bb < 1.1;
+    if (bb < 0) {
+      if (cata) {
+        A.root.position.copy(muzzle).add(V(0, -0.85, 0));
+        A.root.rotation.set(0, Math.atan2(-side * right.x, -side * right.z), 0);
+        drive(A, dt, "wave", null, { expr: "happy" });
+      } else {
+        A.root.position.copy(muzzle).addScaledVector(dir, -(A.r.height - 0.45));
+        A.root.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
+        A.root.rotateY(side > 0 ? -Math.PI / 2 : Math.PI / 2);
+        drive(A, dt, "idle", null, { expr: bb > -1 ? "effort" : "happy" });
+        A.rig.arms[1].sh.rotation.set(-2.9 + Math.sin(t * 9) * 0.3, 0, 0);
+      }
+    } else if (bb < 1.1) {
+      const p = muzzle.clone().lerp(land, flyU);
+      p.y += Math.sin(Math.PI * flyU) * 4.5;
+      A.root.position.copy(p);
+      A.root.rotation.set(0, Math.atan2(fwd.x, fwd.z), 0);
+      A.rig.body.rotation.x = 1.25;
+      drive(A, dt, "idle", null, { expr: "happy" });
+      A.rig.body.rotation.x = 1.25 - flyU * 0.6;
+      for (const a of A.rig.arms) {
+        a.sh.rotation.set(-3, 0, 0);
+        a.el.rotation.x = 0;
+      }
+      for (const l of A.rig.legs) {
+        l.hp.rotation.x = 0.2;
+        l.kn.rotation.x = 0.3;
       }
     }
-    cue("flash", bb > 0, () => K.ov.flash(0.55));
-    cue("line", bb > 0.15, () => K.say(cs.lines?.[0]));
-    K.ov.caption(bb > 0.05 && bb < 1.9 ? "HUMAN CANNONBALL!" : null, { yellow: true });
-    if (I.camera && slot) {
-      const look = slot.clone().addScaledVector(V(st0.tx, 0, st0.tz), Math.max(0, bb) * 3.5 + 0.5).add(V(0, 1.3, 0));
-      const lat = slot ? (slot.x - st0.x) * st0.rx + (slot.z - st0.z) * st0.rz : 0;
-      K.cam(st0.p(-9.5 + Math.max(0, bb) * 1.5, lat + side * 1.6, 3), look, 44);
+    puffs.root.position.copy(muzzle);
+    puffs.update(clamp01(bb / 1.3), 2.2, 0.8);
+    boom.visible = bb > 0 && bb < 0.9;
+    if (boom.visible) {
+      boom.position.copy(muzzle).addScaledVector(fwd, -1.2).add(V(0, -0.2, 0));
+      popScale(boom, bb, 0, 0.2);
+    }
+    cue("flash", bb > 0, () => K.ov.flash(0.5));
+    cue("line", bb > 0.35, () => K.say(cs.lines?.[0]));
+    K.ov.caption(bb < -0.25 ? "LOADED\u2026" : bb > 0.85 && bb < 2 ? "HUMAN CANNONBALL!" : null, { yellow: bb > 0 });
+    if (I.camera) {
+      const mid = C0.g.position.clone().lerp(land, 0.42);
+      K.cam(mid.clone().addScaledVector(right, side * 15).add(V(0, 2.6, 0)).addScaledVector(fwd, -1.5), mid.clone().add(V(0, 2.2, 0)), 46);
     }
   };
   return I;
 };
 SCENES.raincloud = (K, cs) => {
-  const I = base(K, { camera: false, pip: true, hide: "none", pipLabel: "HIS WEATHER", pipCaption: null });
+  const I = base(K, { camera: true, hide: "none" });
   const r = K.runners[cs.who];
+  const zap = cs.params.variant === "lightning";
   const root = I.bag.group();
-  const cloud = makeCloud(I.bag, { scale: 1.05 });
+  const cloud = makeCloud(I.bag, { scale: 1.15 });
   root.add(cloud);
-  const rain = makeRain(I.bag, 70, { w: 1.7, h: 2.9 });
+  const rain = makeRain(I.bag, 80, { w: 1.8, h: 3 });
   cloud.add(rain.mesh);
   rain.mesh.position.y = -0.4;
   const umb = makeUmbrella(I.bag);
   umb.visible = false;
   root.add(umb);
+  const bolt = new Mesh(I.bag.add(new ExtrudeGeometry((() => {
+    const sh = new Shape();
+    sh.moveTo(0, 0);
+    sh.lineTo(0.35, 0.9);
+    sh.lineTo(0.12, 0.9);
+    sh.lineTo(0.42, 1.8);
+    sh.lineTo(-0.05, 0.7);
+    sh.lineTo(0.16, 0.7);
+    sh.lineTo(-0.2, 0);
+    return sh;
+  })(), { depth: 0.08, bevelEnabled: false })), I.bag.basic("#ffe23f"));
+  bolt.visible = false;
+  root.add(bolt);
+  const zapB = sprite(I.bag, bubbleTexture(I.bag, "ZAP!", { burst: true, w: 512, h: 300, size: 140, bg: "#ffe23f" }), 1, 512 / 300);
+  root.add(zapB);
+  zapB.visible = false;
   const cloudPos = V();
   let init = false;
   const cue = cues();
-  const tmp2 = V();
   I.update = (t, dt, b) => {
     if (!r) return;
     const st = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
-    const right = V(-st.tz, 0, st.tx);
-    const lat = (smooth3(0.9, 1.3, t) - smooth3(1.8, 2.3, t)) * -1 + (smooth3(1.8, 2.3, t) - smooth3(3, 3.4, t)) * 1;
+    const right = V(-st.tz, 0, st.tx), fwd = V(st.tx, 0, st.tz);
+    const lat = (smooth3(0.8, 1.2, t) - smooth3(1.7, 2.2, t)) * -1.1 + (smooth3(1.7, 2.2, t) - smooth3(3.1, 3.5, t)) * 1.1;
     r.root.position.addScaledVector(right, lat);
-    const head = r.root.position.clone().add(V(0, r.height + 1.5, 0));
+    const head = r.root.position.clone().add(V(0, r.height + 1.45, 0));
     if (!init) {
       cloudPos.copy(head);
       init = true;
     }
-    cloudPos.lerp(head, Math.min(1, dt * (t > 0.9 && t < 2.6 ? 3.2 : 8)));
+    cloudPos.lerp(head, Math.min(1, dt * (t > 0.8 && t < 2.6 ? 3 : 8)));
     cloud.position.copy(cloudPos);
-    const tilt = smooth3(3, 3.5, t) * 1.15;
-    cloud.rotation.set(0, Math.atan2(st.tx, st.tz) + Math.PI / 2 * 0, -tilt);
+    const tilt = zap ? 0 : smooth3(3, 3.5, t) * 1.15;
+    cloud.rotation.set(0, Math.atan2(st.tx, st.tz), -tilt);
     if (tilt > 0.05) cloud.position.addScaledVector(right, -tilt * 1.6).add(V(0, -tilt * 0.9, 0));
     rain.update(t, 0);
-    cloud.scale.setScalar(1.05 * backOut(clamp01(t / 0.4)));
-    if (cloud.userData.face) cloud.userData.face.lookAt(K.pipCam.position);
-    umb.visible = t > 2.6;
-    if (umb.visible) {
-      const rig = rigFor(r);
-      if (rig) {
-        rig.arms[1].sh.rotation.set(-2.9, 0, 0.15);
-        rig.arms[1].el.rotation.x = -0.1;
+    cloud.scale.setScalar(1.15 * backOut(clamp01(t / 0.4)));
+    if (cloud.userData.face) cloud.userData.face.lookAt(K.camera.position);
+    const rig = rigFor(r);
+    if (!zap) {
+      umb.visible = t > 2.6;
+      if (umb.visible) {
+        if (rig) {
+          rig.arms[1].sh.rotation.set(-2.9, 0, 0.15);
+          rig.arms[1].el.rotation.x = -0.1;
+        }
+        umb.position.copy(r.root.position).add(V(0, r.height + 0.2, 0));
+        umb.scale.setScalar(backOut(clamp01((t - 2.6) / 0.3)));
       }
-      umb.position.copy(r.root.position).add(V(0, r.height + 0.2, 0));
-      umb.scale.setScalar(backOut(clamp01((t - 2.6) / 0.3)));
+    } else {
+      bolt.visible = t > 3 && t < 3.45 && Math.floor(t * 20) % 2 === 0;
+      bolt.position.copy(cloud.position).add(V(-0.2, -2, 0));
+      bolt.lookAt(K.camera.position);
+      zapB.visible = t > 3 && t < 3.8;
+      if (zapB.visible) {
+        zapB.position.copy(r.root.position).add(V(0, r.height + 0.4, 0)).addScaledVector(right, 1.2);
+        popScale(zapB, t, 3);
+      }
+      if (t > 3 && t < 3.8) r.setPop?.("!");
     }
     cue("line", t > 0.4, () => K.say(cs.lines?.[0]));
-    I.pipCaption = t > 0.5 ? t > 3.1 ? "NICE TRY" : "HIS OWN WEATHER" : null;
+    K.ov.caption(t > 0.4 ? t > 3 ? zap ? "ZAP." : "NICE TRY" : "HIS OWN WEATHER" : null, { yellow: t > 3 });
     const ap = r.root.position;
-    K.pipCamSet(tmp2.copy(ap).addScaledVector(right, 4.4).addScaledVector(V(st.tx, 0, st.tz), 1.6).add(V(0, 2.3, 0)), ap.clone().add(V(0, 2.1, 0)), 48);
+    K.cam(ap.clone().addScaledVector(right, 4.6).addScaledVector(fwd, 2).add(V(0, 2.1, 0)), ap.clone().add(V(0, 2, 0)).addScaledVector(fwd, 0.4), 46, 0, { sun: 30 });
   };
   return I;
 };
 SCENES.mirror_signal = (K, cs) => {
-  const I = base(K, { camera: false, pip: true, hide: "none", pipLabel: "OVERTAKE!" });
+  const I = base(K, { camera: true, hide: "none" });
   const by = K.runners[cs.who], on = K.runners[cs.params.on];
+  const lplate = cs.params.variant === "lplate";
   const root = I.bag.group();
   const rigB = by && rigFor(by);
   const mirror = new Group();
-  const stalk = I.bag.M(new CylinderGeometry(0.025, 0.025, 0.45, 6).rotateZ(Math.PI / 2).translate(0.22, 0, 0), "#1a1420", 0);
+  const stalk = I.bag.M(new CylinderGeometry(0.05, 0.05, 0.7, 6).rotateZ(Math.PI / 2).translate(0.35, 0, 0), "#1a1420", 0);
   mirror.add(stalk);
-  const housing = I.bag.M(new RoundedBoxGeometry(0.34, 0.24, 0.14, 2, 0.05), "#1a1420", 2);
-  housing.position.set(0.5, 0.05, 0);
+  const housing = I.bag.M(new RoundedBoxGeometry(0.85, 0.6, 0.3, 3, 0.12), "#1a1420", 3);
+  housing.position.set(0.95, 0.1, 0);
   mirror.add(housing);
-  const glass = I.bag.M(new PlaneGeometry(0.28, 0.18), "#bfe9ff", 0);
-  glass.position.set(0.5, 0.05, -0.075);
+  const glass = new Mesh(I.bag.add(new PlaneGeometry(0.72, 0.48)), I.bag.basic("#bfe9ff"));
+  glass.position.set(0.95, 0.1, -0.16);
   glass.rotation.y = Math.PI;
   mirror.add(glass);
-  const blink = new Mesh(I.bag.add(new SphereGeometry(0.14, 10, 8)), I.bag.basic("#ff9a1f"));
+  const glint = new Mesh(I.bag.add(new PlaneGeometry(0.5, 0.08)), I.bag.basic("#ffffff"));
+  glint.position.set(0.95, 0.2, -0.17);
+  glint.rotation.set(0, Math.PI, 0.5);
+  mirror.add(glint);
+  const blink = new Mesh(I.bag.add(new SphereGeometry(0.24, 12, 8)), I.bag.basic("#ff9a1f"));
+  const L = board(I.bag, signTexture(I.bag, ["L"], { bg: "#ffffff", fg: "#e8333f", w: 256, h: 256, round: 20, sizes: [210] }), 0.55, 0.55, "#e8333f", 0.04);
   const parp = sprite(I.bag, bubbleTexture(I.bag, "PARP PARP!", { w: 640, h: 280, size: 110, bg: "#ffffff" }), 0.9, 640 / 280);
   root.add(parp);
   parp.visible = false;
   const tick = sprite(I.bag, bubbleTexture(I.bag, "TICK-TOCK", { w: 640, h: 280, size: 100, bg: "#ff9a1f", fg: "#ffffff" }), 0.75, 640 / 280);
   root.add(tick);
   tick.visible = false;
-  const dust = makePuffs(I.bag, 7, "#e8d9b5");
-  root.add(dust.root);
-  I.pipOnly = [parp, tick, dust.root];
   let side = 1, attached = false;
   const cue = cues();
   I.update = (t, dt, b) => {
@@ -40085,41 +40278,44 @@ SCENES.mirror_signal = (K, cs) => {
       side = (sB.lat ?? 0) >= (sO.lat ?? 0) ? 1 : -1;
       const sh = side > 0 ? rigB.arms[1] : rigB.arms[0];
       rigB.torso.add(mirror);
-      mirror.position.copy(sh.sh.position).add(V(0, 0.12, 0));
+      mirror.position.copy(sh.sh.position).add(V(0, 0.18, 0));
       mirror.scale.set(side > 0 ? 1 : -1, 1, 1);
       sh.hand.add(blink);
       blink.position.set(0, -0.1, 0);
+      if (lplate) {
+        rigB.torso.add(L);
+        L.position.set(0, 0.45, -0.42);
+        L.rotation.y = Math.PI;
+      }
       I.cleanup = () => {
         mirror.parent?.remove(mirror);
         blink.parent?.remove(blink);
+        L.parent?.remove(L);
       };
     }
     const arm = side > 0 ? rigB.arms[1] : rigB.arms[0];
-    const sig = smooth3(0.5, 0.8, t) * (1 - smooth3(2.6, 3, t));
+    const sig = smooth3(0.5, 0.8, t) * (1 - smooth3(3, 3.4, t));
     if (sig > 0) {
-      arm.sh.rotation.set(0, 0, (side > 0 ? 1 : -1) * 1.45 * sig);
-      arm.el.rotation.x = -0.1;
+      arm.sh.rotation.set(0, 0, (side > 0 ? 1 : -1) * 1.5 * sig);
+      arm.el.rotation.x = -0.05;
     }
-    if (t > 0.2 && t < 1) rigB.head.rotation.y = (side > 0 ? -1 : 1) * 0.9;
+    if (t > 0.15 && t < 0.9) rigB.head.rotation.y = (side > 0 ? -1 : 1) * 1;
     blink.visible = sig > 0.5 && Math.floor(t * 4) % 2 === 0;
     tick.visible = sig > 0.5 && t < 2.2;
     if (tick.visible) {
-      tick.position.copy(by.root.position).add(V(0, by.height + 0.9, 0));
+      tick.position.copy(by.root.position).add(V(0, by.height + 1, 0));
       popScale(tick, t, 0.8);
     }
-    parp.visible = t > 1.9 && t < 3.4;
+    parp.visible = t > 2 && t < 3.6;
     if (parp.visible) {
       parp.position.copy(on.root.position).add(V(0, on.height + 0.9, 0));
-      popScale(parp, t, 1.9);
+      popScale(parp, t, 2);
     }
-    dust.root.position.copy(by.root.position).add(V(-sB.tx * 0.9, 0.25, -sB.tz * 0.9));
-    dust.root.scale.setScalar(0.45);
-    dust.update(clamp01((t - 1.5) / 1.4), 1.2, -1);
     cue("line", t > 0.25, () => K.say(cs.lines?.[0]));
-    I.pipCaption = t < 1.3 ? "MIRROR" : t < 2.4 ? "SIGNAL" : "MANOEUVRE";
-    const c = by.root.position.clone().lerp(on.root.position, 0.5);
+    K.ov.caption(t < 0.4 ? null : t < 1.4 ? "MIRROR\u2026" : t < 2.3 ? "SIGNAL\u2026" : "MANOEUVRE!", { yellow: t >= 2.3 });
     const fwd = V(sB.tx, 0, sB.tz), right = V(-sB.tz, 0, sB.tx);
-    K.pipCamSet(c.clone().addScaledVector(fwd, -4.6).addScaledVector(right, side * 2.2).add(V(0, 2.1, 0)), c.clone().addScaledVector(fwd, 0.8).add(V(0, 1.35, 0)), 46);
+    const bp = by.root.position;
+    K.cam(bp.clone().addScaledVector(fwd, -3.1).addScaledVector(right, side * 2.3).add(V(0, 2.5, 0)), bp.clone().addScaledVector(fwd, 2.2).addScaledVector(right, side * 0.2).add(V(0, 1.7, 0)), 52, 0, { sun: 30 });
   };
   const d0 = I.dispose;
   I.dispose = () => {
@@ -40203,7 +40399,8 @@ SCENES.ice_cream_van = (K, cs) => {
   });
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
-    const vanA = t < 1.4 ? lerp2(-26, 2, easeOut(t / 1.4)) : t < 2.6 ? 2 : 2 + (t - 2.6) * 6.5;
+    const rev = cs.params.variant === "reverse";
+    const vanA = t < 1.4 ? rev ? lerp2(26, 4, easeOut(t / 1.4)) : lerp2(-26, 2, easeOut(t / 1.4)) : t < 2.6 ? rev ? 4 : 2 : (rev ? 4 : 2) + (t - 2.6) * 6.5;
     placeVan(f.p(vanA, s * (PATH_W / 2 + 2.4)), f.yaw, t);
     tune(t, van.position);
     const run = Math.max(0, t - 2.7);
@@ -40219,8 +40416,9 @@ SCENES.ice_cream_van = (K, cs) => {
       K.cam(A.root.position.clone().addScaledVector(V(f.tx, 0, f.tz), 3.4).addScaledVector(V(f.rx, 0, f.rz), -s * 1.2).add(V(0, 2, 0)), A.root.position.clone().add(V(0, 2.05, 0)), 36);
       K.ov.caption("THE VAN!", { yellow: true });
     } else {
-      K.cam(f.p(run * 6.2 - 7.5, -s * 1.8, 2.3), f.p(run * 6.2 + 3, s * 1.6, 1.6), 44);
-      K.ov.caption("SO CLOSE\u2026");
+      const vb = f.p(vanA - 2.5, s * (PATH_W / 2 + 2.4), 1.9);
+      K.cam(f.p(run * 6.2 - 4.5, -s * 0.6, 2.2), vb, 40);
+      K.ov.caption("SOLD OUT OF 99s", { yellow: true });
     }
   };
   I.tail = (u, dt, b) => {
@@ -40230,8 +40428,8 @@ SCENES.ice_cream_van = (K, cs) => {
     const rp = V(st.x, st.y, st.z);
     placeVan(rp.clone().addScaledVector(fwd, 7).addScaledVector(right, s * (PATH_W / 2 + 1.6)), Math.atan2(st.tx, st.tz), u);
     tune(u + 3, van.position);
-    K.cam(rp.clone().addScaledVector(fwd, -8.5).addScaledVector(right, -s * 1.5).add(V(0, 2.6, 0)), rp.clone().addScaledVector(fwd, 5).addScaledVector(right, s * 1.5).add(V(0, 1.6, 0)), 42);
-    K.ov.caption(u < 2.6 ? "JUST OUT OF REACH" : null);
+    K.cam(rp.clone().addScaledVector(fwd, -5.5).addScaledVector(right, -s * 0.8).add(V(0, 2.3, 0)), rp.clone().addScaledVector(fwd, 4.6).addScaledVector(right, s * (PATH_W / 2 + 1.6)).add(V(0, 1.8, 0)), 40);
+    K.ov.caption(u < 1.8 ? "SOLD OUT OF 99s" : u < 3.6 ? "JUST OUT OF REACH" : null, { yellow: u < 1.8 });
   };
   return I;
 };
@@ -40330,7 +40528,7 @@ SCENES.photographer = (K, cs) => {
   const fs = stageAt(K.C, K.C.finishM);
   const s = openSide(K.world, fs, 8);
   const root = I.bag.group();
-  const P = actor(K, I, CAST.pam, { hideBib: true });
+  const P2 = actor(K, I, CAST.pam, { hideBib: true });
   const camG = new Group();
   const bodyC = I.bag.M(new RoundedBoxGeometry(0.42, 0.3, 0.26, 2, 0.05), "#1a1420", 2);
   camG.add(bodyC);
@@ -40349,23 +40547,42 @@ SCENES.photographer = (K, cs) => {
   goose.root.rotation.y = Math.atan2(-fin.rx * s, -fin.rz * s);
   gooseCam.position.copy(gp).add(V(fin.rx * s * 2.1, 0.75, fin.rz * s * 2.1));
   gooseCam.lookAt(gp.clone().add(V(0, 0.75, 0)));
+  const thumb = cs.params.variant === "thumb";
   const print1 = renderToCanvas(K, gooseCam, 960, 540, () => {
-    K.scene.add(goose.root);
+    if (!thumb) K.scene.add(goose.root);
     goose.pose({ wingL: 0.3, wingR: 0.3 });
     return () => K.scene.remove(goose.root);
   });
+  if (thumb) {
+    const g = print1.getContext("2d");
+    g.fillStyle = "#f1b98f";
+    g.strokeStyle = "#1a1420";
+    g.lineWidth = 10;
+    g.beginPath();
+    g.ellipse(250, 470, 260, 330, -0.5, 0, 7);
+    g.fill();
+    g.stroke();
+    g.fillStyle = "#ffd9c8";
+    g.beginPath();
+    g.ellipse(330, 260, 90, 70, -0.5, 0, 7);
+    g.fill();
+    g.lineWidth = 6;
+    g.stroke();
+  }
   const a = K.pub(cs.who), o = K.pub(cs.params.other);
   const print2 = finishFrame(K, cs.params.finishRaceS ?? K.sim.byId[cs.who].officialS, 960, 540, s);
   drawRuler(print2, print2.width * 0.47);
   const lab = print2.getContext("2d");
-  lab.font = '44px "Lilita One", sans-serif';
-  lab.textAlign = "center";
-  lab.lineWidth = 8;
-  lab.strokeStyle = "#1a1420";
-  lab.fillStyle = "#ffd23f";
   const t2 = `${(a?.shortName || a?.nickname || "HIM").toUpperCase()} BY ${Number(cs.params.marginS ?? 0).toFixed(1)} s`;
-  lab.strokeText(t2, print2.width / 2, 60);
-  lab.fillText(t2, print2.width / 2, 60);
+  lab.font = '78px "Lilita One", sans-serif';
+  const tw = Math.min(print2.width - 40, lab.measureText(t2).width + 60);
+  lab.fillStyle = "#1a1420";
+  roundRect(lab, (print2.width - tw) / 2, 14, tw, 104, 24);
+  lab.fill();
+  lab.textAlign = "center";
+  lab.textBaseline = "middle";
+  lab.fillStyle = "#ffd23f";
+  lab.fillText(t2, print2.width / 2, 70, print2.width - 80);
   let p1 = null, p2 = null;
   const cue = cues();
   const NOM = 6.6;
@@ -40373,15 +40590,15 @@ SCENES.photographer = (K, cs) => {
     const t = tscale(g0, gagDur, NOM);
     const walk = smooth3(0, 1.1, t);
     const pPos = fs.p(3.6, s * lerp2(8, PATH_W / 2 - 0.7, walk), 0);
-    place2(P, pPos, Math.atan2(-fs.rx * s, -fs.rz * s) - 0.5 * s);
-    drive(P, dt, t < 1.1 ? "jog" : "idle", null, { speed: 2, rate: 1, expr: "normal" });
-    for (const arm of P.rig.arms) {
+    place2(P2, pPos, Math.atan2(-fs.rx * s, -fs.rz * s) - 0.5 * s);
+    drive(P2, dt, t < 1.1 ? "jog" : "idle", null, { speed: 2, rate: 1, expr: "normal" });
+    for (const arm of P2.rig.arms) {
       arm.sh.rotation.set(-1.5, 0, 0);
       arm.el.rotation.x = -0.5;
     }
-    P.rig.head.rotation.x = 0.1;
-    camG.position.copy(P.root.localToWorld(V(0, P.r.hipH + 0.75, 0.35)));
-    camG.rotation.set(0, P.root.rotation.y, 0);
+    P2.rig.head.rotation.x = 0.1;
+    camG.position.copy(P2.root.localToWorld(V(0, P2.r.hipH + 0.75, 0.35)));
+    camG.rotation.set(0, P2.root.rotation.y, 0);
     click.visible = t > 1.3 && t < 1.8;
     if (click.visible) {
       click.position.copy(camG.position).add(V(0, 1.1, 0));
@@ -40389,7 +40606,7 @@ SCENES.photographer = (K, cs) => {
     }
     cue("flash", t > 1.3, () => K.ov.flash(1));
     cue("p1", t > 1.6, () => {
-      p1 = K.ov.print(print1, "PRINT 1", -4);
+      p1 = K.ov.print(print1, thumb ? "PRINT 1: THUMB" : "PRINT 1", -4);
       p1.show();
     });
     cue("line", t > 2, () => K.say(cs.lines?.[0]));
@@ -40399,7 +40616,7 @@ SCENES.photographer = (K, cs) => {
       p2.show();
     });
     K.ov.caption(t < 1.4 ? "SAY CHEESE\u2026" : null, { yellow: true });
-    K.cam(fs.p(10.5, -s * 0.8, 1.8), P.root.position.clone().add(V(0, 1.45, 0)).addScaledVector(V(fs.tx, 0, fs.tz), -0.8), 36);
+    K.cam(fs.p(10.5, -s * 0.8, 1.8), P2.root.position.clone().add(V(0, 1.45, 0)).addScaledVector(V(fs.tx, 0, fs.tz), -0.8), 36);
   };
   const d0 = I.dispose;
   I.dispose = () => {
@@ -40472,25 +40689,66 @@ function drawSquirrel(g, x, y, s) {
   g.fill();
   g.restore();
 }
+function drawPigeon(g, x, y, s) {
+  g.save();
+  g.translate(x, y);
+  g.scale(s, s);
+  g.strokeStyle = "#1a1420";
+  g.lineWidth = 5;
+  g.fillStyle = "#8a93a8";
+  g.beginPath();
+  g.ellipse(0, -30, 40, 28, -0.2, 0, 7);
+  g.fill();
+  g.stroke();
+  g.beginPath();
+  g.ellipse(-8, -34, 26, 14, 0.5, 0, 7);
+  g.fillStyle = "#6f7891";
+  g.fill();
+  g.stroke();
+  g.fillStyle = "#8a93a8";
+  g.beginPath();
+  g.arc(36, -62, 17, 0, 7);
+  g.fill();
+  g.stroke();
+  g.fillStyle = "#ff9a1f";
+  g.beginPath();
+  g.moveTo(50, -62);
+  g.lineTo(66, -58);
+  g.lineTo(50, -54);
+  g.fill();
+  g.fillStyle = "#1a1420";
+  g.beginPath();
+  g.arc(40, -66, 3.5, 0, 7);
+  g.fill();
+  g.strokeStyle = "#ff9a1f";
+  g.beginPath();
+  g.moveTo(-6, -4);
+  g.lineTo(-10, 12);
+  g.moveTo(8, -4);
+  g.lineTo(10, 12);
+  g.stroke();
+  g.restore();
+}
 SCENES.sore_loser_var = (K, cs) => {
   const I = base(K, { camera: true, postBanner: "HE WANTS A REVIEW" });
+  const pigeon = cs.params.variant === "pigeon";
   const fs = stageAt(K.C, K.C.finishM);
   const s = openSide(K.world, fs, 8);
   const root = I.bag.group();
   const pub = K.pub(cs.who);
   const A = actor(K, I, pub);
-  const J = actor(K, I, CAST.jeff, { hideBib: true });
+  const J2 = actor(K, I, CAST.jeff, { hideBib: true });
   const hs = I.bag.M(new TorusGeometry(0.42, 0.05, 6, 20, Math.PI), "#1a1420", 0);
-  J.rig.head.add(hs);
+  J2.rig.head.add(hs);
   hs.position.y = 0.48;
   for (const sx of [-1, 1]) {
     const cup = I.bag.M(new CylinderGeometry(0.14, 0.14, 0.1, 12).rotateZ(Math.PI / 2), "#1a1420", 1.5);
     cup.position.set(sx * 0.44, 0.42, 0);
-    J.rig.head.add(cup);
+    J2.rig.head.add(cup);
   }
   const mic = I.bag.M(new CylinderGeometry(0.02, 0.02, 0.45, 5).rotateX(Math.PI / 2.4), "#1a1420", 0);
   mic.position.set(0.36, 0.3, 0.22);
-  J.rig.head.add(mic);
+  J2.rig.head.add(mic);
   const frame = finishFrame(K, cs.params.finishRaceS ?? K.sim.byId[cs.params.winner].officialS, 768, 432, s);
   {
     const g = frame.getContext("2d");
@@ -40502,14 +40760,15 @@ SCENES.sore_loser_var = (K, cs) => {
     g.lineTo(frame.width * 0.3, frame.height);
     g.stroke();
     g.setLineDash([]);
-    drawSquirrel(g, frame.width * 0.26, frame.height * 0.86, 1.3);
+    if (pigeon) drawPigeon(g, frame.width * 0.24, frame.height * 0.84, 1.3);
+    else drawSquirrel(g, frame.width * 0.26, frame.height * 0.86, 1.3);
     g.font = '48px "Lilita One", sans-serif';
     g.textAlign = "center";
     g.lineWidth = 8;
     g.strokeStyle = "#1a1420";
     g.fillStyle = "#ff2d55";
-    g.strokeText("OFFSIDE?", frame.width / 2, 58);
-    g.fillText("OFFSIDE?", frame.width / 2, 58);
+    g.strokeText(pigeon ? "HANDBALL?" : "OFFSIDE?", frame.width / 2, 58);
+    g.fillText(pigeon ? "HANDBALL?" : "OFFSIDE?", frame.width / 2, 58);
   }
   const scrTex = I.bag.add(new CanvasTexture(frame));
   scrTex.colorSpace = SRGBColorSpace;
@@ -40524,17 +40783,17 @@ SCENES.sore_loser_var = (K, cs) => {
   root.add(boink);
   boink.visible = false;
   const cue = cues();
-  const NOM = 6.1;
+  const NOM = 4.4;
   const aPos = fs.p(7, s * 0.5, 0);
   I.update = (g0, dt, b, { gagDur }) => {
-    const t = tscale(g0, gagDur, NOM);
+    const t = tscale(g0, gagDur, NOM) + 1.7;
     const jp = booth.g.localToWorld(V(t < 3.2 ? -0.95 : 0, 0.05, -0.25));
-    place2(J, jp, booth.g.rotation.y + (t < 3.2 ? 0.35 : 0));
-    drive(J, dt, t > 3.6 && t < 4.3 ? "pose" : "idle", "point", { expr: t > 3.6 ? "happy" : "effort" });
+    place2(J2, jp, booth.g.rotation.y + (t < 3.2 ? 0.35 : 0));
+    drive(J2, dt, t > 3.6 && t < 4.3 ? "pose" : "idle", "point", { expr: t > 3.6 ? "happy" : "effort" });
     if (t < 3.6) {
-      J.rig.arms[1].sh.rotation.set(-0.9, 0, 0.2);
-      J.rig.arms[1].el.rotation.x = -1.6;
-      J.rig.head.rotation.x = 0.15;
+      J2.rig.arms[1].sh.rotation.set(-0.9, 0, 0.2);
+      J2.rig.arms[1].el.rotation.x = -1.6;
+      J2.rig.head.rotation.x = 0.15;
     }
     if (t < 1.7) {
       place2(A, aPos, fs.yaw + Math.PI + s * 0.5);
@@ -40552,10 +40811,10 @@ SCENES.sore_loser_var = (K, cs) => {
     } else if (t < 4.3) {
       if (t < 3.2) {
         const sc = booth.screen.getWorldPosition(V());
-        K.cam(booth.g.localToWorld(V(0.95, 2.35, -1.25)), sc, 40, 0, { occlude: false });
-        K.ov.caption("SQUIRREL OFFSIDE?", { yellow: true });
+        K.cam(booth.g.localToWorld(V(0.35, 1.95, -0.75)), sc, 42, 0, { occlude: false });
+        K.ov.caption(pigeon ? "PIGEON HANDBALL?" : "SQUIRREL OFFSIDE?", { yellow: true });
       } else {
-        K.cam(booth.g.localToWorld(V(2.3, 1.9, 0.9)), J.root.localToWorld(V(0, J.r.height - 0.5, 0.1)), 38, 0, { occlude: false });
+        K.cam(booth.g.localToWorld(V(2.3, 1.9, 0.9)), J2.root.localToWorld(V(0, J2.r.height - 0.5, 0.1)), 38, 0, { occlude: false });
         K.ov.caption(null);
       }
       cue("line", t > 1.9, () => K.say(cs.lines?.[0]));
@@ -42161,7 +42420,7 @@ var CUTSCENE_KINDS = {
 var PAUSING = /* @__PURE__ */ new Set(["freeze", "replay"]);
 var DUR = {
   funfair_sign: 2.6,
-  funfair_drone: 3.8,
+  funfair_drone: 5.8,
   hook_a_duck: 7,
   hook_a_duck2: 5,
   test_strength: 6.5,
@@ -42176,15 +42435,54 @@ var DUR = {
   mirror_signal: 4,
   ice_cream_van: 5,
   photographer: 7.5,
-  sore_loser_var: 7
+  sore_loser_var: 6
 };
+var J = (text) => ({ speaker: "jeff", text });
+var P = (text) => ({ speaker: "pam", text });
+var LINE_BANKS = {
+  funfair_sign: [J("Hang on, hang on, there's a DIVERSION!"), P("Ah. The funfair's in town."), J("He's going OFF-PISTE!"), P("That is not the course, Jeff.")],
+  hook_a_duck_1: [P("He's won a goose. Of course he has."), J("He's HOOKED one! Give that man a prize!"), P("One hook. One duck. One very suspicious goose.")],
+  hook_a_duck_2: [J("He's only gone and traded UP!"), P("That's not a prize. That's a passenger."), P("Bigger goose. Same pace. Remarkable.")],
+  test_strength_creep: [P("Parkrunner. Fair."), J("Ooh! So close to LEGEND!"), P("Solid. Unspectacular. Very him.")],
+  test_strength_launch: [J("He's been LAUNCHED back onto the course!"), P("Not strictly the route, Jeff."), J("Is that... allowed?")],
+  test_strength_ding: [J("DING DING DING! Somebody fetch that bell!"), P("That bell's in the boating lake now."), J("RING THE BELL! RING IT!")],
+  rejoin_even: [P("And he's lost... no time at all. Suspicious."), P("Not a second lost. I have questions."), J("Round the fair and NO time lost!")],
+  rejoin_slow: [J("That cost him {n} seconds!"), P("{n} seconds at the fair. Worth it."), J("The fair has taken {n} seconds off him!")],
+  rejoin_fast: [P("He came out quicker than he went in. I want a steward's enquiry."), J("QUICKER through the fair?!"), P("Faster round the funfair than on the path. Typical.")],
+  goose_toll: [J("He's been TOLLED!"), P("Contactless was down."), P("One jelly baby. Daylight robbery."), J("Pay the goose, Mark! PAY THE GOOSE!")],
+  treadmill_hill: [P("Same tree. Same bench. Same goose."), J("Haven't we seen this bit?"), P("The Hill. Now on a loop.")],
+  everest: [P("It's about thirteen metres high, Jeff."), J("BASE CAMP TO MARK! Do you read me?"), P("Thirteen metres. Bring a flask.")],
+  spaghetti_legs: [P("Legs: al dente."), J("He's gone all SPAGHETTI!"), P("Those legs are cooked.")],
+  cannonball: [J("He's shot out like a CANNONBALL!"), J("And he is AWAY! Like a CANNONBALL!"), P("Steady on.")],
+  raincloud: [J("It's only raining on HIM!"), P("Different Saturday, different weather."), P("He's brought his own weather.")],
+  mirror_signal: [P("Mirror, signal, manoeuvre."), J("He's INDICATING! Who indicates?"), J("Textbook overtake!")],
+  ice_cream_van: [J("He's heard the VAN!"), P("Sold out. Every time."), J("Faster, Mark! It's got FLAKES!")],
+  photographer: [P("Hold on. Wrong end of the goose."), J("Lovely shot, Pam."), P("Second time lucky.")],
+  sore_loser_var: [J("Checking... checking... the result STANDS!"), P("The squirrel was onside, Jeff."), J("VAR says NO!")]
+};
+var VISUAL_VARIANTS = {
+  goose_toll: ["jelly", "peak"],
+  treadmill_hill: ["goose", "marshal"],
+  everest: ["flask", "tent"],
+  spaghetti_legs: ["spaghetti", "jelly"],
+  cannonball: ["cannon", "catapult"],
+  raincloud: ["umbrella", "lightning"],
+  mirror_signal: ["mirror", "lplate"],
+  ice_cream_van: ["chase", "reverse"],
+  photographer: ["goose", "thumb"],
+  sore_loser_var: ["squirrel", "pigeon"],
+  hook_a_duck: ["goose", "duck"],
+  test_strength: ["jeff", "pam"]
+};
+var GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6 };
+var PER_NIGHT_CAP = 2;
 var r1 = (x) => Math.round(x * 10) / 10;
 var r2 = (x) => Math.round(x * 100) / 100;
 var pct = (ratio) => Math.round(Math.abs(ratio - 1) * 100);
 var km = (m) => `${(m / 1e3).toFixed(1)} km`;
 function runnerStats(pr) {
-  const P = pr.progress, T = pr.officialS, avg = T / 5e3;
-  const t = (m) => timeAtDistance(P, m);
+  const P2 = pr.progress, T = pr.officialS, avg = T / 5e3;
+  const t = (m) => timeAtDistance(P2, m);
   const pace = (m0, m1) => (t(m1) - t(m0)) / (m1 - m0) / avg;
   const divs = (pr.diversions || []).map((d) => [d.fromM, d.toM]);
   const excluded = (a, b, { hills = true, div = true } = {}) => hills && HILLS.some(([h0, h1]) => a < h1 && b > h0) || div && divs.some(([d0, d1]) => a < d1 + 25 && b > d0 - 25);
@@ -42255,12 +42553,23 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     const ago = raceNo - l;
     return ago >= (LIVE_KINDS.has(kind) ? RULES.cooldownLiveRaces : RULES.cooldownRaces) ? 0.6 : -1;
   };
-  const cool = (kind) => force === kind || freshness(kind) >= 0;
+  if (raceNo <= 1 || raceNo < (cm.races || 0)) {
+    cm.night = {};
+    cm.lines = [];
+    cm.variants = {};
+  }
+  cm.night || (cm.night = {});
+  cm.lines || (cm.lines = []);
+  cm.variants || (cm.variants = {});
+  const capped = (kind) => (cm.night[kind] || 0) >= PER_NIGHT_CAP;
+  const gateRoll = {};
+  const gate = (kind) => GATE[kind] == null || (gateRoll[kind] ?? (gateRoll[kind] = R.next())) < GATE[kind];
+  const cool = (kind) => force === kind || freshness(kind) >= 0 && !capped(kind) && gate(kind);
   const rel = (id) => backed.has(id) ? 1 : 0;
   const out = [];
   const pausing = () => out.filter((c) => PAUSING.has(c.mode));
   const pauseS = () => pausing().reduce((s, c) => s + c.durationS, 0);
-  const span = (c) => [c.atBroadcastS, c.mode === "slowmo" ? c.params.untilBroadcastS : c.atBroadcastS + (PAUSING.has(c.mode) || c.mode === "post" ? 0 : c.durationS)];
+  const span = (c) => [c.atBroadcastS, c.mode === "slowmo" ? c.params.untilBroadcastS : c.atBroadcastS + (PAUSING.has(c.mode) || c.mode === "post" ? c.params?.liveTailS || 0 : c.durationS)];
   function fits(c, { ignoreGroup = null } = {}) {
     if (force && c.kind === force) return true;
     const [a, b] = span(c);
@@ -42285,7 +42594,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   }
   const mk = (kind, who, mode, atBroadcastS, extra = {}) => ({ id: "", kind, who, mode, atBroadcastS: r2(atBroadcastS), durationS: extra.durationS ?? DUR[kind], params: extra.params || {}, lines: extra.lines || [], truth: extra.truth || "", ...extra.group ? { group: extra.group } : {}, _score: extra.score ?? 0 });
   const diverters = PR.filter((r) => r.diversions?.length);
-  if (diverters.length) {
+  if (diverters.length && (!capped("funfair_stretch") || ["hook_a_duck", "test_strength"].includes(force))) {
     const cand = [...diverters].sort((a, b) => rel(b.id) - rel(a.id) || Math.abs(S[b.id].divPace[0].ratio - 1) - Math.abs(S[a.id].divPace[0].ratio - 1));
     for (const r of cand) {
       const pkg = funfairPackage(r);
@@ -42418,9 +42727,9 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     const w = S[r.id].bestMid;
     if (!w || !cool("ice_cream_van")) continue;
     const temp = info[r.id].facts?.weather?.temp_c;
-    if (!(w.ratio <= 0.89 && temp != null && temp >= 12 || isForced("ice_cream_van"))) continue;
+    if (!(w.ratio <= 0.91 && temp != null && temp >= 11 || isForced("ice_cream_van"))) continue;
     C.push(mk("ice_cream_van", r.id, "freeze", B(r.id, w.m0), {
-      params: { m0: w.m0, m1: w.m1, atM: w.m0, ratio: r2(w.ratio), tempC: temp ?? null, liveTailS: 3 },
+      params: { m0: w.m0, m1: w.m1, atM: w.m0, ratio: r2(w.ratio), tempC: temp ?? null, liveTailS: 4 },
       score: 4 + (1 - w.ratio) * 15 + rel(r.id) * 2,
       lines: [{ speaker: "jeff", text: "He's heard the VAN!" }],
       truth: `${name(r.id)} really did surge: 250 m at ${pct(w.ratio)}% quicker than his average from ${km(w.m0)}${temp != null ? `, on a ${Math.round(temp)}\xB0C morning` : ""}. There was no van. Sorry.`
@@ -42431,7 +42740,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     const wet = w.coco === 7 || w.coco === 8 || (w.prcp_mm ?? 0) > 0.3;
     if (!wet && !isForced("raincloud") || !cool("raincloud")) continue;
     for (const m of [1150, 3050, 650, 3550]) C.push(mk("raincloud", r.id, "inset", B(r.id, m), {
-      params: { atM: m, pip: true, coco: w.coco ?? null, prcpMm: w.prcp_mm ?? null },
+      params: { atM: m, pip: false, coco: w.coco ?? null, prcpMm: w.prcp_mm ?? null },
       score: 3 + rel(r.id) * 2 - (m === 1150 ? 0 : 0.2),
       lines: [{ speaker: "jeff", text: "It's only raining on HIM!" }],
       truth: `It really was ${w.coco === 8 ? "raining" : "drizzling"} on ${name(r.id)}'s Saturday${w.prcp_mm ? ` (${w.prcp_mm} mm)` : ""}. The other four ran on different days, in different weather. Every Mark brings his own.`
@@ -42443,7 +42752,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
       if (!cool("mirror_signal")) break;
       const by = e.by || e.to, on = e.on || e.from;
       C.push(mk("mirror_signal", by, "inset", e.broadcastS - 1.6, {
-        params: { on, atM: e.atM, pip: true, eventRaceS: r1(e.raceS) },
+        params: { on, atM: e.atM, pip: false, eventRaceS: r1(e.raceS) },
         score: 2.5 + (rel(by) + rel(on)) * 2 + (e.atM > 1e3 && e.atM < 4e3 ? 0.5 : 0),
         lines: [{ speaker: "pam", text: "Mirror, signal, manoeuvre." }],
         truth: `${name(by)} really did overtake ${info[on]?.name || "a rival"} at ${km(e.atM)}. Indicating is optional in parkrun.`
@@ -42476,6 +42785,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   const cb = C.find((c) => c.kind === "cannonball");
   for (const c of C) if (c.kind === "spaghetti_legs" && cb && c.who === cb.who) {
     c.lines = [{ speaker: "pam", text: "The cannonball's run out of cannon." }];
+    c.params.callback = true;
     c._score += 3;
   }
   const used = new Set(out.map((c) => CUTSCENE_KINDS[c.kind].cat));
@@ -42501,6 +42811,37 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     if (["goose_toll", "spaghetti_legs", "treadmill_hill", "everest", "raincloud"].includes(c.kind)) badLuck.set(c.who, (badLuck.get(c.who) || 0) + 1);
   }
   out.sort((a, b) => a.atBroadcastS - b.atBroadcastS || (a.mode === "slowmo" ? -1 : 1));
+  const pickLine = (bank, vars = {}) => {
+    const keys = bank.map((_, i2) => i2).filter((i2) => !cm.lines.includes(`${bank._k}:${i2}`));
+    const i = keys.length ? keys[Math.floor(R.next() * keys.length)] : Math.floor(R.next() * bank.length);
+    cm.lines.push(`${bank._k}:${i}`);
+    const l = bank[i];
+    return { speaker: l.speaker, text: l.text.replace("{n}", vars.n ?? "") };
+  };
+  for (const [k, v] of Object.entries(LINE_BANKS)) Object.defineProperty(v, "_k", { value: k, enumerable: false });
+  const sigVar = {};
+  for (const c of out) {
+    let bankKey = c.kind;
+    if (c.kind === "hook_a_duck") bankKey = `hook_a_duck_${c.params.lap === 2 ? 2 : 1}`;
+    if (c.kind === "test_strength") bankKey = `test_strength_${c.params.variant || "creep"}`;
+    if (c.kind === "funfair_rejoin") {
+      const r = c.params.ratio ?? 1;
+      bankKey = r <= 0.97 ? "rejoin_fast" : r >= 1.03 ? "rejoin_slow" : "rejoin_even";
+    }
+    if (LINE_BANKS[bankKey] && !c.params.callback) c.lines = [pickLine(LINE_BANKS[bankKey], { n: Math.max(1, Math.round(c.params.costS ?? 0)) })];
+    const vv = VISUAL_VARIANTS[c.kind];
+    if (vv) {
+      const key = c.kind === "hook_a_duck" ? "prize" : c.kind === "test_strength" ? "top" : "variant";
+      if (c.params[key] == null) {
+        if (sigVar[c.kind] == null) {
+          const last = cm.variants[c.kind];
+          const opts = vv.filter((x) => x !== last);
+          sigVar[c.kind] = (opts.length ? opts : vv)[Math.floor(R.next() * (opts.length || vv.length))];
+        }
+        c.params[key] = sigVar[c.kind];
+      }
+    }
+  }
   out.forEach((c, i) => {
     c.id = `cs${i + 1}`;
     delete c._score;
@@ -42509,6 +42850,8 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   if (mem && !force) {
     cm.races = raceNo;
     for (const c of out) cm.last[c.kind] = raceNo;
+    for (const k of new Set(out.map((c) => c.kind))) cm.night[k] = (cm.night[k] || 0) + 1;
+    for (const [k, v] of Object.entries(sigVar)) cm.variants[k] = v;
     if (cm._sig) {
       cm.funfairSigs = [...cm.funfairSigs || [], cm._sig];
     }

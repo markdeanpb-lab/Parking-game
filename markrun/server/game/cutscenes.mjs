@@ -54,8 +54,8 @@ export const CUTSCENE_KINDS = {
 };
 export const PAUSING = new Set(['freeze', 'replay']);
 // default wall durations (s)
-const DUR = { funfair_sign: 2.6, funfair_drone: 3.8, hook_a_duck: 7, hook_a_duck2: 5, test_strength: 6.5, test_strength2: 6, funfair_rejoin: 2.8,
-  goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 5.5, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 7 };
+const DUR = { funfair_sign: 2.6, funfair_drone: 5.8, hook_a_duck: 7, hook_a_duck2: 5, test_strength: 6.5, test_strength2: 6, funfair_rejoin: 2.8,
+  goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 5.5, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 6 };
 
 // Line banks (3-4 per kind; one line plays per cutscene, never repeated within a night) and visual variants.
 const J = (text) => ({ speaker: 'jeff', text }), P = (text) => ({ speaker: 'pam', text });
@@ -86,7 +86,7 @@ export const VISUAL_VARIANTS = {
   photographer: ['goose', 'thumb'], sore_loser_var: ['squirrel', 'pigeon'], hook_a_duck: ['goose', 'duck'], test_strength: ['jeff', 'pam'],
 };
 // the three gags whose picture is weakest fire less often until a stronger staging lands (rates ~15-20% a race)
-const GATE = { cannonball: 0.6, mirror_signal: 0.55, treadmill_hill: 0.6 };
+const GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6 };
 export const PER_NIGHT_CAP = 2;
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -165,7 +165,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   const pausing = () => out.filter((c) => PAUSING.has(c.mode));
   const pauseS = () => pausing().reduce((s, c) => s + c.durationS, 0);
   // span of broadcast time a cutscene occupies (for spacing)
-  const span = (c) => [c.atBroadcastS, c.mode === 'slowmo' ? c.params.untilBroadcastS : c.atBroadcastS + (PAUSING.has(c.mode) || c.mode === 'post' ? 0 : c.durationS)];
+  const span = (c) => [c.atBroadcastS, c.mode === 'slowmo' ? c.params.untilBroadcastS : c.atBroadcastS + (PAUSING.has(c.mode) || c.mode === 'post' ? (c.params?.liveTailS || 0) : c.durationS)];
   function fits(c, { ignoreGroup = null } = {}) {
     if (force && c.kind === force) return true;
     const [a, b] = span(c);
@@ -313,7 +313,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     const w = S[r.id].bestMid; if (!w || !cool('ice_cream_van')) continue;
     const temp = info[r.id].facts?.weather?.temp_c;
     if (!((w.ratio <= 0.91 && temp != null && temp >= 11) || isForced('ice_cream_van'))) continue;
-    C.push(mk('ice_cream_van', r.id, 'freeze', B(r.id, w.m0), { params: { m0: w.m0, m1: w.m1, atM: w.m0, ratio: r2(w.ratio), tempC: temp ?? null, liveTailS: 3 },
+    C.push(mk('ice_cream_van', r.id, 'freeze', B(r.id, w.m0), { params: { m0: w.m0, m1: w.m1, atM: w.m0, ratio: r2(w.ratio), tempC: temp ?? null, liveTailS: 4 },
       score: 4 + (1 - w.ratio) * 15 + rel(r.id) * 2, lines: [{ speaker: 'jeff', text: 'He\'s heard the VAN!' }],
       truth: `${name(r.id)} really did surge: 250 m at ${pct(w.ratio)}% quicker than his average from ${km(w.m0)}${temp != null ? `, on a ${Math.round(temp)}°C morning` : ''}. There was no van. Sorry.` }));
   }
@@ -322,7 +322,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     const w = info[r.id].facts?.weather || {};
     const wet = w.coco === 7 || w.coco === 8 || (w.prcp_mm ?? 0) > 0.3;
     if ((!wet && !isForced('raincloud')) || !cool('raincloud')) continue;
-    for (const m of [1150, 3050, 650, 3550]) C.push(mk('raincloud', r.id, 'inset', B(r.id, m), { params: { atM: m, pip: true, coco: w.coco ?? null, prcpMm: w.prcp_mm ?? null },
+    for (const m of [1150, 3050, 650, 3550]) C.push(mk('raincloud', r.id, 'inset', B(r.id, m), { params: { atM: m, pip: false, coco: w.coco ?? null, prcpMm: w.prcp_mm ?? null },
       score: 3 + rel(r.id) * 2 - (m === 1150 ? 0 : 0.2), lines: [{ speaker: 'jeff', text: 'It\'s only raining on HIM!' }],
       truth: `It really was ${w.coco === 8 ? 'raining' : 'drizzling'} on ${name(r.id)}'s Saturday${w.prcp_mm ? ` (${w.prcp_mm} mm)` : ''}. The other four ran on different days, in different weather. Every Mark brings his own.` }));
   }
@@ -332,7 +332,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
       if (e.type !== 'overtake' && !isForced('mirror_signal')) continue;
       if (!cool('mirror_signal')) break;
       const by = e.by || e.to, on = e.on || e.from;
-      C.push(mk('mirror_signal', by, 'inset', e.broadcastS - 1.6, { params: { on, atM: e.atM, pip: true, eventRaceS: r1(e.raceS) },
+      C.push(mk('mirror_signal', by, 'inset', e.broadcastS - 1.6, { params: { on, atM: e.atM, pip: false, eventRaceS: r1(e.raceS) },
         score: 2.5 + (rel(by) + rel(on)) * 2 + (e.atM > 1000 && e.atM < 4000 ? 0.5 : 0), lines: [{ speaker: 'pam', text: 'Mirror, signal, manoeuvre.' }],
         truth: `${name(by)} really did overtake ${info[on]?.name || 'a rival'} at ${km(e.atM)}. Indicating is optional in parkrun.` }));
     }

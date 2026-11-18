@@ -306,3 +306,19 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 }
 .side .dm small.frac { display: block; background: none; color: #4a5080; padding: 0; border-radius: 0; font-family: var(--font-body); font-weight: 900; font-size: 12px; text-align: center; }
 .scr.flow.round .main { justify-content: center; }
+
+/* narrow phones (≤370px): the stake line ("500pp wins 2,000pp") must not push the clear button off-screen */
+@media (max-width: 370px) {
+  .tray .ts { gap: 6px; }
+  .tray .ts > b { font-size: 26px; }
+  .tray .ts .wn { min-width: 0; font-size: 14px; }
+  .tray .ts .wn b { font-size: 21px; }
+  .tray .ts .btn, .tray .ts button { flex: 0 0 auto; }
+}
+
+/* short phones (≤760px tall): reclaim a little height on the runner screen when the stake tray is open */
+@media (max-height: 760px) {
+  .rhead.hero .rp svg { width: 88px; height: 88px; }
+  .tray { gap: 6px; }
+  .tray .tb2 .btn { min-height: 50px; }
+}
