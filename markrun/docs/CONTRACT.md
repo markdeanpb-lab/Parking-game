@@ -101,3 +101,34 @@ createRaceView(container, { course, park, round: Round.public, plan: RacePlan, b
   misleading clue of the night, "the real Mark of the night" (fastest actual run shown, with date), funfair moments.
 - Results: `clueReview` gains `highlight: true` on the ≤3 clues that mattered most. `reveal[].headline` is the sofa-readable
   one-liner (date + time + Strava title). Detailed stats stay in `reveal[].funFacts`, shown on the phones, not the TV.
+
+## Iteration 4 additions (user-approved 2026-11-18): phases 1–3
+Ownership this iteration (new agents). Keep to your area, and use a small hook (call site) in another owner's file only where listed.
+- **Game logic:** `server/game/**`, except `cutscenes.mjs`.
+- **Cutscene planning:** `server/game/cutscenes.mjs` (new), called from round.mjs. The game agent adds that one call.
+- **TV/phone/server UI:** `client/tv/*` (not race/), `client/phone/**`, `client/shared/**` (except portrait.js, see below), `server/net/**`, `server/index.mjs`, `web/**`.
+- **3D broadcast:** `client/tv/race/**`, except `client/tv/race/cutscenes/**`.
+- **Cutscene playback:** `client/tv/race/cutscenes/**` (new), with a small surgical hook in race/index.js and director.js.
+- **Character look:** `client/shared/portrait.js` is owned by the 3D broadcast agent for this iteration, so portraits match the 3D runners (F6).
+
+### New fields
+- `public.runners[].rank`: 1..5, favourite to outsider, derived from the odds. The UI shows "FAVOURITE", "2nd favourite"… "OUTSIDER" prominently, with plain-money winnings ahead of the fractional odds.
+- `public.theme = { key, label, blurb, explainer: [≤3 short lines], visual: { season: 'winter'|'spring'|'summer'|'autumn', weather: 'clear'|'rain'|'wind'|'fog'|'frost'|'sun', time: 'morning' } }`.
+  - `visual` reflects the round's theme or the real conditions: for band themes, the weather of the median run; for data themes, the theme itself.
+  - The 3D world uses it for theme visuals.
+- **Economy (F5): score is separate from stakes.**
+  - Each round every player gets a fresh betting **budget** (`settings.roundBudget`, default 500pp), which is NOT their score.
+  - The net profit of the round is banked into a cumulative **score**: winnings minus stakes, and it can be negative.
+  - The final round still pays double.
+  - Bankruptcy and bailouts disappear.
+  - `public.rules = { budget, minStake, maxBetsPerPlayer }`. Phones show "Budget left" while betting and the score elsewhere.
+  - Settlement returns `{ net, score }` per player.
+- **Bets:** win, plus ONE head-to-head per round. The funfair side bet is offered only in The Funfair Stakes theme. Head-to-head and side-bet screens show the relevant runners' clue headlines.
+- **Cutscenes:** `racePlan.cutscenes = [{ id, kind, who, mode: 'replay'|'freeze'|'inset'|'slowmo'|'pre'|'post', atBroadcastS, durationS, params }]`, chosen from real data triggers by `server/game/cutscenes.mjs`.
+  - Rules from docs/CUTSCENE_IDEAS.md:
+    - ≤3 pausing cutscenes and ≤18 s of pause per race, ≥20 s apart;
+    - none once the leader is in the last 300 m, and none during a live battle;
+    - a cooldown across the night.
+  - Freeze/replay modes PAUSE the broadcast clock, so they never change timing. Slow-mo eases the clock equally for ALL runners.
+  - Each cutscene carries `lines: [{ speaker, text }]` (≤2 short lines) for the commentators. The reveal includes "What really happened".
+- **Commentary voice (phase 3):** commentary lines are known when the race starts. The TV pre-renders them with Kokoro neural voices while bets are placed, and falls back to speechSynthesis if not ready.
