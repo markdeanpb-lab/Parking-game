@@ -131,4 +131,14 @@ Ownership this iteration (new agents). Keep to your area, and use a small hook (
     - a cooldown across the night.
   - Freeze/replay modes PAUSE the broadcast clock, so they never change timing. Slow-mo eases the clock equally for ALL runners.
   - Each cutscene carries `lines: [{ speaker, text }]` (≤2 short lines) for the commentators. The reveal includes "What really happened".
+  - **Planner API (cutscene engineer, agreed signature):**
+    `planCutscenes({ racePlan, runners, theme, rng, sessionMemory, backedBy?, roundNumber? }) -> cutscenes[]` from `server/game/cutscenes.mjs`.
+    - `runners`: `[{ id, nickname?, shortName?, personality?, perf: { facts, features } }]` (e.g. the public runner + `hidden.perfs[id]`); pacing is read from `racePlan.runners[].progress`.
+    - `rng`: the round's `makeRng` object (or a seed). `sessionMemory`: the session `mem` object (the planner keeps `mem.cutscenes` for cooldowns / rotation).
+    - `backedBy` is optional (`{ runnerId: [names] }` or `[ids]`): when re-planned at race start it tilts which runner is featured. Feature-detect the import.
+    - Call site (round.mjs, after `plan.commentary`): `plan.cutscenes = planCutscenes({ racePlan: plan, runners: ids.map((id, i) => ({ id, shortName: runners[i].shortName, personality: runners[i].personality, perf: perfs[i] })), theme: thInfo, rng: R, sessionMemory: mem, roundNumber })`.
+    - Each entry also has `truth` ("What really happened", sofa-readable, no dates/times) and funfair beats share `group: 'funfair-1'|'funfair-2'`.
+      `cutsceneTruths(racePlan) -> [{ cutsceneId, kind, label, runnerId, text }]` (one card per gag) is ready for the results reveal.
+  - **TV events:** the race view's `onEvent` also receives `{ kind: 'cutscene', phase: 'start'|'end', id, cutscene, mode, who, durationS }` (no `text`)
+    and each cutscene line as `{ kind: 'commentary', text, speaker, priority: 3, cutscene: id }`. Shell: pause/duck live calls while a pausing cutscene plays.
 - **Commentary voice (phase 3):** commentary lines are known when the race starts. The TV pre-renders them with Kokoro neural voices while bets are placed, and falls back to speechSynthesis if not ready.
