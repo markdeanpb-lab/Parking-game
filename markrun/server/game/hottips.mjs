@@ -68,13 +68,15 @@ const STRENGTH = { ahead_hill1: 0.25, ahead_2k: 0.25, ahead_4k: 0.3, led_1k_over
   overtaker: 0.35, dead_last_1k: 0.08, open_slowest: 0.08, hill2_slowest: 0.05, big_fade: 0.08, last_km_slowest: 0.06 };
 export const tipStrength = (type) => STRENGTH[type] ?? 0.3;
 // how often each type is chosen (decisive types are rare; tuned with tools/simulate.mjs for a modest hot-tip edge)
-export const TYPE_WEIGHT = { hill1_first: 0.12, hill2_fastest: 0.1, open_fastest: 1.0, last_km_fastest: 0.1, top3_2k: 0.2, even_pacer: 1.2, overtaker: 0.2,
-  ahead_hill1: 0.5, ahead_2k: 0.3, ahead_4k: 0.1, led_1k_over: 2.0, outclimbed_hill2: 0.3, dead_last_1k: 1, hill2_slowest: 0.4, big_fade: 1, last_km_slowest: 0.3 };
+// Iteration 4: private clues should be the strong ones, so the genuinely telling in-race facts (over the Hill first,
+// top three at 2 km, strongest last kilometre) come up far more often than before; the weak relational ones less.
+export const TYPE_WEIGHT = { hill1_first: 0.5, hill2_fastest: 0.4, open_fastest: 0.8, last_km_fastest: 0.3, top3_2k: 0.6, even_pacer: 0.8, overtaker: 0.4,
+  ahead_hill1: 0.5, ahead_2k: 0.5, ahead_4k: 0.4, led_1k_over: 0.8, outclimbed_hill2: 0.3, dead_last_1k: 0.8, hill2_slowest: 0.4, big_fade: 1, last_km_slowest: 0.5 };
 
 // Choose `counts[playerId]` hot tips per player: different runners per player where possible, mixed polarities.
 // marketProb: { runnerId: implied win probability }. Good-sounding tips lean towards runners the market already likes,
 // so a tip is an edge, not a lottery ticket: following tips sensibly should pay, but modestly.
-export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiveShare = 0.55, marketProb = {}, favourBias = 1.5, rivalBias = 2, decisiveDamp = 0.6 } = {}) {
+export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiveShare = 0.55, marketProb = {}, favourBias = 1.5, rivalBias = 2, decisiveDamp = 0.6, avoid = {}, typeWeight = TYPE_WEIGHT } = {}) {
   const finishOrder = [...field].sort((a, b) => a.officialS - b.officialS).map((r) => r.id);
   const all = fieldTips(field, analysis);
   const used = new Set();
@@ -84,13 +86,14 @@ export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiv
     out[pid] = [];
     for (let k = 0; k < (counts[pid] ?? 1); k++) {
       const wantPos = rng.chance(positiveShare);
-      let pool = all.filter((t) => !used.has(t.runnerId) && !usedTypes.has(t.type) && (t.polarity > 0) === wantPos);
-      if (!pool.length) pool = all.filter((t) => !used.has(t.runnerId) && !usedTypes.has(t.type));
-      if (!pool.length) pool = all.filter((t) => !out[pid].some((x) => x.runnerId === t.runnerId));
+      const keep = (t) => !avoid[pid]?.has(t.runnerId); // never overwrite this player's private key clue
+      let pool = all.filter((t) => keep(t) && !used.has(t.runnerId) && !usedTypes.has(t.type) && (t.polarity > 0) === wantPos);
+      if (!pool.length) pool = all.filter((t) => keep(t) && !used.has(t.runnerId) && !usedTypes.has(t.type));
+      if (!pool.length) pool = all.filter((t) => keep(t) && !out[pid].some((x) => x.runnerId === t.runnerId));
       if (!pool.length) continue;
       // de-emphasise the most decisive types
       const w = (x) => {
-        const base = TYPE_WEIGHT[x.type] ?? 1;
+        const base = typeWeight[x.type] ?? 1;
         const lean = x.polarity > 0 ? Math.pow((marketProb[x.runnerId] ?? 0.2) / 0.2, favourBias) : 1;
         // pair facts come in bunches: weight per runner, not per pair; and prefer rivals the market rates lower
         // (beating an outsider to 1 km is true, useful for a head-to-head, and not a giveaway)

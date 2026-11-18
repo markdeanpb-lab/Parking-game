@@ -1,16 +1,20 @@
 // Bet validation + a fallback settlement used only when server/game/round.mjs is unavailable.
+import { payReturn } from '../game/provisional.mjs';
 
-// Round-1-can't-decide-the-night rule: total stakes per round are capped at 50% of the bankroll, except in the
-// DOUBLE PAYOUT finale (payoutMultiplier 2) where you can go all in. The halfway in-play bet counts within the cap.
-export function stakeCap(pub, bankroll) {
-  const b = Math.max(0, Math.floor(Number(bankroll) || 0));
-  if (Number(pub?.payoutMultiplier) >= 2) return b;
-  const minStake = pub?.rules?.minStake ?? 10;
-  return Math.min(b, Math.max(minStake, Math.floor(b / 2)));
+// Economy (iteration 4, F5): every round each player gets a fresh betting BUDGET (rules.budget, default 500pp).
+// The budget is not their score: the round's net profit is banked into a cumulative score (which can go negative).
+export const DEFAULT_BUDGET = 500;
+export function budgetOf(pub, fallback = DEFAULT_BUDGET) {
+  const b = Number(pub?.rules?.budget);
+  if (Number.isFinite(b) && b > 0) return Math.floor(b);
+  const f = Number(fallback);
+  return Number.isFinite(f) && f > 0 ? Math.floor(f) : DEFAULT_BUDGET;
 }
+// Most a player may stake this round (the halfway in-play bet counts within it). Kept as a function for older callers.
+export function stakeCap(pub, budget) { return Math.max(0, Math.floor(Number(budget ?? budgetOf(pub)) || 0)); }
 
-// playerId: who is betting (the Underdog Special belongs to one player only, at most one boosted pick)
-export function validateBets(pub, bets, bankroll, playerId = null) {
+// budget: this round's betting budget. playerId: who is betting (the Underdog Special belongs to one player only).
+export function validateBets(pub, bets, budget = budgetOf(pub), playerId = null) {
   if (!Array.isArray(bets)) return { ok: false, error: 'Bets must be a list.' };
   const rules = pub.rules || {};
   const minStake = rules.minStake ?? 10;
@@ -55,9 +59,8 @@ export function validateBets(pub, bets, bankroll, playerId = null) {
     } else return { ok: false, error: 'Unknown bet type.' };
     total += stake;
   }
-  if (total > bankroll) return { ok: false, error: `You only have ${bankroll} to bet.` };
-  const cap = stakeCap(pub, bankroll);
-  if (total > cap) return { ok: false, error: `Max ${cap} this round (half your bankroll) — save the big swing for the finale!` };
+  const cap = stakeCap(pub, budget);
+  if (total > cap) return { ok: false, error: `Your budget this round is ${cap}pp.` };
   return { ok: true, bets: out, total };
 }
 
@@ -67,7 +70,7 @@ export function fmtTime(s) {
 }
 
 // Minimal settlement from the race plan (fixture / dev mode only).
-export function fallbackSettle(round, betsByPlayer, bankrolls) {
+export function fallbackSettle(round, betsByPlayer, scores = {}) {
   const plan = round.racePlan;
   const pub = round.public;
   const byId = new Map(plan.runners.map((r) => [r.id, r]));
@@ -75,6 +78,7 @@ export function fallbackSettle(round, betsByPlayer, bankrolls) {
   const place = new Map(order.map((id, i) => [id, i + 1]));
   const finishOrder = order.map((id, i) => ({ runnerId: id, place: i + 1, officialS: byId.get(id).officialS, timeText: fmtTime(byId.get(id).officialS) }));
   const payouts = {};
+  const mult = Number(pub.payoutMultiplier) || 1;
   for (const [pid, bets] of Object.entries(betsByPlayer)) {
     let staked = 0, back = 0;
     const res = (bets || []).map((b) => {
@@ -83,23 +87,23 @@ export function fallbackSettle(round, betsByPlayer, bankrolls) {
       if (b.type === 'win' || b.type === 'special') {
         const r = pub.runners.find((x) => x.id === b.runnerId);
         won = place.get(b.runnerId) === 1;
-        returned = won ? Math.round(b.stake * (r?.odds?.win ?? 2)) : 0;
+        returned = won ? payReturn(b.stake, r?.odds?.win ?? 2, mult) : 0;
       } else if (b.type === 'inplay') {
         won = place.get(b.runnerId) === 1;
-        returned = won ? Math.round(b.stake * (Number(b.odds) || 2)) : 0;
+        returned = won ? payReturn(b.stake, Number(b.odds) || 2, mult) : 0;
       } else if (b.type === 'prop') { // fixture mode can't settle props: void, stake returned
         back += b.stake; return { ...b, won: false, returned: b.stake, void: true };
       } else {
         const m = (pub.matchups || []).find((x) => x.id === b.matchupId);
         const other = m.a === b.pick ? m.b : m.a;
         won = place.get(b.pick) < place.get(other);
-        returned = won ? Math.round(b.stake * (m.a === b.pick ? m.odds.a : m.odds.b)) : 0;
+        returned = won ? payReturn(b.stake, m.a === b.pick ? m.odds.a : m.odds.b, mult) : 0;
       }
       back += returned;
       return { ...b, won, returned };
     });
-    const bank = (bankrolls[pid] ?? 0) - staked + back;
-    payouts[pid] = { bets: res, net: back - staked, bankroll: bank };
+    const net = back - staked;
+    payouts[pid] = { bets: res, staked, net, score: (Number(scores?.[pid]) || 0) + net };
   }
   const winner = pub.runners.find((r) => r.id === order[0]);
   return {

@@ -4,6 +4,7 @@ import { fill, countWords } from './text.mjs';
 import { pickLineId, releaseLine, pickLine } from './memory.mjs';
 import { rankAt, broadcastToRace, distanceAt } from './raceplan.mjs';
 import { spokenOdds } from './model.mjs';
+import { provisionalNet } from './provisional.mjs';
 
 export const COMMENTATORS = {
   jeff: { id: 'jeff', name: 'Jeff Bellows', role: 'Overexcited veteran. Has commentated 900 egg-and-spoon races and treats each like an Olympic final.' },
@@ -846,7 +847,7 @@ export function raceCommentary(ctx) {
     }
   }
   if (extra.length) out = schedule([...cand, ...extra], dur, mem);
-  return out;
+  return capLines(out);
 }
 
 const HOT_SAID = {
@@ -942,7 +943,24 @@ const PZ = {
   pz_tip_wrong_pos: ['{who}\'s banker {x} is dead last. Awkward.', '{who} fancied {x}. {x} is last. Say nothing.'],
   pz_tip_right_pos: ['{who} called it: {x} is leading!', '{who} fancied {x}, and look at him go!'],
   pz_bio: ['{x}. {tag}', 'Classic {x}. {tag}', 'That\'s {x} for you. {tag}'],
+  // money-aware (provisional "if it ended now" net, from the real positions at that moment)
+  pz_money_down: ['{name}\'s {stake} is going backwards!', 'As it stands, {name} is {loss} down. The sofa has gone quiet.', 'That\'s {stake} of {name}\'s budget heading for the boating lake.',
+    'If it finished now, {name} would be {loss} down. Just saying.', '{name}\'s {stake} is currently doing the backstroke.'],
+  pz_money_up: ['As it stands, {name} banks {gain}!', '{name} is {gain} up if it finishes like this!', 'Kerching in the making: {name} is {gain} up as it stands!',
+    'Look at {name}\'s face! {gain} up, as things stand!', '{name}\'s money is behaving beautifully. {gain} up!'],
+  // rivalry on the sofa
+  pz_rival: ['{a}\'s {x} against {b}\'s {y}, and nothing in it!', 'Sofa wars: {a} on {x}, {b} on {y}, side by side!', 'It\'s {x} for {a}, {y} for {b}. Someone is sleeping on the sofa.',
+    '{x} and {y}, neck and neck. So are {a} and {b}, probably.'],
+  pz_same: ['{a} and {b} are both on {x}. United, for once.', 'The whole sofa is on {x}. Lovely. Until it isn\'t.'],
+  pz_lead: ['{lead} leads {trail} by {gap} on the night. Over to you, {trail}.', '{gap} between {lead} and {trail} on the night. The sofa is tense.'],
+  pz_streak_lose: ['{name} has lost {n} rounds running. This one, surely?', '{n} losing rounds in a row for {name}. Deep breaths.', '{name}: {n} rounds, {n} losses. Pam is taking notes.'],
+  pz_streak_win: ['{name} has won {n} rounds on the bounce. Unbearable, frankly.', '{n} winning rounds in a row for {name}. Somebody check that phone.'],
+  // the real Mark
+  pz_mark: ['Somewhere, the real Mark is checking his watch.', 'The real Mark would like it known he had a cold.', 'The real Mark has seen this before. He still flinched.',
+    'The real Mark is watching. He knows how this ends.', 'The real Mark, I\'m told, still blames the Hill.'],
+  pz_mark_player: ['{mark}, you ran this one. Any regrets? Don\'t answer.', '{mark} ran this race and still looks nervous.', '{mark}, did you really run it like that?'],
 };
+export const MAX_RACE_LINES = 12;
 const ORD = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'];
 
 export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
@@ -995,6 +1013,67 @@ export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
     const l = tag && pz('pz_bio', 'pam', { x: sn(id), tag });
     if (l) cand.push({ t: move.broadcastS + 5, l, kind: 'bio' });
   }
+  // 4. money: one "if it ended now" line per player, at halfway or on the run-in (real positions at that moment)
+  const budget = pub.rules?.budget ?? round.hidden?.settings?.roundBudget ?? 500;
+  const staked = (pid) => (betsByPlayer[pid] || []).reduce((a, b) => a + (b.stake || 0), 0);
+  const bettors = players.filter((p) => staked(p.id) > 0);
+  bettors.forEach((p, i) => {
+    const ts = [fsT, lapT].filter((t) => t != null && t + 6 < winT - 4);
+    if (!ts.length) return;
+    const t = ts[(i + (rng.chance(0.5) ? 1 : 0)) % ts.length] + 6 + i * 3;
+    const net = provisionalNet(pub, { [p.id]: betsByPlayer[p.id] }, at(t))[p.id] ?? 0;
+    const st = staked(p.id);
+    if (net < 0 && st >= Math.min(100, budget * 0.2)) { const l = pz('pz_money_down', 'pam', { name: p.name, stake: st, loss: -net }); if (l) cand.push({ t, l, kind: 'money', w: 3 }); }
+    else if (net > 0) { const l = pz('pz_money_up', 'jeff', { name: p.name, gain: net }); if (l) cand.push({ t, l, kind: 'money', w: 3 }); }
+  });
+  // 5. rivalry: the two players' main runners close together mid-race (or both on the same runner)
+  const main = (pid) => (betsByPlayer[pid] || []).filter((b) => ['win', 'special'].includes(b.type)).sort((a, b) => b.stake - a.stake)[0]?.runnerId;
+  if (players.length >= 2) {
+    const [A, Bp] = players, xa = main(A.id), xb = main(Bp.id);
+    const tR = plan.timeMap.durationS * 0.62;
+    if (xa && xb && tR < winT - 8) {
+      const o = at(tR);
+      if (xa === xb) { const l = pz('pz_same', 'pam', { a: A.name, b: Bp.name, x: sn(xa) }); if (l) cand.push({ t: tR, l, kind: 'rival', w: 2 }); }
+      else if (Math.abs(o.indexOf(xa) - o.indexOf(xb)) === 1) { const l = pz('pz_rival', 'jeff', { a: A.name, b: Bp.name, x: sn(xa), y: sn(xb) }); if (l) cand.push({ t: tR, l, kind: 'rival', w: 2.5 }); }
+    }
+  }
+  // 6. the night so far (session memory): a streak, or the scoreline between the two players
+  const log = Object.values(mem?.netLog || {}).filter((x) => x.n < (pub.number ?? 1e9)).sort((a, b) => a.n - b.n);
+  if (log.length >= 2) {
+    const tS = plan.timeMap.durationS * 0.26;
+    let streak = null;
+    for (const p of players) {
+      const nets = log.map((x) => x.nets[p.id]).filter((x) => x != null);
+      let k = 0; const sign = Math.sign(nets.at(-1) || 0);
+      for (let j = nets.length - 1; j >= 0 && sign !== 0 && Math.sign(nets[j]) === sign; j--) k++;
+      if (k >= 2 && (!streak || k > streak.k)) streak = { p, k, sign };
+    }
+    if (streak) { const l = pz(streak.sign < 0 ? 'pz_streak_lose' : 'pz_streak_win', streak.sign < 0 ? 'pam' : 'jeff', { name: streak.p.name, n: streak.k }); if (l) cand.push({ t: tS, l, kind: 'streak', w: 1.5 }); }
+    else if (players.length >= 2) {
+      const tot = players.map((p) => ({ p, s: log.reduce((a, x) => a + (x.nets[p.id] || 0), 0) })).sort((a, b) => b.s - a.s);
+      const gap = tot[0].s - tot[1].s;
+      if (gap >= 50) { const l = pz('pz_lead', 'pam', { lead: tot[0].p.name, trail: tot[1].p.name, gap }); if (l) cand.push({ t: tS, l, kind: 'streak', w: 1.2 }); }
+    }
+  }
+  // 7. the occasional jab at the real Mark (always a callout if he is on the sofa)
+  const markP = players.find((p) => p.id != null && p.id === round.hidden?.settings?.runnerPlayerId);
+  if (markP ? rng.chance(0.6) : rng.chance(0.3)) {
+    const l = markP ? pz('pz_mark_player', 'pam', { mark: markP.name }) : pz('pz_mark', 'pam', {});
+    if (l) cand.push({ t: plan.timeMap.durationS * 0.42, l, kind: 'mark', w: 1 });
+  }
+  // at most 4 personal lines a race: the most personal first
+  const KIND_W = { stake: 2, tip: 2.2, bio: 0.8 };
+  cand.sort((a, b) => (b.w ?? KIND_W[b.kind] ?? 1) - (a.w ?? KIND_W[a.kind] ?? 1));
+  const seenKind = new Map();
+  const pickC = [];
+  for (const c of cand) {
+    if (pickC.length >= 4) break;
+    if (c.kind === 'stake' && cand.some((x) => x.kind === 'money')) continue; // the money line says it better
+    const k = seenKind.get(c.kind) || 0;
+    if (k >= (c.kind === 'money' ? 2 : 1)) continue;
+    seenKind.set(c.kind, k + 1); pickC.push(c);
+  }
+  cand.length = 0; cand.push(...pickC);
   // merge: keep the must-say lines (priority 1, finishes); a personal line may replace an ordinary line nearby
   const out = (plan.commentary || []).map((x) => ({ ...x }));
   const protectedLine = (x) => x.priority === 1 || ['finish', 'final_stretch', 'diversion'].includes(x.eventRef?.type);
@@ -1015,5 +1094,24 @@ export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
     }
     void placed;
   }
-  return out.sort((a, b) => a.broadcastS - b.broadcastS);
+  return capLines(out.sort((a, b) => a.broadcastS - b.broadcastS));
+}
+
+// At most MAX_RACE_LINES lines a race: drop the least important ordinary lines first (never a must-say line),
+// taking any Pam reply to a dropped Jeff call with it.
+export function capLines(lines, max = MAX_RACE_LINES) {
+  const out = [...lines];
+  const must = (x) => x.priority === 1 || ['finish', 'final_stretch'].includes(x.eventRef?.type);
+  while (out.length > max) {
+    const cands = out.filter((x) => !must(x));
+    if (!cands.length) break;
+    const rank = (x) => (x.personal ? 1.5 : x.priority) + (x.speaker === 'pam' ? 0.3 : 0);
+    const worst = cands.reduce((a, b) => (rank(b) > rank(a) || (rank(b) === rank(a) && b.broadcastS > a.broadcastS) ? b : a));
+    out.splice(out.indexOf(worst), 1);
+    if (worst.speaker === 'jeff' && worst.eventRef) {
+      const k = out.findIndex((z) => z.speaker === 'pam' && !must(z) && z.eventRef && z.eventRef.type === worst.eventRef.type && z.eventRef.raceS === worst.eventRef.raceS);
+      if (k >= 0) out.splice(k, 1);
+    }
+  }
+  return out;
 }

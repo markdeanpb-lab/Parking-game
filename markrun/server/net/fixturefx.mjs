@@ -4,12 +4,23 @@ import { broadcastToRace, distanceAt, timeAtDistance } from '../game/raceplan.mj
 
 export function decorateFixture(r, { players, roundNumber, settings }) {
   const pub = r.public;
-  pub.theme = { key: 'fixture', label: 'The Placeholder Cup', blurb: 'A development fixture: real race, made-up everything else.' };
+  // round 2 is The Funfair Stakes (so the side-bet flow is exercised); otherwise a plain placeholder theme
+  const funfair = roundNumber === 2;
+  pub.theme = funfair
+    ? { key: 'funfair', label: 'The Funfair Stakes', blurb: 'The fair is in town. Some of these runners will be taking a detour.',
+      explainer: ['Bank-holiday weekend: the course went round the fairground.', 'Diverted runners lose time to the rides.', 'Side bet tonight: will anyone visit the funfair?'],
+      visual: { season: 'summer', weather: 'sun', time: 'morning' } }
+    : { key: 'fixture', label: 'The Placeholder Cup', blurb: 'A development fixture: real race, made-up everything else.',
+      explainer: ['Every runner is a real Mark from a real Saturday.', 'Clues are placeholders in fixture mode.'],
+      visual: { season: 'autumn', weather: 'clear', time: 'morning' } };
   pub.payoutMultiplier = roundNumber >= (settings?.rounds || settings?.roundsPerGame || 99) ? 2 : 1;
-  pub.props = [
-    { id: 'pr1', text: 'Will the winner beat 21 minutes?', odds: { yes: 1.8, no: 2.0, displayYes: '4/5', displayNo: 'evens' } },
-    { id: 'pr2', text: 'Will the lead change in the last kilometre?', odds: { yes: 3.0, no: 1.4, displayYes: '2/1', displayNo: '2/5' } },
-  ];
+  pub.rules = { ...(pub.rules || {}), budget: Number(settings?.budget ?? settings?.roundBudget) || 500 };
+  const byOdds = [...pub.runners].sort((a, b) => a.odds.win - b.odds.win);
+  byOdds.forEach((x, i) => { x.rank = i + 1; });
+  pub.matchups = (pub.matchups || []).slice(0, 1).map((m) => ({ ...m,
+    clueA: pub.runners.find((x) => x.id === m.a)?.publicClue?.text || '', clueB: pub.runners.find((x) => x.id === m.b)?.publicClue?.text || '' }));
+  if (funfair) pub.props = [{ id: 'pr1', text: 'Will anyone visit the funfair?', odds: { yes: 1.8, no: 2.0, displayYes: '4/5', displayNo: 'evens' } }];
+  else delete pub.props;
   for (const p of players) {
     const list = r.private[p.id] || [];
     const hotIdx = [roundNumber % list.length];
@@ -36,11 +47,11 @@ export function fixtureInPlayMarket(round) {
   return { atM: 2500, standings, odds };
 }
 
-export function fixtureBetRevealOrder(round, betsByPlayer, bankrolls, players) {
+export function fixtureBetRevealOrder(round, betsByPlayer, budgets, players) {
   const name = (id) => players.find((p) => p.id === id)?.name || id;
   const nick = (id) => round.public.runners.find((x) => x.id === id)?.nickname || id;
   const all = [];
-  for (const [pid, bets] of Object.entries(betsByPlayer)) for (const bet of bets || []) all.push({ playerId: pid, bet, rel: bet.stake / Math.max(1, bankrolls[pid] || 1) });
+  for (const [pid, bets] of Object.entries(betsByPlayer)) for (const bet of bets || []) all.push({ playerId: pid, bet, rel: bet.stake / Math.max(1, budgets[pid] || 1) });
   all.sort((a, b) => a.rel - b.rel);
   return all.map(({ playerId, bet }, i) => ({
     playerId, bet,

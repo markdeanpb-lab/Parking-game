@@ -27,7 +27,36 @@ export const FKEYS = Object.keys(FEATURES);
 
 // Odds use the training-load features only (the only ones with out-of-fold predictive power inside a banded field).
 export const ODDS_FEATURES = ['vol28', 'vol7', 'long14', 'hard', 'rpw', 'form'];
-export const MODEL_DEFAULTS = { lambda: 50, sigma: 14.5, privateWeight: 0.5, margin: 0.01 };
+// sigma: spread of the house's race model (s). privateWeight: how much the house hears of gossip clues (hot tips: never).
+// supScale: fields in play are curated (form broadly holds), so a field superlative bites harder than on random synthetic
+// fields; a single constant factor, calibrated with tools/simulate.mjs, never this round's result. margin: bookie's edge.
+// supBottomX: "bottom" superlatives (quietest month, fewest runs, worst form) are even more telling than "top" ones.
+export const MODEL_DEFAULTS = { lambda: 50, sigma: 17, privateWeight: 0.95, supScale: 2.4, supBottomX: 2, margin: 0.045 };
+
+// Field superlatives (the DECISIVE clues): "busiest month in this field", "fewest runs here"... A superlative only counts
+// with a clear margin over the next runner. The house prices each one by its measured average effect (seconds vs the
+// field mean) on synthetic banded fields, out-of-fold like the regression, so a superlative never encodes its own result.
+export const SUPERLATIVES = {
+  field_km: { fn: (f) => f.km_28d ?? null, gap: 12, ratio: 1.12 },
+  field_runs: { fn: (f) => (f.runs_per_week_4w ? sum(f.runs_per_week_4w) : null), gap: 3, ratio: 1.2 },
+  field_long: { fn: (f) => f.longest_run_14d?.km ?? 0, gap: 4, ratio: 1.3 },
+  field_form: { fn: (f) => (f.recent_finsbury_form?.length ? -med(f.recent_finsbury_form) : null), gap: 25, ratio: 1 },
+};
+// -> 'top' | 'bottom' | null for runner `facts` within `fieldFacts` (array incl. itself)
+export function superlative(kind, facts, fieldFacts) {
+  const S = SUPERLATIVES[kind];
+  const vals = fieldFacts.map(S.fn);
+  if (vals.some((v) => v == null)) return null;
+  const me = S.fn(facts);
+  let seen = false;
+  const others = fieldFacts.filter((f) => (f === facts && !seen ? (seen = true, false) : true)).map(S.fn);
+  const hi = Math.max(...others), lo = Math.min(...others);
+  const ok = (a, b) => a - b >= S.gap && (S.ratio === 1 || (b > 0 ? a >= b * S.ratio : a > 0));
+  if (ok(me, hi)) return 'top';
+  if (ok(lo, me)) return 'bottom';
+  return null;
+}
+export const supKey = (kind, side) => `sup:${kind}_${side}`;
 
 const modelCache = new WeakMap();
 
@@ -39,7 +68,8 @@ export function getModel(hist, opts = {}) {
   const data = loadData(hist);
   const lambda = opts.lambda ?? MODEL_DEFAULTS.lambda;
   const fkeys = opts.features ?? ODDS_FEATURES;
-  const ck = `${lambda}|${fkeys.join(',')}`;
+  const supScale = opts.supScale ?? MODEL_DEFAULTS.supScale, supBottomX = opts.supBottomX ?? MODEL_DEFAULTS.supBottomX;
+  const ck = `${lambda}|${fkeys.join(',')}|${supScale}|${supBottomX}`;
   if (!modelCache.has(data)) modelCache.set(data, new Map());
   if (modelCache.get(data).has(ck)) return modelCache.get(data).get(ck);
   const FK = fkeys;
@@ -75,6 +105,23 @@ export function getModel(hist, opts = {}) {
   };
   const betaFold = [0, 1, 2, 3, 4].map((k) => fitFields(fields.filter((f) => f.every((i) => fold[i] !== k))));
   const betaFull = fitFields(fields);
+  // superlative effects: mean (time - field mean) of the runner holding it, shrunk towards 0 for small samples
+  const supFit = (fs) => {
+    const acc = {};
+    for (const f of fs) {
+      const mt = f.reduce((s2, i) => s2 + main[i].officialS, 0) / f.length;
+      const ff = f.map((i) => main[i].facts);
+      for (const kind of Object.keys(SUPERLATIVES)) f.forEach((i, j) => {
+        const side = superlative(kind, ff[j], ff);
+        if (!side) return;
+        const a = (acc[supKey(kind, side)] ||= { n: 0, s: 0 });
+        a.n++; a.s += main[i].officialS - mt;
+      });
+    }
+    return Object.fromEntries(Object.entries(acc).map(([k, a]) => [k, supScale * (k.endsWith('_bottom') ? supBottomX : 1) * a.s / (a.n + 40)])); // shrunk for small samples
+  };
+  const supFold = [0, 1, 2, 3, 4].map((k) => supFit(fields.filter((f) => f.every((i) => fold[i] !== k))));
+  const supFull = supFit(fields);
   const ym = main.reduce((s, p) => s + p.officialS, 0) / main.length;
   const perRun = new Map();
   const mainIdx = new Map(main.map((p, i) => [p.date, i]));
@@ -82,9 +129,10 @@ export function getModel(hist, opts = {}) {
     const i = mainIdx.get(p.date);
     const beta = i != null ? betaFold[fold[i]] : betaFull; // out-of-fold for every main run
     const z = i != null ? Zm[i] : zOf(p);
-    perRun.set(p.date, { ym, contrib: Object.fromEntries(FK.map((k, q) => [k, beta[q] * z[q]])), z: Object.fromEntries(FK.map((k, q) => [k, z[q]])) });
+    const sup = i != null ? supFold[fold[i]] : supFull;
+    perRun.set(p.date, { ym, contrib: { ...Object.fromEntries(FK.map((k, q) => [k, beta[q] * z[q]])), ...sup }, z: Object.fromEntries(FK.map((k, q) => [k, z[q]])) });
   }
-  const model = { lambda, features: FK, full: { ym, beta: Object.fromEntries(FK.map((k, q) => [k, betaFull[q]])) }, perRun, mu, sd, nFields: fields.length };
+  const model = { lambda, features: FK, full: { ym, beta: Object.fromEntries(FK.map((k, q) => [k, betaFull[q]])), sup: supFull }, perRun, mu, sd, nFields: fields.length };
   modelCache.get(data).set(ck, model);
   return model;
 }

@@ -79,18 +79,29 @@ export function sessionSuperlatives(history, players) {
   try { return game.sessionSuperlatives(history, players); } catch (e) { console.warn('[markrun] sessionSuperlatives failed:', e.message); return undefined; }
 }
 
+// Presenters (iteration 4; optional exports): the news-desk cold open and the theme announcement.
+export function newsDeskScript(players, settings) {
+  if (!hasExport('newsDeskScript')) return undefined;
+  try { return game.newsDeskScript(players, settings); } catch (e) { console.warn('[markrun] newsDeskScript failed:', e.message); return undefined; }
+}
+export function themeAnnouncement(theme) {
+  if (!hasExport('themeAnnouncement')) return undefined;
+  try { return game.themeAnnouncement(theme); } catch (e) { console.warn('[markrun] themeAnnouncement failed:', e.message); return undefined; }
+}
+
 export function betReactionLines(round, betsByPlayer, players) {
   if (!game || round?.source !== 'game' || typeof game.betReactionLines !== 'function') return [];
   try { return game.betReactionLines(round, betsByPlayer, players) || []; } catch (e) { console.warn('[markrun] betReactionLines failed:', e.message); return []; }
 }
 
-export async function settleRound(round, betsByPlayer, bankrolls) {
+// scores: each player's cumulative score before this round (the payouts carry { net, score }).
+export async function settleRound(round, betsByPlayer, scores) {
   const g = await loadGame();
   let res = null;
   if (g && round.source === 'game' && typeof g.settleRound === 'function') {
-    try { res = await g.settleRound(round, betsByPlayer, bankrolls); } catch (e) { console.error('[markrun] settleRound failed - using fallback settlement:', e.stack || e.message); }
+    try { res = await g.settleRound(round, betsByPlayer, scores); } catch (e) { console.error('[markrun] settleRound failed - using fallback settlement:', e.stack || e.message); }
   }
-  const fb = fallbackSettle(round, betsByPlayer, bankrolls);
+  const fb = fallbackSettle(round, betsByPlayer, scores);
   if (!res) return fb;
   // defensive normalisation: never let a missing field break the show
   res.finishOrder ||= fb.finishOrder;
@@ -103,7 +114,7 @@ export async function settleRound(round, betsByPlayer, bankrolls) {
   res.payouts ||= {};
   for (const pid of Object.keys(betsByPlayer)) {
     const p = res.payouts[pid];
-    if (!p || typeof p.bankroll !== 'number' || !Number.isFinite(p.bankroll)) res.payouts[pid] = fb.payouts[pid];
+    if (!p || !Number.isFinite(Number(p.net))) res.payouts[pid] = fb.payouts[pid];
   }
   return res;
 }

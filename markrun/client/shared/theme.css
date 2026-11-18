@@ -203,3 +203,14 @@ button { font: inherit; color: inherit; }
 .cquote b { font-style: normal; font-family: var(--font-display); font-weight: 400; font-size: .72em; letter-spacing: .05em; padding: 0 6px; margin-right: 6px; border-radius: 6px; border: 2px solid var(--ink); vertical-align: .12em; }
 .cquote.jeff b { background: var(--sun); }
 .cquote.pam b { background: var(--pink); color: #fff; }
+
+/* Odds for non-experts (iteration 4): rank chip + plain money line ("50pp wins 200pp"), fraction small */
+.rank { display: inline-block; font-family: var(--font-display); font-weight: 400; letter-spacing: .03em; line-height: 1; white-space: nowrap;
+  padding: .18em .6em .22em; border: 3px solid var(--ink); border-radius: 10px; background: #fff; color: var(--ink); transform: skewX(-8deg); box-shadow: 0 3px 0 var(--ink); }
+.rank.fav { background: var(--sun); }
+.rank.out { background: var(--grape); color: #fff; }
+.rank.mid { background: #e9f1ff; }
+.wins-line { font-family: var(--font-display); font-weight: 400; white-space: nowrap; }
+.wins-line b { font-weight: 400; }
+.wins-line b.w { color: var(--grass-deep); }
+.wins-line .frac { font-family: var(--font-body); font-weight: 800; font-size: .62em; opacity: .7; letter-spacing: .02em; }

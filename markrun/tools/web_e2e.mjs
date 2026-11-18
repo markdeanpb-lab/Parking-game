@@ -119,7 +119,7 @@ async function waitPhase(want, timeout = 120000) {
     await sleep(150);
   }
 }
-const snapshot = () => host(() => { const s = globalThis.__markrunHost.game.s; return { phase: s.phase, round: s.roundNumber, roundId: s.round?.public?.roundId, source: s.round?.source, bank: s.players.map((p) => [p.name, p.bankroll]), locked: { ...s.locked }, revealed: s.revealed, conn: s.players.map((p) => globalThis.__markrunHost.game.isConnected(p.id)) }; });
+const snapshot = () => host(() => { const s = globalThis.__markrunHost.game.s; return { phase: s.phase, round: s.roundNumber, roundId: s.round?.public?.roundId, source: s.round?.source, bank: s.players.map((p) => [p.name, p.score]), locked: { ...s.locked }, revealed: s.revealed, conn: s.players.map((p) => globalThis.__markrunHost.game.isConnected(p.id)) }; });
 async function waitConnected(n = 2, timeout = 45000) {
   const t0 = Date.now();
   for (;;) {
@@ -160,6 +160,8 @@ try {
   const dataTxt = await tv.$eval('#tvmodal .web-data', (e) => e.textContent);
   if (!/Data last updated: \d/.test(dataTxt)) throw new Error(`no data date: ${dataTxt}`);
   pass(`Options: Refresh hidden; "${dataTxt.split('·')[0].trim()}"`);
+  await tv.click('#tvmodal [data-advanced]');
+  await tv.waitForSelector('#tvmodal [data-k="roundsPerGame"]');
   for (let i = 0; i < 12; i++) {
     const cur = await tv.$eval('#tvmodal [data-k="roundsPerGame"] .val', (e) => Number(e.textContent));
     if (cur === ROUNDS) break;
@@ -270,16 +272,17 @@ try {
   await waitPhase('INTRO');
   await sleep(600);
   await shot(tvPage, '09-tv-intro');
+  if (await tv.waitForSelector('.newsdesk', { timeout: 10000 }).catch(() => null)) { await sleep(1500); await shot(tvPage, '09b-tv-newsdesk'); pass('round 1 opens on the news desk'); }
   await pa.waitForSelector('.flow', { timeout: 30000 });
 
   for (let round = 1; round <= ROUNDS; round++) {
     await waitPhase('BETTING', 180000);
     const s0 = await snapshot();
     if (s0.source !== 'game') throw new Error(`round ${round} did not come from the real game module (source=${s0.source})`);
-    log(`round ${round}: source=${s0.source} bankrolls=${JSON.stringify(s0.bank)}`);
+    log(`round ${round}: source=${s0.source} scores=${JSON.stringify(s0.bank)}`);
     pa = await gameFrame(paPage); pb = await gameFrame(pbPage);
     await pa.waitForSelector('.strip .face', { timeout: 30000 });
-    await pa.click('.strip .face:first-child');
+    await pa.locator('.strip .face').first().click();
     await pa.click('[data-open="win"]');
     await pa.click('[data-add="clear"]');
     await pa.click('[data-add="50"]');
@@ -326,7 +329,7 @@ try {
     }
 
     await pb.waitForSelector('.strip .face', { timeout: 30000 });
-    await pb.click('.strip .face:nth-child(3)');
+    await pb.locator('.strip .face').nth(2).click();
     await pb.click('[data-open="win"]');
     await pb.click('[data-add="max"]');
     await pb.click('[data-tray="ok"]');
@@ -391,7 +394,7 @@ try {
     await waitPhase('SCOREBOARD', 180000);
     await sleep(800);
     if (round === 1) { await shot(tvPage, '21-tv-scoreboard'); await shot(paPage, '22-phoneA-scoreboard'); }
-    pass(`round ${round}: scoreboard (bankrolls ${JSON.stringify((await snapshot()).bank)})`);
+    pass(`round ${round}: scoreboard (scores ${JSON.stringify((await snapshot()).bank)})`);
 
     if (round === 1) { // the whole itch page reloads on the TV: launcher -> "Resume the TV" -> same room, same game
       const before = await snapshot();

@@ -3,7 +3,7 @@
 // Strava titles/descriptions (race names are reduced to "a half marathon" etc.). Funfair diversions are never hinted.
 // Each clue declares which odds-model features it reveals (`features`), so the house can only price what players see.
 import { fill, km, words, raceType, isRaceName, isIntervalName, aOrAn, aKm, cap } from './text.mjs';
-import { contribution } from './model.mjs';
+import { contribution, superlative, supKey } from './model.mjs';
 import { headlineFor, kickerFrom, wc, MAX_KICK, joinClue } from './headlines.mjs';
 
 const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
@@ -356,11 +356,47 @@ G.cross = ({ f, rng }) => {
   return [{ cat: 'cross', family: 'fluff', features: [], text: fill(rng.pick(T), v), said: 'had been cross-training', interest: 0.45, factKeys: ['cross_training_7d'] }];
 };
 
+// ---------- DECISIVE clues: true field-relative superlatives about THIS field (one or two per round) ----------
+// Training volume, run frequency and recent form are the strongest pre-race signals in the archive, so saying "most of
+// anyone here" out loud is a genuinely strong, true steer. Issued only with a clear margin over the next runner
+// (model.mjs SUPERLATIVES), and priced by the house at its measured, out-of-fold average effect (features: sup:*).
+const DECISIVE = {
+  field_km: {
+    head: { top: (f) => `Busiest month in this field: ${km(f.km_28d)} km`, bottom: (f) => `Quietest month in this field: ${km(f.km_28d)} km` },
+    kick: { top: ['Nobody here has done more homework.', 'The engine room of this lot.', 'More miles than anyone else here.', 'The legs have been to work.'],
+      bottom: ['Every rival has done more.', 'Lightest training of the five.', 'The trainers have been resting.', 'Fresh legs. Very fresh. Suspiciously fresh.'] },
+    said: { top: 'had done more training than anyone in the field', bottom: 'had done the least training in the field' }, keys: ['km_28d'] },
+  field_runs: {
+    head: { top: (f) => `Most runs here: ${sum(f.runs_per_week_4w)} in four weeks`, bottom: (f) => `Fewest runs here: ${sum(f.runs_per_week_4w)} in four weeks` },
+    kick: { top: ['Out the door more than anyone.', 'A creature of habit. A quick one?', 'Nobody here has turned up more.'],
+      bottom: ['Everyone else got out more.', 'The hallway trainers gathered dust.', 'A part-timer among keen beans.'] },
+    said: { top: 'had run more often than anyone in the field', bottom: 'had run less often than anyone in the field' }, keys: ['runs_per_week_4w'] },
+  field_form: {
+    head: { top: () => 'Clearly the best recent form here', bottom: () => 'Clearly the worst recent form here' },
+    kick: { top: ['The one they all have to catch.', 'Arrives in the form of his life. Lately.', 'Everyone else has been slower lately.'],
+      bottom: ['Everyone else has been quicker lately.', 'The form book is not his friend.', 'Lately he has been the slowcoach.'] },
+    said: { top: 'came in with clearly the best form in the field', bottom: 'came in with clearly the worst form in the field' }, keys: ['recent_finsbury_form'] },
+  field_long: {
+    head: { bottom: (f) => `Shortest long run here: ${km(f.longest_run_14d?.km ?? 0)} km` },
+    kick: { bottom: ['Every rival has gone further lately.', 'No endurance in the bank, then.', 'The others have all gone long.'] },
+    said: { bottom: 'had the shortest long run in the field' }, keys: ['longest_run_14d'] },
+};
+for (const [kind, D] of Object.entries(DECISIVE)) {
+  G[kind] = ({ p, field, rng }) => {
+    const side = superlative(kind, p.facts, field.map((q) => q.facts));
+    if (!side || !D.head[side]) return [];
+    const head = D.head[side](p.facts);
+    return [{ cat: kind, family: 'fitness', features: [supKey(kind, side)], head, decisive: true, side, text: `${head}. ${rng.pick(D.kick[side])}`,
+      said: D.said[side], interest: 1, factKeys: D.keys }];
+  };
+}
+
 export const CATEGORIES = Object.keys(G);
 export const CATEGORY_LABEL = {
   week_km: 'Training', week_rel: 'Training', month_km: 'Training', consistency: 'Habits', long_run: 'Long run', hard_session: 'Hard yards',
   form: 'Form', rest: 'Rest', day_before: 'Day before', warmup: 'Warm-up', temp: 'Weather', wind: 'Weather', damp: 'Weather',
   race_soon: 'Race diary', race_recent: 'Race diary', block: 'Race diary', cross: 'Cross-training',
+  field_km: 'Key clue', field_runs: 'Key clue', field_form: 'Key clue', field_long: 'Key clue',
 };
 
 export const skeleton = (t) => t.replace(/-?\d+(\.\d+)?/g, '#').replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/gi, '#');
@@ -406,7 +442,7 @@ export const splitFact = (t) => { const m = t.match(/^(.+?[.!?])\s+(.+)$/); retu
 // ---------- clue styles: hedged "…or …?", plain fact + punchline, or a confident tipster opinion from Jeff or Pam ----------
 const GROUP = { week_km: 'training', week_rel: 'training', month_km: 'training', consistency: 'training', long_run: 'training', hard_session: 'training',
   form: 'form', warmup: 'prep', day_before: 'prep', rest: 'prep', temp: 'weather', wind: 'weather', damp: 'weather',
-  race_soon: 'diary', race_recent: 'diary', block: 'diary', cross: 'cross' };
+  race_soon: 'diary', race_recent: 'diary', block: 'diary', cross: 'cross', field_km: 'training', field_runs: 'training', field_form: 'form', field_long: 'training' };
 const OPINIONS = {
   training: {
     pos: ['He\'ll fly round. Back him.', 'Engine like a diesel lorry. Lump on.', 'That\'s a man in form. Easy money.', 'Trust the process. He\'s the one.', 'Fit as a flea. Back him.', 'The work is done. Now he collects.'],
@@ -432,9 +468,11 @@ const VOICE = { // openers are short so opener + quote fits the 10-word kicker
   pam: { pos: ['Pam\'s quiet tip:', 'Pam, unusually, is keen:', 'Pam\'s sneaky fancy:', 'Pam, reluctantly:'], neg: ['Pam won\'t touch him:', 'Pam\'s verdict:', 'Pam is unconvinced:', 'Pam, with a sigh:'] },
 };
 
-// Give every assigned clue a style, balancing roughly thirds across the round, never repeating a wording in the
-// round, and keeping a session cooldown on wordings used in the last few rounds.
-export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
+// Give every assigned clue a style. Target mix: plain fact + punchline (most), Jeff/Pam tipster opinions (about a third)
+// and the hedged "...or ...?" style only occasionally (about 10%): hedging every clue made betting feel like a coin toss.
+// Decisive clues are always plain facts. Never repeats a wording in the round; session cooldown on recent wordings.
+export const STYLE_SHARE = { fact: 0.56, tipster: 0.34, hedge: 0.10 };
+export function styleClues(assigned, rng, mem, roundNumber, pickOpinion, share = STYLE_SHARE) {
   const counts = { hedge: 0, fact: 0, tipster: 0 };
   const slotCounts = {};
   const usedIntros = new Set(); // tipster openers never repeat within a round (so never twice on one runner)
@@ -451,10 +489,13 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
       opts.push({ ...v, cool: cooling(v.skel) });
     }
     const tipSkel = `${skeleton(c.factSentence || splitFact(c.text).fact)}|tip`;
-    if (GROUP[c.cat] && !usedRound.has(tipSkel)) opts.push({ style: 'tipster', skel: tipSkel, cool: false });
+    if (GROUP[c.cat] && !c.decisive && !usedRound.has(tipSkel)) opts.push({ style: 'tipster', skel: tipSkel, cool: false });
+    if (c.decisive) { const f = opts.filter((o) => o.style === 'fact'); if (f.length) opts.splice(0, opts.length, ...f); }
     if (!opts.length) { usedRound.add(c.skel); continue; }
     const sc = (slotCounts[x.slot] ||= { hedge: 0, fact: 0, tipster: 0 });
-    const score = (o) => counts[o.style] + 1.2 * sc[o.style] + (o.cool ? 2.5 : 0) + rng.next() * 0.9;
+    // deficit scheduling: the style furthest below its target share goes next (plus a little noise and variety)
+    const done = counts.hedge + counts.fact + counts.tipster + 1;
+    const score = (o) => (counts[o.style] + 0.5) / done / share[o.style] + 0.35 * sc[o.style] + (o.cool ? 2.5 : 0) + rng.next() * 0.5;
     const o = opts.reduce((a, b) => (score(b) < score(a) ? b : a));
     counts[o.style]++; sc[o.style]++;
     usedRound.add(o.skel);
@@ -492,16 +533,38 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
 // Assign clues to slots: slots[0] = 'public', then one per player. Returns { [runnerId]: [{slot, clue}] }.
 export const DIR_MIN = 1.5;
 const PRICED = (model, c) => c.family === 'fitness' && c.features.some((k) => model.features.includes(k));
-export function assignClues(entries, slots, rng, model, { boost, publicPricedBonus } = {}) {
+const REDUNDANT = [['week_km', 'week_rel', 'month_km', 'field_km'], ['consistency', 'field_runs'], ['form', 'field_form'], ['long_run', 'field_long']];
+const redundant = (a, b) => REDUNDANT.some((g) => g.includes(a) && g.includes(b));
+export function assignClues(entries, slots, rng, model, { boost, publicPricedBonus, privateDecisiveSlot = null, privateStrength = 0.6, publicStrength = 0.35 } = {}) {
   // entries: [{ runnerId, perf, cands: {cat: clue} }]
   // 1. every candidate's lean in seconds (negative = sounds quicker), RELATIVE TO THIS FIELD: model contribution + hint,
   //    minus the field average for the same category. |dir| >= DIR_MIN counts as a directional clue.
+  //    Decisive (field-relative) clues exist for one runner only, so they are measured against the field's average
+  //    contribution of the same features instead.
   const raw = new Map();
   for (const e of entries) for (const c of Object.values(e.cands)) raw.set(c, contribution(model, e.perf.date, c.features) + (c.hint || 0));
   const byCat = {};
-  for (const [c, v] of raw) (byCat[c.cat] ||= []).push(v);
-  for (const [c, v] of raw) { const arr = byCat[c.cat]; c.dir = Math.round((v - arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10; c.rawSignal = v; }
+  for (const [c, v] of raw) if (!c.decisive) (byCat[c.cat] ||= []).push(v);
+  for (const [c, v] of raw) {
+    const base = c.decisive ? 0 : byCat[c.cat].reduce((a, b) => a + b, 0) / byCat[c.cat].length; // superlative effects are already field-relative
+    c.dir = Math.round((v - base) * 10) / 10; c.rawSignal = v;
+  }
   const isDir = (c) => Math.abs(c.dir ?? 0) >= DIR_MIN;
+  // 2. DECISIVE plan: exactly one field superlative goes public (the market prices it, so the favourite means something);
+  //    optionally a second goes to one player's private slot (an edge the bookie only half-hears). Any other superlatives
+  //    are withheld so a round never drowns in "most of anyone here".
+  const dec = entries.flatMap((e) => Object.values(e.cands).filter((c) => c.decisive && Math.abs(c.dir) >= DIR_MIN).map((c) => ({ e, c })));
+  const fixed = new Map(); // `${runnerId}|${slot}` -> clue
+  if (dec.length) {
+    // prefer a "top" superlative in public (a real favourite), sometimes the "bottom" one (a real outsider)
+    const pub = rng.weighted(dec, ({ c }) => (c.dir < 0 ? 6 : 1) * (0.5 + Math.min(24, Math.abs(c.dir)) / 12));
+    fixed.set(`${pub.e.runnerId}|0`, pub.c);
+    if (privateDecisiveSlot != null && slots.length > 1) {
+      const rest = dec.filter((x) => x.e !== pub.e);
+      if (rest.length) { const pv = rng.weighted(rest, ({ c }) => (c.dir < 0 ? 2 : 1) * (0.5 + Math.min(24, Math.abs(c.dir)) / 12)); fixed.set(`${pv.e.runnerId}|${privateDecisiveSlot}`, pv.c); }
+    }
+  }
+  const fixedSet = new Set(fixed.values());
   let best = null;
   for (let attempt = 0; attempt < 80; attempt++) {
     const usedSlotCat = slots.map(() => new Map());
@@ -511,21 +574,25 @@ export function assignClues(entries, slots, rng, model, { boost, publicPricedBon
     let score = 0, ok = true;
     for (const e of rng.shuffle(entries)) {
       const chosen = [];
-      const slotOrder = rng.shuffle(slots.map((_, i) => i));
+      const fixedHere = slots.map((_, i) => i).filter((i) => fixed.has(`${e.runnerId}|${i}`));
+      const slotOrder = [...fixedHere, ...rng.shuffle(slots.map((_, i) => i).filter((i) => !fixedHere.includes(i)))];
       for (let si = 0; si < slotOrder.length; si++) {
         const s = slotOrder[si];
         const remaining = slotOrder.length - si;
+        const fx = fixed.get(`${e.runnerId}|${s}`);
+        if (fx) { chosen.push({ slot: s, clue: fx }); usedSlotCat[s].set(fx.cat, 1); catCount.set(fx.cat, (catCount.get(fx.cat) || 0) + 1); famSlot[s][fx.family]++; score += 1; continue; }
         const hasFitness = chosen.some((c) => c.clue.family === 'fitness');
         const hasDir = chosen.some((c) => isDir(c.clue));
-        let opts = Object.values(e.cands).filter((c) => !chosen.some((x) => x.clue.cat === c.cat || (c.group && x.clue.group === c.group) || (c.cat === 'rest' && x.clue.cat === 'day_before') || (c.cat === 'day_before' && x.clue.cat === 'rest')));
+        let opts = Object.values(e.cands).filter((c) => (!c.decisive || fixedSet.has(c)) && !fixedSet.has(c) && !chosen.some((x) => x.clue.cat === c.cat || redundant(x.clue.cat, c.cat) || (c.group && x.clue.group === c.group) || (c.cat === 'rest' && x.clue.cat === 'day_before') || (c.cat === 'day_before' && x.clue.cat === 'rest')));
         // every runner gets a directional clue, and it goes in the PUBLIC slot (never replaced by a hot tip, seen by all)
         if (s === 0) { const d = opts.filter(isDir); if (d.length) opts = d; }
         else if (!hasDir && remaining === 1) { const d = opts.filter(isDir); if (d.length) opts = d; }
         else if (!hasFitness && remaining === 1) { const fo = opts.filter((c) => c.family === 'fitness'); if (fo.length) opts = fo; }
-        // same-family pairs (week_km + week_rel + month_km) are redundant on one runner
-        opts = opts.filter((c) => !(['week_km', 'week_rel', 'month_km'].includes(c.cat) && chosen.some((x) => ['week_km', 'week_rel', 'month_km'].includes(x.clue.cat))) || opts.length <= 1);
         if (!opts.length) { ok = false; break; }
+        // private clues are the stronger ones: private slots prefer big field-relative signals, the public slot modest ones
+        const strength = (c) => Math.min(15, Math.abs(c.dir ?? 0)) / 10;
         const sc = (c) => c.interest + rng.next() * 0.7 + (boost?.(e, c) ?? 0) + (s === 0 && PRICED(model, c) ? (publicPricedBonus ?? 0.45) : 0)
+          + (s === 0 ? -publicStrength * strength(c) : privateStrength * strength(c))
           - 1.3 * (usedSlotCat[s].get(c.cat) || 0)
           - 0.45 * (catCount.get(c.cat) || 0)
           - (famSlot[s][c.family] >= 3 ? 0.8 : 0)

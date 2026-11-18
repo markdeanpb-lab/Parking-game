@@ -14,11 +14,10 @@ export const FUNFAIR_STAKES_VISITOR_WIN = 0.41;
 // Base rates measured with tools/simulate.mjs (block "props"); constants, so a price never depends on this round's result.
 export const PROP_BASE = { photo: 0.2, latelead: 0.37, funfair_open: 0.18 };
 
-// At most one cheap side bet per round, and only where it makes sense:
-//  - The Funfair Stakes: "Will one of the funfair-goers win?"
-//  - "Will anyone visit the funfair?" only when a diversion run could be drawn this round (offered half the time then)
-//  - otherwise no side bet at all (props omitted)
-export function makeProps({ theme, perfs, plan, settings = {}, rng, divOpen = true }) {
+// Iteration 4: the side bet exists ONLY in The Funfair Stakes ("Will one of the funfair-goers win?").
+// Every other round is win bets + one head-to-head (props omitted). `divOpen` re-enables the old
+// "Will anyone visit the funfair?" bet for tools that still want it (round.mjs passes false).
+export function makeProps({ theme, perfs, plan, settings = {}, rng, divOpen = false }) {
   const margin = settings.margin ?? MODEL_DEFAULTS.margin;
   const mk = (id, text, p, outcome) => {
     const y = oddsFromProb(p, margin), n = oddsFromProb(1 - p, margin);
@@ -29,7 +28,7 @@ export function makeProps({ theme, perfs, plan, settings = {}, rng, divOpen = tr
     const visitors = new Set(plan.runners.filter((r) => r.diversions?.length).map((r) => r.id));
     prop = mk('funfair', 'Will one of the funfair-goers win?', FUNFAIR_STAKES_VISITOR_WIN, visitors.has(plan.finishOrder[0]) ? 'yes' : 'no');
   } else {
-    const r = rng ? rng.next() : 0;
+    const r = divOpen && rng ? rng.next() : 1;
     if (divOpen && r < (settings.funfairPropRate ?? 0.5)) {
       prop = mk('funfair', 'Will anyone visit the funfair?', settings.funfairPropBase ?? PROP_BASE.funfair_open, perfs.some((p) => p.diversions?.length) ? 'yes' : 'no');
     }
@@ -79,7 +78,7 @@ const RV = {
   rv_mid: ['{name} likes {a}. {stake} parkpounds of like.', '{stake} on {a} for {name}. Middle of the road. Very Volvo.', '{name} has {a} onside: {stake} at {odds}.', '{name} has {stake} on {a} at {odds}.', '{name} puts {stake} on {a}. A proper bet, that.', '{a} carries {stake} of {name}\'s parkpounds.', '{name} goes {stake} on {a}. Reasonable. Suspiciously reasonable.'],
   rv_fav: ['{name} goes with the crowd: {a}, {stake}.', 'Favourite backer {name}: {stake} on {a}. Nobody tell the romantics.', '{name} is with the favourite, {a}. {stake} parkpounds.', '{name} backs the jolly: {stake} on {a}.', '{stake} on the favourite {a}, from {name}. Safety first.'],
   rv_longshot: ['{name} is chasing a fairy tale: {stake} on {a} at {odds}.', '{odds} about {a}, and {name} is having some!', '{name} has {stake} on {a}, the {odds} outsider! Somebody knows something. Or nothing.', 'Look at this: {name} on {a} at {odds}! Dreamer!', '{name} wants the shock: {stake} on {a} at {odds}.'],
-  rv_allin: ['{name} has gone all in, nearly: {pct} percent on {a}!', 'Gulp. {name}, {pct} percent of the bankroll, {a}.', '{name} has put {pct} percent of the bankroll on {a}! Brave doesn\'t cover it.', '{pct} percent of everything {name} owns, on {a}. Hold onto something.', '{name}: {stake} on {a}. That\'s {pct} percent of the lot.'],
+  rv_allin: ['{name} has gone all in, nearly: {pct} percent of the budget on {a}!', 'Gulp. {name}, {pct} percent of the budget, {a}.', '{name} has put {pct} percent of this round\'s budget on {a}! Brave doesn\'t cover it.', '{stake} of {name}\'s {budget} on {a}. Hold onto something.', '{name}: {stake} on {a}. That\'s {pct} percent of the lot.'],
   rv_biggest: ['The headline bet: {name}, {stake} on {a}. Deep breaths.', 'And topping the bill: {stake} from {name} on {a}!', 'And the big one: {name}, {stake} on {a}!', 'Saving the biggest till last: {name} has {stake} on {a}!', 'Here it is. The serious money. {name}, {stake}, {a}!'],
   rv_clash: ['They\'ve BOTH backed {a}! {name} joins {other}. Shared joy, or shared blame.', '{name} is on {a} as well! Same runner as {other}. How romantic. How risky.', 'Snap! {name} has {a} too. {other} won\'t be pleased to share.'],
   rv_oppose: ['{name} has {a} to beat {b}. {other} has the opposite! Pistols at dawn.', 'Direct opposition! {name} backs {a} over {b}, against {other}.', 'Head to head, sofa to sofa: {name} says {a}, {other} says {b}.'],
@@ -94,7 +93,8 @@ const RV = {
 };
 const SPEAKER = { rv_special: 'jeff', rv_tiny: 'pam', rv_mid: 'jeff', rv_fav: 'pam', rv_longshot: 'jeff', rv_allin: 'jeff', rv_biggest: 'jeff', rv_clash: 'jeff', rv_oppose: 'jeff', rv_oppose_win: 'pam', rv_h2h: 'pam', rv_prop_yes: 'jeff', rv_prop_no: 'pam', rv_hot: 'pam', rv_none: 'pam', bet_closed: 'jeff' };
 
-export function betRevealOrder(round, betsByPlayer, bankrolls, players, { rng = makeRng(), mem = null, closing = false } = {}) {
+export function betRevealOrder(round, betsByPlayer, _legacy, players, { rng = makeRng(), mem = null, closing = false } = {}) {
+  const budget = Math.max(1, round.public?.rules?.budget ?? round.hidden?.settings?.roundBudget ?? 500);
   const pub = round.public;
   const R = new Map(pub.runners.map((r) => [r.id, r]));
   const fav = [...pub.runners].sort((a, b) => a.odds.win - b.odds.win)[0];
@@ -102,9 +102,8 @@ export function betRevealOrder(round, betsByPlayer, bankrolls, players, { rng = 
   const items = [];
   for (const p of players) {
     const bets = betsByPlayer[p.id] || [];
-    const bank = Math.max(1, bankrolls[p.id] ?? round.hidden?.settings?.startingBankroll ?? 1000);
     if (!bets.length) items.push({ playerId: p.id, bet: null, frac: -1 });
-    for (const b of bets) items.push({ playerId: p.id, bet: b, frac: b.stake / bank });
+    for (const b of bets) items.push({ playerId: p.id, bet: b, frac: b.stake / budget });
   }
   items.sort((a, b) => a.frac - b.frac);
   const out = [];
@@ -118,7 +117,7 @@ export function betRevealOrder(round, betsByPlayer, bankrolls, players, { rng = 
     if (!b) g = 'rv_none';
     else if (b.type === 'win' || b.type === 'inplay' || b.type === 'special') {
       const r = R.get(b.runnerId);
-      Object.assign(v, { a: r?.nickname, stake: b.stake, odds: spokenOdds(r?.odds?.display || 'evens'), pct: Math.round(it.frac * 100) });
+      Object.assign(v, { a: r?.nickname, stake: b.stake, budget, odds: spokenOdds(r?.odds?.display || 'evens'), pct: Math.round(it.frac * 100) });
       const others = (seenWin.get(b.runnerId) || []).filter((x) => x !== it.playerId);
       const opp = [...seenH2h.values()].find((h) => h.playerId !== it.playerId && h.against === b.runnerId);
       const hot = round.hidden?.clues?.[b.runnerId]?.private?.[it.playerId];
@@ -126,7 +125,7 @@ export function betRevealOrder(round, betsByPlayer, bankrolls, players, { rng = 
       else if (others.length) { g = 'rv_clash'; v.other = name(others[0]); }
       else if (opp) { g = 'rv_oppose_win'; v.other = name(opp.playerId); v.b = R.get(opp.pick)?.nickname; }
       else if (idx === lastIdx && it.frac >= 0.12 && items.length > 1) g = 'rv_biggest';
-      else if (it.frac >= 0.4) g = 'rv_allin';
+      else if (it.frac >= 0.8) g = 'rv_allin';
       else if (hot?.tier === 'hot' && hot.polarity > 0 && rng.chance(0.5)) g = 'rv_hot';
       else if ((r?.odds?.win ?? 0) >= 9) g = 'rv_longshot';
       else if (r?.id === fav.id) g = 'rv_fav';
@@ -156,7 +155,7 @@ export function betRevealOrder(round, betsByPlayer, bankrolls, players, { rng = 
 }
 
 // ---------- finale superlatives ----------
-// history: [{ number, round: { public, hidden }, bets, results, bankrolls }]
+// history: [{ number, round: { public, hidden }, bets, results }]; players: [{ id, name, score }] (score = banked profit)
 export function sessionSuperlatives(history, players) {
   const out = [];
   const name = (pid) => players.find((p) => p.id === pid)?.name ?? pid;
@@ -199,7 +198,8 @@ export function sessionSuperlatives(history, players) {
   if (funfair.visits) out.push({ title: 'Funfair Moments', text: funfair.wins ? `${funfair.visits} trips to the funfair tonight, and ${funfair.wins === 1 ? 'one of them still won' : `${funfair.wins} of them still won`}. Candyfloss: performance-enhancing.` : `${funfair.visits} trip${funfair.visits === 1 ? '' : 's'} to the funfair tonight. Not one of them won. Candyfloss is not a gel.` });
   const hh = Object.entries(hotHero).sort((a, b) => b[1] - a[1])[0];
   if (hh && hh[1] > 0) out.push({ title: 'Hot Tip Hero', playerId: hh[0], text: `${name(hh[0])} made ${hh[1]} parkpounds backing their hot tips. Insider trading, but legal.` });
-  const champ = [...players].sort((a, b) => (b.bankroll ?? 0) - (a.bankroll ?? 0))[0];
-  if (champ && players.length > 1) out.push({ title: 'Champion of the Sofa', playerId: champ.id, text: `${champ.name} finishes top with ${champ.bankroll} parkpounds.` });
+  const sc = (p) => p.score ?? p.bankroll ?? 0;
+  const champ = [...players].sort((a, b) => sc(b) - sc(a))[0];
+  if (champ && players.length > 1) out.push({ title: 'Champion of the Sofa', playerId: champ.id, text: sc(champ) >= 0 ? `${champ.name} finishes top with a score of ${sc(champ)} parkpounds.` : `${champ.name} finishes top on ${sc(champ)}. Top of a very short, very sad ladder.` });
   return out;
 }

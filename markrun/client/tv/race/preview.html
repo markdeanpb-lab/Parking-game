@@ -3,6 +3,9 @@
 <title>MARKRUN race preview</title>
 <link rel="stylesheet" href="/client/shared/theme.css">
 <style>
+  /* the shell serves fonts at /assets; the dev server serves the repo root */
+  @font-face{font-family:'Lilita One';src:url('/client/assets/fonts/LilitaOne-Regular.ttf') format('truetype');font-display:block}
+  @font-face{font-family:'Nunito';src:url('/client/assets/fonts/Nunito-Variable.ttf') format('truetype');font-weight:200 1000;font-display:block}
   html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;font-family:Nunito,sans-serif}
   #stage{position:absolute;inset:0}
   #sub{position:absolute;left:0;right:0;bottom:0;height:15%;display:flex;align-items:center;justify-content:center;color:#fff;font:700 2.2vw Nunito,sans-serif;text-shadow:0 2px 0 #000;pointer-events:none}

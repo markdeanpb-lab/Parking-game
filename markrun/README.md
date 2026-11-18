@@ -78,3 +78,13 @@ The whole game can also run in the browser: the TV page is the host, and the pho
 - `npm run audit` reports data coverage and quality.
 - `node client/tv/race/devserver.mjs` serves a standalone 3D race preview at `/client/tv/race/preview.html`.
 - Docs: `docs/CONTRACT.md` covers architecture and ownership, `docs/BRIEF.md` the art direction, and `docs/PROGRESS.md` the status record.
+
+## Rewriting the text
+Every line a player can see or hear (commentary, clues, nicknames, hot tips, quips, awards, TV and phone screens, the web launcher, the 3D banners) can be exported to one plain-text file, rewritten in any text editor, and put back into the code automatically.
+
+1. `node tools/text_export.mjs` writes **`content/MARKRUN_TEXT.txt`** (plus `content/text_index.json`, which the import needs; don't edit that one). The end of the output shows how many entries each section has. Add `--excluded` to also list text that was deliberately left out, and why.
+2. Edit the text lines in `MARKRUN_TEXT.txt`. The rules are at the top of the file: leave the `[ID]` lines alone, keep every `{placeholder}`, keep one entry per ID, and an empty line ends an entry.
+3. `node tools/text_import.mjs path/to/revised.txt` is a dry run. It lists every change and any problems: a dropped `{placeholder}`, a missing `||`, broken `<b>` tags, or an entry that is **STALE** because its source line changed after the export.
+4. `node tools/text_import.mjs path/to/revised.txt --apply` writes the changes. Each file is syntax-checked before it is written, and lines with problems are skipped. Then run `node tools/text_export.mjs` again (the changed lines get new IDs) and `npm test`. Tests that check exact wording may need updating too.
+
+The export only reads the code. What counts as player text, and which section each line goes in, is set in `tools/text_rules.mjs`. `tests/text-roundtrip.test.mjs` checks the round trip.

@@ -179,3 +179,49 @@ export function betWin(round, b) {
   const mult = Number(round?.payoutMultiplier) || 1;
   return Math.max(0, Math.round((b?.stake || 0) * (1 + mult * (dec - 1))) - (b?.stake || 0));
 }
+
+// ---------------------------------------------------------------------------------------------------
+// Odds for non-experts (iteration 4): a rank ("FAVOURITE" ... "OUTSIDER") and plain money ("50pp wins 200pp"),
+// with the fraction kept small. rank comes from the game module (runners[].rank); otherwise derived from the odds.
+export function runnerRank(round, r) {
+  if (!r) return 0;
+  if (Number.isFinite(r.rank)) return r.rank;
+  const list = [...(round?.runners || [])].sort((a, b) => (a.odds?.win ?? 99) - (b.odds?.win ?? 99));
+  const i = list.findIndex((x) => x.id === r.id);
+  return i < 0 ? 0 : 1 + list.findIndex((x) => (x.odds?.win ?? 99) === (r.odds?.win ?? 99));
+}
+export function rankLabel(rank, n = 5) {
+  if (!rank) return '';
+  if (rank === 1) return 'FAVOURITE';
+  if (rank >= n && n > 2) return 'OUTSIDER';
+  return `${rank}${ordinalSuffix(rank)} favourite`;
+}
+export function rankHtml(round, r, cls = '') {
+  const k = runnerRank(round, r);
+  const n = round?.runners?.length || 5;
+  if (!k) return '';
+  const kind = k === 1 ? 'fav' : k >= n && n > 2 ? 'out' : 'mid';
+  return `<span class="rank ${kind} ${cls}">${esc(rankLabel(k, n))}</span>`;
+}
+// "50pp wins 200pp" for a hypothetical bet (profit: the stake comes back on top). Includes the ×2 finale and boosts.
+export function winsText(round, bet) { return `${money(bet?.stake || 0)} wins ${money(betWin(round, bet))}`; }
+export function winsHtml(round, bet, { odds = true } = {}) {
+  const o = odds ? oddsText(round, bet) : '';
+  return `<span class="wins-line"><b>${money(bet?.stake || 0)}</b> wins <b class="w">${money(betWin(round, bet))}</b>${o ? ` <small class="frac">${esc(o)}</small>` : ''}</span>`;
+}
+export const EXAMPLE_STAKE = 50;
+export const exampleWin = (round, r, stake = EXAMPLE_STAKE) => ({ type: 'win', runnerId: r?.id, stake });
+
+// Theme icon (emoji) for the theme card / phone round card, from the theme key or its visual hints.
+export function themeIcon(theme) {
+  const k = String(theme?.key || '');
+  const map = { winter: '❄️', heat: '☀️', block: '🏋️', taper: '🏁', windy: '💨', rusty: '🔧', funfair: '🎡', wildcard: '🃏', band_fast: '⚡', band_mid: '⚖️', band_slow: '🐢', fixture: '🧪' };
+  if (map[k]) return map[k];
+  const w = theme?.visual?.weather;
+  return { rain: '🌧️', wind: '💨', fog: '🌫️', frost: '❄️', sun: '☀️' }[w] || (theme?.visual?.season === 'winter' ? '❄️' : '🏃');
+}
+// Clue-ish value (string or clue object) -> headline text (<= maxWords).
+export function clueHeadline(c, maxWords = 8) {
+  if (!c) return '';
+  return clueParts(typeof c === 'string' ? { text: c } : c, maxWords).headline;
+}

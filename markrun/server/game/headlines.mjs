@@ -11,6 +11,7 @@ const daysB = (d) => (d === 1 ? 'the day before' : `${words(d)} days before`);
 // cand: the generator candidate (cat, said, ...); f: facts of the run
 export function headlineFor(cand, f) {
   const c = cand.cat;
+  if (cand.head) return cand.head; // field-relative (decisive) clues build their headline from the field's facts
   if (c === 'week_km') return f.km_7d === 0 ? 'No running at all that week' : `${km(f.km_7d)} km in the week before`;
   if (c === 'week_rel') {
     const r = f.km_7d / f.baseline_weekly_km, pct = Math.round(Math.abs(r - 1) * 100 / 5) * 5;
@@ -109,7 +110,7 @@ const FALLBACK_KICK = {
   other: ['Make of that what you will.', 'Interesting. Or is it?'],
 };
 const GROUPS = { week_km: 'training', week_rel: 'training', month_km: 'training', consistency: 'training', long_run: 'training', hard_session: 'training', form: 'training',
-  temp: 'weather', wind: 'weather', damp: 'weather', warmup: 'prep', day_before: 'prep', rest: 'prep', race_soon: 'diary', race_recent: 'diary', block: 'diary' };
+  temp: 'weather', wind: 'weather', damp: 'weather', warmup: 'prep', day_before: 'prep', rest: 'prep', race_soon: 'diary', race_recent: 'diary', block: 'diary', field_km: 'training', field_runs: 'training' };
 
 // The joke part of a template = everything after its first sentence, trimmed to <= MAX_KICK words (whole sentences only).
 export function kickerFrom(text, cat, rng) {

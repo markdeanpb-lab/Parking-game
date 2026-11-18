@@ -1,8 +1,10 @@
 // MARKRUN phone controller: a click-through flow of single-purpose screens (no vertical scrolling).
-// Join -> lobby -> meet the field (one runner per screen) -> head-to-heads -> side bet -> review -> HOLD to lock ->
-// locked -> race (your runners live + reactions) -> halfway market -> results (one card per screen) -> standings.
+// Join -> lobby -> this round (theme + budget) -> meet the field (one runner per screen) -> head-to-head duel ->
+// funfair side bet (Funfair Stakes only) -> review -> HOLD to lock -> locked -> race (your runners live + reactions) ->
+// halfway market -> results (one card per screen) -> standings.
+// Economy: a fresh betting BUDGET every round ("Budget left" while betting); the round's net is banked into a SCORE.
 import { connect } from '../shared/net.js';
-import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betOdds, betRunnerId, oddsText, betOutcome, confetti, clueParts, betWin } from '../shared/ui.js';
+import { $, $$, esc, money, signedMoney, ordinalHtml, avatarHtml, runnerById, runnerShort, betLabel, betRunnerId, oddsText, betOutcome, confetti, clueParts, betWin, rankHtml, runnerRank, winsHtml, EXAMPLE_STAKE, themeIcon, clueHeadline } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createAudio } from '../shared/sfx.js';
 
@@ -11,6 +13,7 @@ window.addEventListener('pointerdown', () => { if (!audio.ready()) { audio.unloc
 
 const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '🐼', '🦖', '🐧', '🐝', '🦩', '🐶'];
 const AVATAR_COLOURS = ['#ff4d5a', '#ffb000', '#2ec27e', '#2f8cff', '#9b5cff', '#ff6fb5', '#13c4c4', '#ff7a1a'];
+const HURRY_S = 20; // soft bet timer: the "hurry up" nudge starts this many seconds before the slip is locked
 const store = {
   get(k, d = null) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
@@ -36,6 +39,7 @@ let profile = store.get('markrun.profile', { name: '', avatar: { emoji: AVATAR_E
 const vibrate = (p) => { try { navigator.vibrate?.(p); } catch { /* */ } };
 const portrait = (r, size) => runnerPortrait(r, { size, idSuffix: `p${Math.random().toString(36).slice(2, 6)}` });
 const nameOf = (r) => (r?.nickname && r.nickname.length <= 20 ? r.nickname : runnerShort(r));
+const scoreText = (n) => signedMoney(n || 0);
 
 const net = connect({
   role: 'phone',
@@ -75,20 +79,32 @@ function toast(msg, kind = '') {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// screen scaffold: [top bar] [progress dots] [main: one job] [actions in the thumb zone]
+// screen scaffold: [top bar] [progress strip] [main: one job] [actions in the thumb zone]
 function screen(top, main, actions, { dots = '', cls = '' } = {}) {
   return `<div class="scr ${cls}">${top}${dots}<div class="main">${main}</div><div class="acts">${actions}</div></div>`;
 }
+const bettingOpen = () => (S.phase === 'INTRO' || S.phase === 'BETTING') && !me.locked && !S.revealed;
+function secsLeft() { return S?.deadline ? Math.max(0, Math.ceil((S.deadline - net.serverNow()) / 1000)) : null; }
+function clockHtml() {
+  if (!S || S.phase !== 'BETTING' || S.revealed || !S.deadline || me?.locked) return '';
+  const s = secsLeft();
+  return `<span class="clock ${s <= HURRY_S ? 'hurry' : ''}" id="clock">⏱ ${s}s</span>`;
+}
+// Header: who you are + the ONE number that matters right now.
+//   betting -> budget left this round; race -> "if it ended now"; everywhere else -> your score.
 function topbar() {
   if (!me || !S) return '';
-  const betting = (S.phase === 'INTRO' || S.phase === 'BETTING') && !me.locked && !S.revealed;
-  const racing = S.phase === 'RACE';
-  const lockedIn = (S.phase === 'INTRO' || S.phase === 'BETTING') && (me.locked || S.revealed);
-  const inRound = betting || racing || lockedIn;
-  const leftNow = betting ? capOf() - staked() : inRound ? capOf() - (me.bets || []).reduce((a, b) => a + b.stake, 0) : me.bankroll;
-  const ph = S.round && S.phase !== 'LOBBY' ? `Round ${S.roundNumber}/${S.roundsPerGame}` : 'Lobby';
-  return `<div class="tb">${avatarHtml(me.avatar, 36)}<div class="tn"><b>${esc(me.name)}</b><small>${ph}${isFinale() && S.phase !== 'LOBBY' ? ' · ×2 FINALE' : ''}</small></div>
-    <div class="tm"><b class="num">${money(Math.max(0, leftNow))}</b><small>${inRound ? 'left to bet' : 'bankroll'}</small></div></div>`;
+  const inRound = S.round && S.phase !== 'LOBBY';
+  const ph = inRound ? `Round ${S.roundNumber}/${S.roundsPerGame}${isFinale() ? ' · ×2' : ''}` : 'Lobby';
+  let big, label, sub = ph;
+  if (bettingOpen()) { big = money(Math.max(0, left())); label = 'budget left'; }
+  else if (S.phase === 'RACE' && Number.isFinite(me.live?.ifNow)) {
+    big = signedMoney(me.live.ifNow); label = 'if it ended now';
+    sub = `${ph} · score ${scoreText(me.score)}`;
+  } else { big = scoreText(me.score); label = 'score'; }
+  const tone = label === 'budget left' ? '' : (label === 'if it ended now' ? me.live.ifNow : me.score) > 0 ? 'up' : (label === 'if it ended now' ? me.live.ifNow : me.score) < 0 ? 'down' : '';
+  return `<div class="tb">${avatarHtml(me.avatar, 36)}<div class="tn"><b>${esc(me.name)}</b><small>${esc(sub)}</small></div>${clockHtml()}
+    ${S.phase === 'LOBBY' ? '' : `<div class="tm ${tone}"><b class="num">${big}</b><small>${label}</small></div>`}</div>`;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -97,7 +113,7 @@ function onState() {
   const rid = S.round?.roundId || null;
   if (rid !== slipRound) {
     slipRound = rid;
-    step = 0; tray = null; resCard = 0;
+    step = 0; tray = null; resCard = 0; hurried = false;
     const local = rid ? store.get(`markrun.slip.${rid}`) : null;
     slip = Array.isArray(local) && local.length ? local : (me.bets || []).map((b) => ({ ...b }));
   }
@@ -128,6 +144,16 @@ function render() {
   if (ph === 'FINALE') return renderFinale(fresh);
   return undefined;
 }
+
+// soft bet timer: tick the clock in place; one buzz + toast when the hurry-up starts
+let hurried = false;
+setInterval(() => {
+  if (!S || !me || S.phase !== 'BETTING' || S.revealed || me.locked || !S.deadline) return;
+  const s = secsLeft();
+  const c = $('#clock');
+  if (c) { c.textContent = `⏱ ${s}s`; c.classList.toggle('hurry', s <= HURRY_S); }
+  if (s <= HURRY_S && s > 0 && !hurried) { hurried = true; vibrate([40, 60, 40]); toast(`Hurry up! ${s}s — your slip locks as it is`, 'red'); }
+}, 500);
 
 // ---------------------------------------------------------------------------------------------------
 // JOIN (only re-rendered when the lobby info changes, so typing isn't interrupted)
@@ -175,8 +201,9 @@ function renderLobby() {
   const mine = rp === me.id;
   const other = rp && !mine ? S.players.find((p) => p.id === rp) : null;
   const rows = S.players.map((p) => `<div class="pr">${avatarHtml(p.avatar, 30)}<span>${esc(p.name)}${p.id === me.id ? ' (you)' : ''}${rp === p.id ? ' 🏃' : ''}</span><b>${!p.connected ? '📵' : p.ready ? '✅' : '…'}</b></div>`).join('');
+  const budget = S.settings?.roundBudget ?? S.budget ?? 500;
   app.innerHTML = screen(topbar(), `<div class="hero">${avatarHtml(me.avatar, 96)}</div><h1 class="h">You're in!</h1>
-    <p class="sub">${money(me.bankroll)} of entirely fictional money.</p>
+    <p class="sub">${money(budget)} to bet every round. Winnings go on your score.</p>
     <button class="btn ${mine ? 'pink' : 'white'} block mid" id="markbtn">${mine ? "🏃 I'm Mark ✓" : other ? `🏃 ${esc(other.name)} is Mark` : "🏃 I'm Mark (the runner)"}</button>
     <div class="plist">${rows}</div>`,
   readyBtn(me.ready ? '✓ READY — waiting…' : "I'M READY ▶"));
@@ -191,15 +218,16 @@ function readyBtn(label) { return `<button class="btn ${me.ready ? 'white' : 'gr
 // BETTING FLOW
 const rules = () => ({ minStake: S.round?.rules?.minStake ?? 10, maxBets: S.round?.rules?.maxBetsPerPlayer ?? 3 });
 const staked = () => slip.reduce((a, b) => a + (b.stake || 0), 0);
-const capOf = () => (Number.isFinite(me?.stakeCap) ? me.stakeCap : me.bankroll); // 50% of bankroll, except the finale
+const budgetOf = () => (Number.isFinite(me?.budget) ? me.budget : Number.isFinite(S?.round?.rules?.budget) ? S.round.rules.budget : Number.isFinite(me?.stakeCap) ? me.stakeCap : 500);
 const isFinale = () => Number(S?.round?.payoutMultiplier) >= 2;
-const left = () => capOf() - staked();
+const left = () => budgetOf() - staked();
+const matchups = () => (S.round?.matchups || []).slice(0, 1); // ONE head-to-head per round
 function clampSlip() {
   if (!S?.round) { slip = []; return; }
   const { minStake, maxBets } = rules();
-  slip = slip.filter((b) => (b.type === 'win' ? runnerById(S.round, b.runnerId) : b.type === 'prop' ? S.round.props?.some((x) => x.id === b.propId) : S.round.matchups?.some((m) => m.id === b.matchupId))).slice(0, maxBets);
+  slip = slip.filter((b) => (b.type === 'win' ? runnerById(S.round, b.runnerId) : b.type === 'prop' ? S.round.props?.some((x) => x.id === b.propId) : matchups().some((m) => m.id === b.matchupId))).slice(0, maxBets);
   for (const b of slip) b.stake = Math.max(minStake, Math.floor(b.stake || minStake));
-  let over = staked() - capOf();
+  let over = staked() - budgetOf();
   for (let i = slip.length - 1; i >= 0 && over > 0; i--) {
     const can = slip[i].stake - minStake;
     const cut = Math.min(can, over);
@@ -219,23 +247,26 @@ const findBet = (kind, id) => slip.find((b) => b.type === kind && (kind === 'win
 function steps() {
   const r = S.round;
   return [
+    { kind: 'round' },
     ...[...r.runners].sort((a, b) => a.lane - b.lane).map((x) => ({ kind: 'runner', id: x.id })),
-    ...(r.matchups || []).map((m) => ({ kind: 'h2h', id: m.id })),
+    ...matchups().map((m) => ({ kind: 'h2h', id: m.id })),
     ...(r.props || []).map((p) => ({ kind: 'prop', id: p.id })),
     { kind: 'review' },
   ];
 }
+const RANK_SHORT = (round, r) => { const k = runnerRank(round, r); const n = round?.runners?.length || 5; return k === 1 ? 'FAV' : k >= n && n > 2 ? 'OUT' : k ? `${k}${['th', 'st', 'nd', 'rd'][k] || 'th'}` : ''; };
 // the field at a glance on every betting screen: tap a face to jump to that runner; shortcut to Review & lock
 function dotsHtml(list) {
   const faces = list.map((st, i) => {
     if (st.kind !== 'runner') return '';
     const r = runnerById(S.round, st.id);
     const bet = findBet('win', st.id);
-    return `<button class="face ${i === step ? 'on' : ''} ${bet ? 'bet' : ''}" data-go="${i}" aria-label="${esc(runnerShort(r))}"><span class="fp">${portrait(r, 34)}</span><span class="fo">${esc(r.odds?.display || '')}</span></button>`;
+    return `<button class="face ${i === step ? 'on' : ''} ${bet ? 'bet' : ''}" data-go="${i}" aria-label="${esc(runnerShort(r))}"><span class="fp">${portrait(r, 34)}</span><span class="fo">${RANK_SHORT(S.round, r)}</span></button>`;
   }).join('');
-  const others = list.map((st, i) => (st.kind === 'runner' || st.kind === 'review' ? '' : `<i class="${i === step ? 'on' : ''} ${findBet(st.kind, st.id) ? 'bet' : ''}" data-go="${i}"></i>`)).join('');
+  const others = list.map((st, i) => (st.kind === 'runner' || st.kind === 'review' || st.kind === 'round' ? '' : `<i class="${i === step ? 'on' : ''} ${findBet(st.kind, st.id) ? 'bet' : ''}" data-go="${i}"></i>`)).join('');
   const onReview = list[step]?.kind === 'review';
-  return `<div class="strip">${faces}${others ? `<span class="sdots">${others}</span>` : ''}${onReview ? '' : `<button class="rvbtn" data-go="${list.length - 1}">Review ›</button>`}</div>`;
+  const th = `<button class="tbtn ${step === 0 ? 'on' : ''}" data-go="0" aria-label="This round">${themeIcon(S.round.theme)}</button>`;
+  return `<div class="strip">${th}${faces}${others ? `<span class="sdots">${others}</span>` : ''}${onReview ? '' : `<button class="rvbtn" data-go="${list.length - 1}">Review ›</button>`}</div>`;
 }
 function clueBlock(c, icon, cls = '') {
   if (!c) return '';
@@ -244,47 +275,70 @@ function clueBlock(c, icon, cls = '') {
   return `<div class="clue ${cls}"><span class="ci">${icon}</span><div>${tag}<b>${esc(headline)}</b>${kicker ? `<small>${esc(kicker)}</small>` : ''}</div></div>`;
 }
 
+function roundCardHtml() {
+  const r = S.round;
+  const t = r.theme || {};
+  const ex = (Array.isArray(t.explainer) ? t.explainer : []).filter(Boolean).slice(0, 3);
+  return `<div class="kick">ROUND ${S.roundNumber} OF ${S.roundsPerGame}</div>
+    <div class="theme-card"><div class="ti">${themeIcon(t)}</div><div class="tl">${esc(t.label || r.title || '')}</div>${t.blurb ? `<div class="tb3">${esc(t.blurb)}</div>` : ''}
+      ${ex.length ? `<ul class="tex">${ex.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+    ${isFinale() ? '<div class="x2">🔥 FINAL ROUND: every win pays DOUBLE</div>' : ''}
+    <div class="budget-pill"><b>${money(budgetOf())}</b> to bet this round<small>winnings go on your score</small></div>`;
+}
+
 function renderFlow() {
   const list = steps();
   step = Math.max(0, Math.min(step, list.length - 1));
   const st = list[step];
   let main = '', acts = '';
   const navBack = step > 0 ? '<button class="btn white nav" data-nav="-1" aria-label="Back">‹</button>' : '';
-  if (st.kind === 'runner') {
+  if (st.kind === 'round') {
+    main = roundCardHtml();
+    acts = '<button class="btn blue grow" data-nav="1">Meet the runners ›</button>';
+  } else if (st.kind === 'runner') {
     const r = runnerById(S.round, st.id);
     const priv = (me.privateClues || []).filter((c) => c.runnerId === r.id);
     const bet = findBet('win', r.id);
     main = `<div class="rhead hero" style="--c1:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 140)}</div>
-        <div class="rn"><span class="lane">LANE ${r.lane}</span><b>${esc(nameOf(r))}</b><span class="odds num">${esc(r.odds?.display || '')}</span><span class="wins">50pp wins +${betWin(S.round, { type: 'win', runnerId: r.id, stake: 50 })}pp</span></div></div>
+        <div class="rn">${rankHtml(S.round, r)}<b>${esc(nameOf(r))}</b><span class="money">${winsHtml(S.round, { type: 'win', runnerId: r.id, stake: bet?.stake || EXAMPLE_STAKE })}</span></div></div>
       ${clueBlock(r.publicClue, '📺')}
       ${priv.map((c) => clueBlock(c, c.tier === 'hot' ? '🔥' : '🤫', c.tier === 'hot' ? 'hot' : 'secret')).join('')}
       ${bet ? `<div class="onit">✓ ${money(bet.stake)} on to win${bet.boost ? ' 🚀' : ''}</div>` : ''}
       ${mySpecial() && !slip.some((x) => x.boost) && !bet ? `<div class="special">🚀 <b>${esc(mySpecial().label || 'UNDERDOG SPECIAL')}</b> — ${esc(mySpecial().text || 'one win pick at boosted odds')}</div>` : ''}`;
     acts = tray ? trayHtml() : `${navBack}<button class="btn ${bet ? 'white' : 'yellow'} grow" data-open="win" data-id="${r.id}">${bet ? 'Change stake' : 'Back to win'}</button><button class="btn blue nav" data-nav="1" aria-label="Next">›</button>`;
   } else if (st.kind === 'h2h') {
-    const m = S.round.matchups.find((x) => x.id === st.id);
+    const m = matchups().find((x) => x.id === st.id);
     const a = runnerById(S.round, m.a), b = runnerById(S.round, m.b);
     const bet = findBet('h2h', m.id);
-    const side = (r, od) => `<button class="side ${bet?.pick === r.id ? 'on' : ''}" data-open="h2h" data-id="${m.id}" data-pick="${r.id}"><span class="rp">${portrait(r, 84)}</span><b>${esc(runnerShort(r))}</b><span class="num">${esc(od)}</span>${bet?.pick === r.id ? `<small>✓ ${money(bet.stake)}</small>` : ''}</button>`;
-    main = `<div class="kick">HEAD-TO-HEAD</div><h1 class="h">Who finishes ahead?</h1>
-      <div class="sides">${side(a, m.odds.displayA || `×${m.odds.a}`)}<span class="vs">VS</span>${side(b, m.odds.displayB || `×${m.odds.b}`)}</div>`;
-    acts = tray ? trayHtml() : `${navBack}<button class="btn white grow" data-nav="1">${bet ? 'Next ›' : 'Skip ›'}</button>`;
+    const side = (r, clue) => {
+      const on = bet?.pick === r.id;
+      const hyp = { type: 'h2h', matchupId: m.id, pick: r.id, stake: on ? bet.stake : EXAMPLE_STAKE };
+      return `<button class="side duel ${on ? 'on' : ''}" data-open="h2h" data-id="${m.id}" data-pick="${r.id}" style="--c1:${esc(r.colour.primary)}"><span class="rp">${portrait(r, 76)}</span><b>${esc(runnerShort(r))}</b>${rankHtml(S.round, r)}<span class="dm">${winsHtml(S.round, hyp)}</span>${clue ? `<span class="dc">“${esc(clue)}”</span>` : ''}${on ? `<small>✓ ${money(bet.stake)}</small>` : ''}</button>`;
+    };
+    const ca = clueHeadline(m.clueA) || clueHeadline(a.publicClue), cb = clueHeadline(m.clueB) || clueHeadline(b.publicClue);
+    main = `<div class="kick">⚔️ HEAD-TO-HEAD</div><h1 class="h duel-h">WHO WINS THIS SCRAP?</h1>
+      <div class="sides">${side(a, ca)}<span class="vs">VS</span>${side(b, cb)}</div>
+      <p class="sub small">Just these two: whoever finishes ahead wins. Tap a side, or skip.</p>`;
+    acts = tray ? trayHtml() : `${navBack}<button class="btn ${bet ? 'blue' : 'white'} grow" data-nav="1">${bet ? 'Next ›' : 'Skip ›'}</button>`;
   } else if (st.kind === 'prop') {
     const p = S.round.props.find((x) => x.id === st.id);
     const bet = findBet('prop', p.id);
-    const yn = (k, od) => `<button class="side yn ${k} ${bet?.pick === k ? 'on' : ''}" data-open="prop" data-id="${p.id}" data-pick="${k}"><b>${k.toUpperCase()}</b><span class="num">${esc(od)}</span>${bet?.pick === k ? `<small>✓ ${money(bet.stake)}</small>` : ''}</button>`;
-    main = `<div class="kick">🎡 SIDE BET</div><h1 class="h prop">${esc(p.text)}</h1>
-      <div class="sides">${yn('yes', p.odds?.displayYes || `×${p.odds?.yes}`)}${yn('no', p.odds?.displayNo || `×${p.odds?.no}`)}</div>`;
-    acts = tray ? trayHtml() : `${navBack}<button class="btn white grow" data-nav="1">${bet ? 'Next ›' : 'Skip ›'}</button>`;
+    const yn = (k) => { const on = bet?.pick === k; const hyp = { type: 'prop', propId: p.id, pick: k, stake: on ? bet.stake : EXAMPLE_STAKE }; return `<button class="side yn ${k} ${on ? 'on' : ''}" data-open="prop" data-id="${p.id}" data-pick="${k}"><b>${k.toUpperCase()}</b><span class="dm">${winsHtml(S.round, hyp)}</span>${on ? `<small>✓ ${money(bet.stake)}</small>` : ''}</button>`; };
+    const hints = (Array.isArray(p.clues) ? p.clues : []).map((c) => (typeof c === 'string' ? c : c?.headline || c?.text)).filter(Boolean);
+    const lines = (hints.length ? hints : (S.round.theme?.explainer || [])).slice(0, 2);
+    main = `<div class="kick">🎡 FUNFAIR SIDE BET</div><h1 class="h prop">${esc(p.text)}</h1>
+      ${lines.length ? `<div class="hints">${lines.map((x) => `<div>🎢 ${esc(x)}</div>`).join('')}</div>` : ''}
+      <div class="sides">${yn('yes')}${yn('no')}</div>`;
+    acts = tray ? trayHtml() : `${navBack}<button class="btn ${bet ? 'blue' : 'white'} grow" data-nav="1">${bet ? 'Next ›' : 'Skip ›'}</button>`;
   } else {
     const open = S.phase === 'BETTING';
-    const lines = slip.map((b, i) => `<div class="rv-line"><div class="rl"><span>${esc(betLabel(S.round, b))}</span><small>wins <b>+${money(betWin(S.round, b))}</b> · ${esc(oddsText(S.round, b))}</small></div><b>${money(b.stake)}</b><button class="x" data-rm="${i}" aria-label="Remove">✕</button></div>`).join('');
+    const lines = slip.map((b, i) => `<div class="rv-line"><div class="rl"><span>${esc(betLabel(S.round, b))}</span><small>${esc(money(b.stake))} wins <b>${money(betWin(S.round, b))}</b> · ${esc(oddsText(S.round, b))}</small></div><b>${money(b.stake)}</b><button class="x" data-rm="${i}" aria-label="Remove">✕</button></div>`).join('');
     main = `<div class="kick">YOUR BETS</div>
       <div class="review">${lines || '<p class="sub">No bets yet. Sitting this one out is allowed (and cowardly).</p>'}</div>
-      <div class="totals"><span>Staked <b>${money(staked())}</b></span><span>Left <b>${money(left())}</b></span></div>
-      <p class="sub small">${isFinale() ? '🔥 Double payout finale — everything can go on it.' : `Max ${money(capOf())} this round (half your bankroll).`}</p>`;
+      <div class="totals"><span>Staked <b>${money(staked())}</b></span><span>Budget left <b>${money(left())}</b></span></div>
+      <p class="sub small">${isFinale() ? '🔥 Final round: every win pays double.' : 'Unspent budget is not lost: only wins and losses go on your score.'}</p>`;
     acts = `<button class="btn white nav" data-edit="1">✏️ Edit</button>${open
-      ? `<button class="btn red grow hold" id="holdlock"><span class="fill"></span><span class="lbl">HOLD TO LOCK IN 🔒</span></button>`
+      ? '<button class="btn red grow hold" id="holdlock"><span class="fill"></span><span class="lbl">HOLD TO LOCK IN 🔒</span></button>'
       : '<button class="btn grow" disabled>Betting opens after the intros…</button>'}`;
   }
   app.innerHTML = screen(topbar(), main, acts, { dots: dotsHtml(list), cls: `flow ${st.kind}` });
@@ -292,13 +346,14 @@ function renderFlow() {
 }
 const mySpecial = () => (S.round?.underdogSpecial && S.round.underdogSpecial.playerId === me.id ? S.round.underdogSpecial : null);
 const boostUsedElsewhere = () => slip.some((b) => b.boost && !(tray && tray.kind === 'win' && b.runnerId === tray.id));
+const trayBet = () => (tray.kind === 'win' ? { type: 'win', runnerId: tray.id, stake: tray.stake, ...(tray.boost ? { boost: true } : {}) } : tray.kind === 'h2h' ? { type: 'h2h', matchupId: tray.id, pick: tray.pick, stake: tray.stake } : { type: 'prop', propId: tray.id, pick: tray.pick, stake: tray.stake });
 function trayHtml() {
   const room = left() + (tray.prev || 0);
   const sp = tray.kind === 'win' && mySpecial() && !boostUsedElsewhere() ? mySpecial() : null;
   const chips = [10, 50, 100].map((v) => `<button class="chip" data-add="${v}" ${tray.stake + v > room ? 'disabled' : ''}>+${v}</button>`).join('');
-  const hypo = tray.kind === 'win' ? { type: 'win', runnerId: tray.id, stake: tray.stake, ...(tray.boost ? { boost: true } : {}) } : tray.kind === 'h2h' ? { type: 'h2h', matchupId: tray.id, pick: tray.pick, stake: tray.stake } : { type: 'prop', propId: tray.id, pick: tray.pick, stake: tray.stake };
-  return `<div class="tray"><div class="ts"><b class="num">${money(tray.stake)}</b><span class="wn">wins <b>+${money(betWin(S.round, hypo))}</b> <small>${esc(oddsText(S.round, hypo))}</small></span><button class="chip ghost" data-add="clear">clear</button></div>
-    <div class="tc">${chips}<button class="chip max" data-add="max">${isFinale() ? 'ALL IN' : 'MAX'}</button></div>
+  const hypo = trayBet();
+  return `<div class="tray"><div class="ts"><span class="tw"><b class="num">${money(tray.stake)}</b> wins <b class="w">${money(betWin(S.round, hypo))}</b> <small>${esc(oddsText(S.round, hypo))}</small></span><button class="chip ghost" data-add="clear">clear</button></div>
+    <div class="tc">${chips}<button class="chip max" data-add="max">MAX</button></div>
     ${sp ? `<button class="chip boost ${tray.boost ? 'on' : ''}" data-boost="1">🚀 ${esc(sp.label || 'UNDERDOG SPECIAL')} · winnings ×${sp.boost || 1.5}${tray.boost ? ' ✓' : ''}</button>` : ''}
     <div class="tb2"><button class="btn white" data-tray="cancel">${tray.prev ? 'Remove' : 'Cancel'}</button><button class="btn green grow" data-tray="ok" ${tray.stake < rules().minStake ? 'disabled' : ''}>Done ✓</button></div></div>`;
 }
@@ -306,8 +361,8 @@ function openTray(kind, id, pick) {
   const ex = findBet(kind, id);
   const { maxBets, minStake } = rules();
   if (!ex && slip.length >= maxBets) { toast(`Max ${maxBets} bets — remove one in Review`, 'red'); vibrate([40, 30, 40]); return; }
-  if (!ex && left() < minStake) { toast(isFinale() ? "You're out of money!" : "That's your limit this round (half your bankroll)", 'red'); return; }
-  tray = { kind, id, pick, stake: ex ? ex.stake : Math.min(50, left()), prev: ex ? ex.stake : 0, boost: !!ex?.boost };
+  if (!ex && left() < minStake) { toast("That's your whole budget for this round", 'red'); return; }
+  tray = { kind, id, pick, stake: ex ? ex.stake : Math.min(EXAMPLE_STAKE, left()), prev: ex ? ex.stake : 0, boost: !!ex?.boost };
   vibrate(10);
 }
 function commitTray(ok) {
@@ -325,7 +380,7 @@ function wireFlow(list) {
     const b = e.target.closest('button, [data-go]'); if (!b) return;
     if (b.dataset.go != null && b.dataset.go !== '') { tray = null; step = Number(b.dataset.go); return renderFlow(); }
     if (b.dataset.nav) return go(Number(b.dataset.nav));
-    if (b.dataset.edit) { tray = null; step = 0; return renderFlow(); }
+    if (b.dataset.edit) { tray = null; step = 1; return renderFlow(); }
     if (b.dataset.open) { const kind = b.dataset.open; if (kind !== 'win' && findBet(kind, b.dataset.id) && !tray) { const ex = findBet(kind, b.dataset.id); ex.pick = b.dataset.pick; slipChanged(); } openTray(kind, b.dataset.id, b.dataset.pick); return renderFlow(); }
     if (b.dataset.add && tray) {
       const room = left() + (tray.prev || 0);
@@ -373,20 +428,20 @@ function doLock() {
 // LOCKED / REVEALED: one big status
 function renderLocked() {
   if (S.revealed) {
-    app.innerHTML = screen(topbar(), '<div class="big-emoji">👀</div><h1 class="h">Look at the telly!</h1><p class="sub">The bets are being revealed.</p>', '');
+    app.innerHTML = screen(topbar(), '<div class="big-emoji">👀</div><h1 class="h">Look at the telly!</h1><p class="sub">The bets are being revealed.</p>', '', { cls: 'locked' });
     app.onclick = null;
     return;
   }
   const waiting = S.players.filter((p) => !p.locked && p.id !== me.id).map((p) => p.name);
   app.innerHTML = screen(topbar(), `<div class="big-emoji">🔒</div><h1 class="h">Locked in!</h1>
     <p class="sub big">${waiting.length ? `Waiting for ${esc(waiting.join(' & '))}…` : "Everyone's in!"}</p>
-    <p class="sub small">${slip.length} bet${slip.length === 1 ? '' : 's'} · ${money(staked())}</p>`,
-  '<button class="btn white grow" id="unlock">✏️ Change my bets</button>');
+    <p class="sub small">${slip.length} bet${slip.length === 1 ? '' : 's'} · ${money(staked())} of your ${money(budgetOf())} budget</p>`,
+  '<button class="btn white grow" id="unlock">✏️ Change my bets</button>', { cls: 'locked' });
   app.onclick = (e) => { if (e.target.closest('#unlock')) { send({ t: 'unlock' }); step = steps().length - 1; vibrate(10); } };
 }
 
 // ---------------------------------------------------------------------------------------------------
-// RACE: your runners, big; reactions in one row
+// RACE: your runners, big; three reactions in one row
 let lastLeader = null;
 let lastGap = {};
 let marketStake = 50;
@@ -417,7 +472,7 @@ function renderRace(fresh) {
     }
     lastLeader = L.leaderId || lastLeader;
   }
-  const reacts = (S.reactions || []).slice(0, 6).map((e) => `<button class="re" data-react="${e}">${e}</button>`).join('');
+  const reacts = (S.reactions || []).slice(0, 3).map((e) => `<button class="re" data-react="${e}">${e}</button>`).join('');
   app.innerHTML = screen(topbar(), main, `<div class="reacts">${reacts}</div>`, { cls: 'race' });
   let last = 0;
   app.onclick = (e) => {
@@ -427,24 +482,26 @@ function renderRace(fresh) {
     vibrate(12);
   };
 }
+const marketSecs = (m) => Math.max(0, Math.ceil((m.closesAt - net.serverNow()) / 1000)); // same clock as the TV
 function renderMarket() {
   const m = S.market;
   const placed = (me.bets || []).find((b) => b.type === 'inplay');
   if (!m || !m.open) { if (modal.dataset.kind === 'market') { modal.innerHTML = ''; modal.dataset.kind = ''; } return; }
-  const free = capOf() - (me.bets || []).reduce((a, b) => a + b.stake, 0);
+  const free = budgetOf() - (me.bets || []).reduce((a, b) => a + b.stake, 0);
   const minStake = S.round?.rules?.minStake ?? 10;
   marketStake = Math.max(minStake, Math.min(marketStake, free));
-  const secs = Math.max(0, Math.ceil((m.closesAt - net.serverNow()) / 1000));
+  const can = !placed && free >= minStake;
   const rows = (m.standings || []).map((x) => {
     const r = runnerById(S.round, x.runnerId);
     const o = m.odds?.[x.runnerId];
-    return `<button class="mkr" data-ip="${x.runnerId}" ${placed || free < minStake ? 'disabled' : ''}>${ordinalHtml(x.place)}<span class="n">${esc(runnerShort(r) || x.runnerId)}<small>${x.place === 1 ? 'leads' : `+${Number(x.gapS).toFixed(1)}s`}</small></span><span class="o">${placed || free < minStake ? '' : `<em>wins +${money(betWin(S.round, { type: 'inplay', runnerId: x.runnerId, stake: marketStake, odds: o?.win }))}</em>`}${esc(o?.display || '')}</span></button>`;
+    const hyp = { type: 'inplay', runnerId: x.runnerId, stake: marketStake, odds: o?.win, display: o?.display };
+    return `<button class="mkr" data-ip="${x.runnerId}" ${can ? '' : 'disabled'}>${ordinalHtml(x.place)}<span class="n">${esc(runnerShort(r) || x.runnerId)}<small>${x.place === 1 ? 'leads' : `+${Number(x.gapS).toFixed(1)}s`}</small></span><span class="o">${can ? `<b>wins ${money(betWin(S.round, hyp))}</b>` : ''}<small>${esc(o?.display || '')}</small></span></button>`;
   }).join('');
   const stakes = [minStake, 50, 100].filter((v, i, a) => v <= free && a.indexOf(v) === i);
   modal.dataset.kind = 'market';
-  modal.innerHTML = `<div class="sheet market"><h3>⏱ HALFWAY <span class="secs">${secs}s</span></h3>
-    ${placed ? `<p class="done">✓ You're on <b>${esc(runnerShort(runnerById(S.round, placed.runnerId)))}</b> · ${money(placed.stake)} @ ${esc(placed.display || `×${placed.odds}`)}</p>`
-    : free < minStake ? '<p>No money left for a halfway bet. Just watch! 🍿</p>' : `<div class="mkst">${stakes.map((v) => `<button class="chip ${v === marketStake ? 'sel' : ''}" data-ms="${v}">${money(v)}</button>`).join('')}<button class="chip max ${marketStake === free ? 'sel' : ''}" data-ms="${free}">${isFinale() ? 'ALL IN' : 'MAX'}</button></div>`}
+  modal.innerHTML = `<div class="sheet market"><h3>⏱ HALFWAY MARKET <span class="secs">${marketSecs(m)}s</span></h3>
+    ${placed ? `<p class="done">✓ You're on <b>${esc(runnerShort(runnerById(S.round, placed.runnerId)))}</b> · ${money(placed.stake)} wins ${money(betWin(S.round, placed))}</p>`
+    : free < minStake ? '<p>No budget left for a halfway bet. Just watch! 🍿</p>' : `<p class="mkq">Stake, then tap a runner:</p><div class="mkst">${stakes.map((v) => `<button class="chip ${v === marketStake ? 'sel' : ''}" data-ms="${v}">${money(v)}</button>`).join('')}<button class="chip max ${marketStake === free ? 'sel' : ''}" data-ms="${free}">MAX</button></div>`}
     <div class="mkrows">${rows}</div></div>`;
   modal.onclick = (e) => {
     const st = e.target.closest('[data-ms]');
@@ -453,7 +510,7 @@ function renderMarket() {
     if (b && !b.disabled) { send({ t: 'inplay', runnerId: b.dataset.ip, stake: marketStake }); vibrate([30, 30, 80]); }
   };
 }
-setInterval(() => { if (S?.phase === 'RACE' && S.market?.open) { const el2 = $('#modal .secs'); if (el2) el2.textContent = `${Math.max(0, Math.ceil((S.market.closesAt - net.serverNow()) / 1000))}s`; } }, 250);
+setInterval(() => { if (S?.phase === 'RACE' && S.market?.open) { const el2 = $('#modal .secs'); if (el2) el2.textContent = `${marketSecs(S.market)}s`; } }, 250);
 
 // ---------------------------------------------------------------------------------------------------
 // RESULTS: one card per screen
@@ -461,7 +518,7 @@ function renderResults() {
   const res = S.results;
   const skip = '<button class="btn blue grow" id="nextbtn">Skip ahead on the TV ▶</button>';
   if (!res || S.resultsStage < 2) {
-    app.innerHTML = screen(topbar(), '<div class="big-emoji">📺</div><h1 class="h">Eyes on the TV!</h1><p class="sub">The result and the big reveal are on the telly. Your payout lands here after that.</p>', skip);
+    app.innerHTML = screen(topbar(), '<div class="big-emoji">📺</div><h1 class="h">Eyes on the TV!</h1><p class="sub">The result and the big reveal are on the telly. Your payout lands here after that.</p>', skip, { cls: 'results' });
     return wireResults();
   }
   let cards;
@@ -474,12 +531,13 @@ function renderResults() {
         ${x.punchline ? `<p class="sub">${esc(x.punchline)}</p>` : ''}${(x.funFacts || [])[0] ? `<p class="sub small">${esc(x.funFacts[0])}</p>` : ''}`;
     });
   } else {
-    const pay = res.payouts?.[me.id] || { net: 0, bankroll: me.bankroll, bets: [] };
+    const pay = res.payouts?.[me.id] || { net: 0, score: me.score, bets: [] };
     const drinks = S.settings.drinkingMode && Array.isArray(res.drinks) ? res.drinks.filter((d) => d.playerId === me.id || !d.playerId).map((d) => `🍺 ${esc(d.text)}`).join('<br>') : '';
     const lines = (pay.bets || []).slice(0, 6).map((b) => { const o = betOutcome(b); return `<div class="rv-line ${o.kind}"><span>${esc(betLabel(S.round, b))}</span><b>${o.text}</b></div>`; }).join('');
     const awards = (res.awards || []).filter((a) => a.playerId === me.id);
+    const score = Number.isFinite(pay.score) ? pay.score : me.score;
     cards = [
-      `<div class="big-emoji">${pay.net > 0 ? '🤑' : pay.net < 0 ? '😭' : '😐'}</div><div class="net-big outlined ${pay.net > 0 ? 'green' : pay.net < 0 ? 'red' : 'white'}">${signedMoney(pay.net)}</div><p class="sub big">Bankroll ${money(pay.bankroll)}</p>${drinks ? `<p class="drink">${drinks}</p>` : ''}`,
+      `<div class="big-emoji">${pay.net > 0 ? '🤑' : pay.net < 0 ? '😭' : '😐'}</div><div class="kick">THIS ROUND</div><div class="net-big outlined ${pay.net > 0 ? 'green' : pay.net < 0 ? 'red' : 'white'}">${signedMoney(pay.net)}</div><p class="sub big">Score ${scoreText(score)}</p>${drinks ? `<p class="drink">${drinks}</p>` : ''}`,
       `<div class="kick">YOUR BETS</div><div class="review">${lines || '<p class="sub">No bets this round.</p>'}</div>`,
       ...awards.map((a) => `<div class="big-emoji">🏆</div><h1 class="h">${esc(a.title)}</h1><p class="sub">${esc(a.text || '')}</p>`),
     ];
@@ -509,9 +567,10 @@ function wireResults() {
 }
 
 // ---------------------------------------------------------------------------------------------------
+const byScore = () => [...S.players].sort((a, b) => (b.score || 0) - (a.score || 0));
 function standHtml() {
-  const sorted = [...S.players].sort((a, b) => b.bankroll - a.bankroll);
-  return `<div class="stand">${sorted.map((p, i) => `<div class="sr" style="background:${esc(p.avatar.colour)}">${ordinalHtml(i + 1)}${avatarHtml(p.avatar, 32)}<span>${esc(p.name)}${p.ready ? ' ✓' : ''}</span><b class="num">${money(p.bankroll)}</b></div>`).join('')}</div>`;
+  const sorted = byScore();
+  return `<div class="stand">${sorted.map((p, i) => `<div class="sr" style="background:${esc(p.avatar.colour)}">${ordinalHtml(i > 0 && sorted[i - 1].score === p.score ? i : i + 1)}${avatarHtml(p.avatar, 32)}<span>${esc(p.name)}${p.ready ? ' ✓' : ''}</span><b class="num">${scoreText(p.score)}</b></div>`).join('')}</div>`;
 }
 function renderScore() {
   const lastR = S.roundNumber >= S.roundsPerGame;
@@ -523,11 +582,11 @@ function renderScore() {
   app.onclick = (e) => { if (e.target.closest('#readybtn')) { send({ t: 'ready', value: !me.ready }); vibrate(25); } };
 }
 function renderFinale(fresh) {
-  const sorted = [...S.players].sort((a, b) => b.bankroll - a.bankroll);
+  const sorted = byScore();
   const place = sorted.findIndex((p) => p.id === me.id) + 1;
   const won = place === 1;
   app.innerHTML = screen(topbar(), `<div class="big-emoji">${won ? '👑' : place === sorted.length ? '🥄' : '🥈'}</div>
-    <h1 class="h">${won ? 'CHAMPION!' : `You finished ${ordWord(place)}`}</h1><p class="sub big">${money(me.bankroll)}</p>${standHtml()}`,
+    <h1 class="h">${won ? 'CHAMPION!' : `You finished ${ordWord(place)}`}</h1><p class="sub big">Final score ${scoreText(me.score)}</p>${standHtml()}`,
   readyBtn(me.ready ? '✓ READY' : won ? 'REMATCH? ↻' : 'DEMAND A REMATCH ↻'));
   app.onclick = (e) => { if (e.target.closest('#readybtn')) { send({ t: 'ready', value: !me.ready }); vibrate(25); } };
   if (fresh && won) confetti(document.body, { count: 150 });

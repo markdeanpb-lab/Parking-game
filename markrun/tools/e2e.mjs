@@ -96,8 +96,12 @@ try {
   await shot(tv, '01b-tv-refresh-confirm');
   await tv.click('#tvmodal [data-cancel]');
 
-  // settings live behind one "Options" button: rounds -> ROUNDS
+  // settings live behind one "Options" button: Quick/Full night up front, exact rounds behind "Advanced"
   await tv.click('[data-options]');
+  await tv.waitForSelector('#tvmodal [data-night="4"]');
+  await tv.click('#tvmodal [data-night="4"]');
+  await tv.waitForFunction(() => document.querySelector('#tvmodal [data-night="4"]')?.classList.contains('on'), null, { timeout: 5000 });
+  await tv.click('#tvmodal [data-advanced]');
   await tv.waitForSelector('#tvmodal [data-k="roundsPerGame"]');
   for (let i = 0; i < 12; i++) {
     const cur = await tv.$eval('#tvmodal [data-k="roundsPerGame"] .val', (e) => Number(e.textContent));
@@ -143,20 +147,30 @@ try {
   console.log('round source:', h.source);
   await sleep(300);
   await shot(tv, '05-tv-intro-title');
-  await tv.waitForSelector('.intro .l3, .intro .explain, .betting', { timeout: 30000 });
+  // round 1 opens on the news desk (cold open), then the theme card, then the runner intros
+  if (await tv.waitForSelector('.newsdesk', { timeout: 10000 }).catch(() => null)) {
+    await sleep(Math.max(1200, 9000 / SPEED));
+    await shot(tv, '05b-tv-newsdesk');
+  } else console.log('  (no news desk seen)');
+  if (await tv.waitForSelector('.theme-show', { timeout: 30000 }).catch(() => null)) {
+    await sleep(Math.max(900, 6000 / SPEED));
+    await shot(tv, '05c-tv-theme-card');
+  } else console.log('  (no theme card this round)');
+  await tv.waitForSelector('.intro .l3, .betting', { timeout: 60000 });
   await sleep(500);
   await shot(tv, '06-tv-intro-runner');
   await pa.waitForSelector('.flow');
-  await shot(pa, '07-phoneA-intro-runner');
+  await shot(pa, '07-phoneA-round-card');
 
   for (let round = 1; round <= ROUNDS; round++) {
     const hb = await waitPhase('BETTING', 120000);
     if (SOURCE !== 'fixture' && hb.source !== 'game') throw new Error(`round ${round} did not come from the real game module (source=${hb.source})`);
-    console.log(`round ${round}: source=${hb.source} bankrolls=${JSON.stringify(hb.bankrolls)}`);
+    console.log(`round ${round}: source=${hb.source} scores=${JSON.stringify(hb.scores)}`);
     await sleep(400);
     if (round === 1) await shot(tv, '08-tv-betting');
     // phone A (click-through flow): back runner 1 to win (+50), pick a head-to-head side, a side bet, then review
-    await pa.click('.strip .face:first-child');
+    await pa.locator('.strip .face').first().click();
+    if (round === 1) await shot(pa, '08b-phoneA-runner');
     await pa.click('[data-open="win"]');
     await pa.click('[data-add="clear"]');
     await pa.click('[data-add="50"]');
@@ -201,7 +215,7 @@ try {
     const leak = await tv.evaluate(() => document.body.innerText.includes('to WIN'));
     if (leak) throw new Error('TV shows bets before everyone locked');
     // phone B: jump to the 3rd runner and back it with the round's MAX
-    await pb.click('.strip .face:nth-child(3)');
+    await pb.locator('.strip .face').nth(2).click();
     await pb.click('[data-open="win"]');
     await pb.click('[data-add="max"]');
     if (round === 1) await shot(pb, '14-phoneB-max');
@@ -244,7 +258,7 @@ try {
       await shot(pa, '17-phoneA-race');
       if ((await health()).phase === 'RACE') {
         for (const e of ['😱', '🔥', '😂']) { await pa.click(`[data-react="${e}"]`, { timeout: 3000 }).catch(() => {}); await sleep(250); }
-        await pb.click('[data-react="🍺"]', { timeout: 3000 }).catch(() => {});
+        await pb.click('[data-react="😂"]', { timeout: 3000 }).catch(() => {});
         await sleep(400);
         await shot(tv, '18-tv-race');
       }
@@ -282,7 +296,7 @@ try {
       if (p2 !== port) throw new Error(`restarted on a different port ${p2}`);
       const after = await waitPhase('SCOREBOARD', 20000);
       console.log('RESTART TEST: host back', JSON.stringify(after));
-      if (JSON.stringify(after.bankrolls ?? after.players ?? null) !== JSON.stringify(before.bankrolls ?? before.players ?? null)) throw new Error('session state changed across restart');
+      if (JSON.stringify(after.scores ?? after.players ?? null) !== JSON.stringify(before.scores ?? before.players ?? null)) throw new Error('session state changed across restart');
       await pa.waitForSelector('#readybtn', { timeout: 30000 });
       await sleep(3000); // phones/TV reconnect with their tokens
       await shot(tv, `restart-tv-after-round${round}`);

@@ -1,5 +1,5 @@
 // MARKRUN host: static web server for the TV + phones, WebSocket game hub, persistent session.
-// Usage: npm start [-- --port 8080 --host 192.168.1.20 --fresh]
+// Usage: npm start [-- --port 8080 --host 192.168.1.20 --fresh]  (--fresh forgets the saved session; older saves are migrated)
 // Env: PORT, MARKRUN_HOST (address advertised to phones), MARKRUN_SESSION_DB, MARKRUN_ROUND_SOURCE=fixture
 // Never makes outbound internet requests — except the explicit "Refresh Historical Data" button in the TV lobby
 // (server/import/refresh.mjs, loaded lazily only when that button is pressed).
@@ -54,7 +54,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, phase: game.s.phase, round: game.s.roundNumber, players: game.s.players.length, bankrolls: game.s.players.map((p) => [p.name, p.bankroll]), history: (game.s.history || []).length, source: rounds.sourceName(), joinUrl, tvUrl }));
+    return res.end(JSON.stringify({ ok: true, phase: game.s.phase, round: game.s.roundNumber, players: game.s.players.length, scores: game.s.players.map((p) => [p.name, p.score || 0]), history: (game.s.history || []).length, source: rounds.sourceName(), joinUrl, tvUrl }));
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
   if (url.pathname.startsWith('/ws')) return notFound(res);

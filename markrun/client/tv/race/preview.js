@@ -12,14 +12,18 @@ const [course, park, round] = await Promise.all([
   j(fx ? `/client/tv/race/fixtures/${fx}.json` : '/data/fixtures/round.json'),
 ]);
 if (qs.get('shot')) document.body.classList.add('shot');
+// &theme=winter|rain|summer|autumn|spring|fog|wind|frost (or a theme key): exercise the theme visuals
+const TH = { winter: ['winter', 'frost'], frost: ['winter', 'frost'], rain: ['autumn', 'rain'], summer: ['summer', 'sun'], heat: ['summer', 'sun'], autumn: ['autumn', 'clear'], spring: ['spring', 'clear'], fog: ['autumn', 'fog'], wind: ['autumn', 'wind'], windy: ['autumn', 'wind'] };
+if (qs.get('theme')) { const k = qs.get('theme'); const v = TH[k]; round.public.theme = { key: k, label: `${k[0].toUpperCase()}${k.slice(1)} test`, ...(v ? { visual: { season: v[0], weather: v[1], time: 'morning' } } : {}) }; }
 // default: Mark backs r2, Mrs M backs r4, both back r1 (as the shell would pass it)
 const backedBy = {};
 if (qs.get('backed') != null) qs.get('backed').split(',').filter(Boolean).forEach((id, i) => (backedBy[id] = [i % 2 ? 'Mrs M' : 'Mark']));
 else Object.assign(backedBy, { r2: ['Mark'], r4: ['Mrs M'], r1: ['Mark', 'Mrs M'] });
 const sub = document.getElementById('sub');
+const players = [{ name: 'Mark', avatar: { emoji: '🦊', colour: '#ffb000' } }, { name: 'Mrs M', avatar: { emoji: '🐼', colour: '#ff6fb5' } }];
 const view = createRaceView(document.getElementById('stage'), {
-  course, park, round: round.public, plan: round.racePlan, backedBy, speed: Number(qs.get('speed')) || 1, preserveDrawingBuffer: !!qs.get('shot'), manualLoop: !!qs.get('shot'),
-  onIntroRunner: (id) => { const r = round.public.runners.find((x) => x.id === id); sub.textContent = `${r.nickname} - ${r.tagline}`; },
+  course, park, round: round.public, plan: round.racePlan, backedBy, players, speed: Number(qs.get('speed')) || 1, preserveDrawingBuffer: !!qs.get('shot'), manualLoop: !!qs.get('shot'),
+  onIntroRunner: () => { sub.textContent = ''; },
 });
 window.view = view; window.__create = createRaceView; window.__data = { course, park, round };
 const onEvent = (e) => { if (e.kind === 'commentary') sub.textContent = e.text; if (e.kind === 'countdown') sub.textContent = e.text; };

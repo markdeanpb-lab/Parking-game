@@ -209,7 +209,7 @@ const AWARD_TEXT = {
   sat_on_hands: ['Sat On Hands', '{name} bet nothing at all. Mysterious. Cowardly. Possibly wise.'],
   clue_whisperer: ['Clue Whisperer', '{name}\'s secret clue on {a} was gold, and {name} cashed it in.'],
   herring_victim: ['Hooked by a Herring', '{name} trusted the secret clue on {a}. The clue was a red herring.'],
-  all_in: ['All In', '{name} staked {pct}% of the bankroll in one round. Nerves of steel. Brain of jelly.'],
+  all_in: ['All In', '{name} put the entire budget on one runner. Nerves of steel. Brain of jelly.'],
   sensible_shoes: ['Sensible Shoes', '{name} backed the favourite, and the favourite won. Thrilling.'],
   big_winner: ['Top of the Shop', '{name} won {gain} parkpounds this round. Insufferable now.'],
   insider: ['Insider Trader', '{name} got a hot tip on {a}, believed it, and got paid. The marshals send their invoice.'],
@@ -217,7 +217,10 @@ const AWARD_TEXT = {
   prophet: ['Funfair Prophet', '{name} called the funfair question right.'],
 };
 
-export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inPlay = null }) {
+// Economy (iteration 4, F5): every round each player bets from a fresh budget (round.public.rules.budget). The round's
+// net (returns minus stakes, negative allowed) is banked into a cumulative SCORE. `scores` = each player's score BEFORE
+// this round. No bankruptcy, no bailouts: a bad round costs score, never the ability to play.
+export function settle(round, betsByPlayer = {}, scores = {}, { rng, mem, inPlay = null }) {
   const H = round.hidden;
   const pub = round.public;
   const plan = round.racePlan;
@@ -234,6 +237,7 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
 
   // payouts. Multiplier (final round = 2) doubles the WINNINGS; the stake comes back once.
   const mult = pub.payoutMultiplier ?? 1;
+  const budget = pub.rules?.budget ?? H.settings?.roundBudget ?? 500;
   const pay = (stake, dec) => payReturn(stake, dec, mult);
   const payouts = {};
   for (const [pid, bets] of Object.entries(betsByPlayer || {})) {
@@ -269,10 +273,18 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
       back += returned;
       return { ...b, won, returned, ...(push ? { push: true } : {}), ...(lockedOdds ? { lockedOdds } : {}), ...(boosted ? { boosted: true } : {}) };
     });
-    const bank = (bankrolls[pid] ?? 0) - staked + back;
-    payouts[pid] = { bets: res, staked, net: back - staked, bankroll: bank };
+    const net = back - staked;
+    const score = (Number(scores[pid]) || 0) + net;
+    // `bankroll` is a deprecated alias of `score` for hosts still on the iteration-2 shape
+    payouts[pid] = { bets: res, staked, returned: back, net, score, budget, unspent: Math.max(0, budget - staked), bankroll: score };
   }
-  for (const p of players) if (!payouts[p.id]) payouts[p.id] = { bets: [], staked: 0, net: 0, bankroll: bankrolls[p.id] ?? 0 };
+  for (const p of players) if (!payouts[p.id]) { const score = Number(scores[p.id]) || 0; payouts[p.id] = { bets: [], staked: 0, returned: 0, net: 0, score, budget, unspent: budget, bankroll: score }; }
+
+  // session memory: each round's net per player (personal commentary uses it for streaks and the scoreline)
+  if (mem) {
+    mem.netLog ||= {};
+    mem.netLog[pub.roundId] = { n: pub.number ?? round.number ?? 0, nets: Object.fromEntries(Object.entries(payouts).map(([pid, P]) => [pid, P.net])) };
+  }
 
   // clue review
   const priceRank = new Map([...pub.runners].sort((a, b) => a.odds.win - b.odds.win).map((r, i) => [r.id, i + 1]));
@@ -341,8 +353,7 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
     const h2h = P.bets.filter((b) => b.type === 'h2h' && !b.push);
     if (h2h.length && h2h.every((b) => b.won)) add('h2h_hero', 4 + h2h.length, {});
     if (new Set(wins.map((b) => b.runnerId)).size >= 3) add('hedge_fund', 3, { n: new Set(wins.map((b) => b.runnerId)).size });
-    const pre = bankrolls[p.id] ?? 0;
-    if (pre > 0 && P.staked >= 0.8 * pre) add('all_in', 7, { pct: Math.round((100 * P.staked) / pre) });
+    if (budget > 0 && P.staked >= 0.95 * budget && new Set(P.bets.map((b) => b.runnerId || b.pick)).size === 1) add('all_in', 7, { pct: Math.round((100 * P.staked) / budget) });
     if (P.net < 0 && P.net === Math.min(...nets) && P.net <= -100) add('bank_of_mum', 4, { loss: -P.net });
     if (P.net >= 300 && P.net === Math.max(...nets)) add('big_winner', 6, { gain: P.net });
     cands.sort((a, b) => b.score - a.score);
@@ -390,6 +401,8 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
     finishOrder,
     reveal: (() => { const used = new Set(); return order.map((id) => ({ ...revealCard(id, H.perfs[id], used), nickname: R.get(id).nickname })); })(),
     payoutMultiplier: mult,
+    budget,
+    scores: Object.fromEntries(Object.entries(payouts).map(([pid, P]) => [pid, P.score])),
     clueReview,
     archetype,
     payouts,

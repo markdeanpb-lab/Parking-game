@@ -3,7 +3,7 @@
 // "press any key" overlay), ?mute.
 import { connect } from '../shared/net.js';
 import { createAudio } from '../shared/sfx.js';
-import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, oddsText, betOutcome, clueParts, betWin, confetti, fmtTime } from '../shared/ui.js';
+import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betRunnerId, oddsText, betOutcome, clueParts, betWin, confetti, fmtTime, rankHtml, winsHtml, EXAMPLE_STAKE, themeIcon } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
@@ -115,10 +115,14 @@ window.addEventListener('keydown', (e) => {
   if (k === 'm' || k === 'M') { localMute = !localMute; applyAudioSettings(); toast(localMute ? 'Muted' : 'Sound on'); return; }
   if (k === 'f' || k === 'F') { toggleFs(); return; }
   if (k === 'l' || k === 'L') { if (S?.phase === 'BETTING' && !S.revealed) { send({ t: 'forceLock' }); toast('Locking everyone in!'); } return; }
-  if (k === ' ' || k === 'Enter' || k === 'ArrowRight' || k === 'n' || k === 'N') { e.preventDefault(); if (skipExplainer === false) { skipExplainer = true; return; } advance(); }
+  if (k === ' ' || k === 'Enter' || k === 'ArrowRight' || k === 'n' || k === 'N') { e.preventDefault(); advance(); }
 });
+// A locally skippable segment (news desk, theme card): SPACE / the Skip button ends just that segment.
+let skipSeg = null;
+function setSkip(fn) { skipSeg = fn; if (S) renderNextHint(S); }
 function advance() {
   if (!S) return;
+  if (skipSeg && S.phase === 'INTRO') { const f = skipSeg; setSkip(null); f(); return; }
   if (S.phase === 'LOBBY' && !S.players.length) { toast('Scan the QR code to join first!', 'red'); return; }
   if (S.phase === 'BETTING' && !S.revealed) { toast('Waiting for everyone to lock in (press L to force it)'); return; }
   send({ t: 'advance', from: S.phase, stage: S.phase === 'RESULTS' ? S.resultsStage : undefined });
@@ -148,7 +152,7 @@ function onState(st) {
       const old = screen;
       screen = { key, pending: true, destroy: () => old.destroy?.() };
       playWipe();
-      setTimeout(() => { if (screen.key === key && screen.pending) { screen = old; switchScreen(key, S, prev); } }, 210);
+      setTimeout(() => { if (screen.key === key && screen.pending) { screen = old; switchScreen(key, S, prev); } }, WIPE_MID);
     }
   }
   else if (!screen.pending) screen.update?.(st, prev);
@@ -164,14 +168,17 @@ function screenKey(st) {
   return `${st.phase}|${st.gameNumber}`;
 }
 
+// One broadcast wipe between every phase / results stage: it COVERS the whole screen at its midpoint (WIPE_MID),
+// the content is swapped underneath, then it clears. New content never animates under a half-drawn wipe.
+const WIPE_MS = 760, WIPE_MID = 330;
 const wipeEl = el('<div id="wipe"><i></i><b></b></div>');
 document.body.appendChild(wipeEl);
-wipeEl.addEventListener('animationend', (e) => { if (e.target.tagName === 'B') wipeEl.classList.remove('go'); });
+wipeEl.addEventListener('animationend', (e) => { if (e.target.tagName === 'I') wipeEl.classList.remove('go'); });
 let wipeTimer = null;
 function playWipe() {
   wipeEl.classList.remove('go'); void wipeEl.offsetWidth; wipeEl.classList.add('go');
-  clearTimeout(wipeTimer); wipeTimer = setTimeout(() => wipeEl.classList.remove('go'), 700); // belt and braces: never stuck on screen
-  window.__markrun.wipeUntil = Date.now() + 700;
+  clearTimeout(wipeTimer); wipeTimer = setTimeout(() => wipeEl.classList.remove('go'), WIPE_MS + 120); // belt and braces: never stuck on screen
+  window.__markrun.wipeUntil = Date.now() + WIPE_MS;
   audio.play('wipe');
 }
 function switchScreen(key, st, prev) {
@@ -181,6 +188,8 @@ function switchScreen(key, st, prev) {
   subsEl.innerHTML = '';
   const phase = st.phase;
   document.body.className = document.body.className.replace(/\bphase-\w+/g, '').trim() + ` phase-${phase}`;
+  document.body.classList.remove('newsdesk-on');
+  setSkip(null);
   document.body.classList.toggle('revealed', !!st.revealed);
   document.body.classList.toggle('racing', phase === 'RACE' || (phase === 'INTRO' && !!raceView));
   log({ type: 'screen', key });
@@ -205,12 +214,15 @@ function phaseMusic(st, force = false) {
 }
 
 // ---------- shared HUD bits ----------
+const scoreOf = (p) => p?.score || 0;
+const byScore = (players) => [...players].sort((a, b) => scoreOf(b) - scoreOf(a));
 function rankOf(players) {
-  const sorted = [...players].sort((a, b) => b.bankroll - a.bankroll);
+  const sorted = byScore(players);
   const rank = new Map();
-  sorted.forEach((p, i) => rank.set(p.id, i > 0 && p.bankroll === sorted[i - 1].bankroll ? rank.get(sorted[i - 1].id) : i + 1));
+  sorted.forEach((p, i) => rank.set(p.id, i > 0 && scoreOf(p) === scoreOf(sorted[i - 1]) ? rank.get(sorted[i - 1].id) : i + 1));
   return rank;
 }
+const budgetOf = (st) => st?.round?.rules?.budget ?? st?.budget ?? st?.settings?.roundBudget ?? 500;
 function renderHud(st) {
   const show = st.phase === 'BETTING' && !st.revealed;
   hudBottom.classList.toggle('hidden', !show);
@@ -219,27 +231,12 @@ function renderHud(st) {
   const rank = rankOf(st.players);
   const backs = st.phase === 'RACE' ? (st.bets || {}) : {};
   hudBottom.innerHTML = st.players.map((p) => `<span class="pill ${!p.connected ? 'off' : p.locked ? 'locked' : ''}" data-pid="${p.id}">${avatarHtml(p.avatar, 40)}<b>${esc(p.name)}</b><i>${!p.connected ? '📵' : p.locked ? '🔒 locked' : '🤔'}</i></span>`).join('');
-  return;
-  // eslint-disable-next-line no-unreachable
-  hudBottom.innerHTML = st.players.map((p) => {
-    let status = '';
-    if (!p.connected) status = '<span class="pp-status off">📵 Offline</span>';
-    else if (st.phase === 'BETTING') status = p.locked ? '<span class="pp-status locked">🔒 LOCKED IN</span>' : '<span class="pp-status think">🤔 Thinking…</span>';
-    const dots = (backs[p.id] || []).map((b) => runnerById(st.round, betRunnerId(b))).filter(Boolean)
-      .map((r) => `<i title="${esc(r.nickname)}" style="background:${esc(r.colour.primary)}"></i>`).join('');
-    return `<div class="pp ${p.connected ? '' : 'disconnected'}" data-pid="${p.id}">
-      ${st.history?.length ? ordinalHtml(rank.get(p.id), 'pp-ord') : ''}
-      ${avatarHtml(p.avatar, 70)}
-      <div><div class="pp-name">${esc(p.name)}</div><div class="pp-bank"><span class="coin"></span> ${money(p.bankroll)}</div>${dots ? `<div class="pp-backs">${dots}</div>` : ''}</div>
-      ${status}
-    </div>`;
-  }).join('');
 }
 
 function renderNextHint(st) {
   const label = {
-    INTRO: 'Skip intros ⏭', RACE: 'Skip race ⏭', RESULTS: 'Next ▶', SCOREBOARD: st.roundNumber >= st.roundsPerGame ? 'Final results ▶' : 'Next round ▶',
-    FINALE: (() => { const lo = [...st.players].sort((a, b) => a.bankroll - b.bankroll)[0]; return st.players.length > 1 && lo ? `${lo.name} demands a REMATCH ↻` : 'Play again ↻'; })(), BETTING: st.revealed ? 'Start race ▶' : null,
+    INTRO: skipSeg ? 'Skip ⏭' : 'Skip intros ⏭', RACE: 'Skip race ⏭', RESULTS: 'Next ▶', SCOREBOARD: st.roundNumber >= st.roundsPerGame ? 'Final results ▶' : 'Next round ▶',
+    FINALE: (() => { const lo = byScore(st.players).at(-1); return st.players.length > 1 && lo ? `${lo.name} demands a REMATCH ↻` : 'Play again ↻'; })(), BETTING: st.revealed ? 'Start race ▶' : null,
   }[st.phase];
   if (!label) { nextHint.innerHTML = ''; return; }
   if (nextHint.dataset.label === label) return;
@@ -312,8 +309,10 @@ function decoWorld() {
 // =====================================================================================================
 // LOBBY
 // =====================================================================================================
-const BANKROLLS = [100, 250, 500, 1000, 2000, 5000];
 const TIMERS = [0, 60, 90, 120, 180];
+const BUDGETS = [250, 500, 1000];
+const NIGHTS = [['quick', 4, 'Quick night'], ['full', 6, 'Full night']];
+const nightHtml = (set, cls = '') => `<div class="night ${cls}">${NIGHTS.map(([k, n, lbl]) => `<button class="nbtn ${set.roundsPerGame === n ? 'on' : ''}" data-night="${n}"><b>${lbl}</b><small>${n} rounds</small></button>`).join('')}${NIGHTS.some(([, n]) => n === set.roundsPerGame) ? '' : `<span class="nbtn custom on"><b>Custom</b><small>${set.roundsPerGame} rounds</small></span>`}</div>`;
 function lobbyScreen(st) {
   const root = el(`<div class="lobby">
     ${decoWorld()}
@@ -321,7 +320,6 @@ function lobbyScreen(st) {
     <div class="tagline">Real parkruns. Real Mark. Fake money. 🍷</div>
     <div class="qr-card panel white"><div class="qr"></div><div class="scan">📱 SCAN TO JOIN</div><div class="url"></div></div>
     <div class="slots"></div>
-    <div class="settings panel cream hidden"></div>
     <div class="start-wrap"></div>
   </div>`);
   screenEl.appendChild(root);
@@ -329,7 +327,6 @@ function lobbyScreen(st) {
   $('.url', root).textContent = (st.joinUrl || '').replace(/^https?:\/\//, '');
   say(st.players.length ? `Welcome back to MARKRUN!` : `Welcome to MARKRUN! Grab your phones and scan the code.`, 'jeff', 1);
 
-  const setRow = (label, key, valHtml, controls) => `<div class="set" data-k="${key}"><div class="lbl">${label}</div><div class="ctl-row">${controls.replace('{val}', `<span class="val">${valHtml}</span>`)}</div></div>`;
   function render(s) {
     const slots = [];
     const n = Math.max(2, s.players.length);
@@ -338,7 +335,7 @@ function lobbyScreen(st) {
       if (p) {
         const badge = !p.connected ? '<span class="tag" style="background:var(--tomato);color:#fff">📵 offline</span>'
           : p.ready ? '<span class="tag" style="background:var(--grass);color:#fff">✓ READY</span>' : '<span class="tag">joined</span>';
-        slots.push(`<div class="slot panel slant ${prevLobby.has(p.id) ? '' : 'joined'}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:24px;width:100%">${avatarHtml(p.avatar, 92)}<div><div class="sname">${esc(p.name)}${s.settings.runnerPlayerId === p.id ? ' <span class="tag markt">🏃 THE REAL MARK</span>' : ''}</div><div class="ssub">${money(p.bankroll)} to gamble${s.settings.runnerPlayerId && s.settings.runnerPlayerId !== p.id ? ' · gets an extra 🔥 hot tip' : ''}</div></div><span class="slot-badge">${badge}</span><button class="btn small white kick" data-kick="${p.id}" title="Remove player">✕</button></div></div>`);
+        slots.push(`<div class="slot panel slant ${prevLobby.has(p.id) ? '' : 'joined'}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:24px;width:100%">${avatarHtml(p.avatar, 92)}<div><div class="sname">${esc(p.name)}${s.settings.runnerPlayerId === p.id ? ' <span class="tag markt">🏃 THE REAL MARK</span>' : ''}</div><div class="ssub">${s.settings.runnerPlayerId && s.settings.runnerPlayerId !== p.id ? 'gets an extra 🔥 hot tip every round' : 'on the sofa'}</div></div><span class="slot-badge">${badge}</span><button class="btn small white kick" data-kick="${p.id}" title="Remove player">✕</button></div></div>`);
       } else {
         slots.push(`<div class="slot panel slant empty"><div class="unslant" style="display:flex;align-items:center;gap:24px"><div class="ghost-av">?</div><div><div class="sname">Player ${i + 1}</div><div class="ssub">Scan the code to take this seat</div></div></div></div>`);
       }
@@ -346,42 +343,56 @@ function lobbyScreen(st) {
     prevLobby = new Set(s.players.map((p) => p.id));
     $('.slots', root).innerHTML = slots.join('');
     $('.slots', root).classList.toggle('many', n > 2);
-    const set = s.settings;
-    const vol = Math.round((set.volume ?? 0.8) * 10);
-    $('.settings', root).innerHTML = [
-      setRow('Starting pot', 'startingBankroll', money(set.startingBankroll), '<button class="btn small white" data-d="-1">−</button>{val}<button class="btn small white" data-d="1">+</button>'),
-      setRow('Rounds', 'roundsPerGame', set.roundsPerGame, '<button class="btn small white" data-d="-1">−</button>{val}<button class="btn small white" data-d="1">+</button>'),
-      setRow('Bet timer', 'betTimer', set.betTimer ? `${set.betTimer}s` : 'Off', '<button class="btn small white" data-d="-1">−</button>{val}<button class="btn small white" data-d="1">+</button>'),
-      setRow('Drinking', 'drinkingMode', '', `<button class="btn small toggle ${set.drinkingMode ? 'on' : 'off'}" data-toggle>${set.drinkingMode ? '🍺 ON' : 'OFF'}</button>`),
-      setRow('Voice', 'voice', '', `<button class="btn small toggle ${set.voice ? 'on' : 'off'}" data-toggle>${set.voice ? '🎙️ ON' : 'OFF'}</button>`),
-      setRow('Music', 'music', '', `<button class="btn small toggle ${set.music ? 'on' : 'off'}" data-toggle>${set.music ? '🎵 ON' : 'OFF'}</button>`),
-      setRow('Volume', 'volume', `${vol * 10}%`, '<button class="btn small white" data-d="-1">−</button>{val}<button class="btn small white" data-d="1">+</button>'),
-    ].join('');
     const allReady = s.players.length && s.players.every((p) => p.ready);
-    $('.start-wrap', root).innerHTML = `<button class="btn green ${s.players.length ? 'pulse' : ''}" data-start ${s.players.length ? '' : 'disabled'}>${s.players.length ? (s.players.length === 1 ? 'START SOLO ▶' : "LET'S RACE ▶") : 'Waiting for players…'}</button>
+    $('.start-wrap', root).innerHTML = `${nightHtml(s.settings)}<button class="btn green ${s.players.length ? 'pulse' : ''}" data-start ${s.players.length ? '' : 'disabled'}>${s.players.length ? (s.players.length === 1 ? 'START SOLO ▶' : "LET'S RACE ▶") : 'Waiting for players…'}</button>
       <div class="hint">${s.refreshing ? '⏳ Refreshing historical data…' : s.players.length ? (allReady ? 'Everyone is ready!' : 'Press SPACE — or everyone taps READY on their phone') : 'Up to 4 players · best with 2'}</div>
       <button class="btn small white refresh-btn" data-options>⚙ Options</button>`;
     if (optsOpen) renderOptions(s);
   }
   let prevLobby = new Set(st.players.map((p) => p.id));
   let optsOpen = false;
+  let advanced = false;
+  const setRow = (label, key, valHtml, controls) => `<div class="set" data-k="${key}"><div class="lbl">${label}</div><div class="ctl-row">${controls.replace('{val}', `<span class="val">${valHtml}</span>`)}</div></div>`;
+  const stepper = '<button class="btn small white" data-d="-1">−</button>{val}<button class="btn small white" data-d="1">+</button>';
+  const toggle = (on, txt) => `<button class="btn small toggle ${on ? 'on' : 'off'}" data-toggle>${on ? txt : 'OFF'}</button>`;
+  function optionsHtml(set) {
+    const vol = Math.round((set.volume ?? 0.8) * 10);
+    return `<div class="opt-night"><div class="lbl">How long tonight?</div>${nightHtml(set, 'in-modal')}</div>
+      <div class="optgrid">${[
+        setRow('Bet timer', 'betTimer', set.betTimer ? `${set.betTimer}s` : 'Off', stepper),
+        setRow('Drinking', 'drinkingMode', '', toggle(set.drinkingMode, '🍺 ON')),
+        setRow('Voice', 'voice', '', toggle(set.voice, '🎙️ ON')),
+        setRow('Music', 'music', '', toggle(set.music, '🎵 ON')),
+        setRow('Volume', 'volume', `${vol * 10}%`, stepper),
+      ].join('')}</div>
+      <button class="adv-link" data-advanced>${advanced ? '▾ Advanced' : '▸ Advanced options'}</button>
+      ${advanced ? `<div class="optgrid adv">${[
+        setRow('Rounds', 'roundsPerGame', set.roundsPerGame, stepper),
+        setRow('Budget per round', 'roundBudget', money(set.roundBudget ?? 500), stepper),
+      ].join('')}</div>` : ''}`;
+  }
   function renderOptions(s) {
     let m = $('#tvmodal.opts');
-    if (!m) { m = openModal('<h2 class="outlined white thin">⚙ Options</h2><div class="optgrid"></div><div class="row"><button class="btn small white" data-refresh>⟳ Refresh Historical Data…</button><span style="flex:1"></span><button class="btn green" data-ok>Done <small>ENTER</small></button></div>'); m.classList.add('opts');
-      m.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.ok !== undefined) { optsOpen = false; closeModal(); return; } handleSetting(b); }); }
-    $('.optgrid', m).innerHTML = $('.settings', root).innerHTML;
+    if (!m) {
+      m = openModal('<h2 class="outlined white thin">⚙ Options</h2><div class="optbody"></div><div class="row"><button class="btn small white" data-refresh>⟳ Refresh Historical Data…</button><span style="flex:1"></span><button class="btn green" data-ok>Done <small>ENTER</small></button></div>');
+      m.classList.add('opts');
+      m.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.ok !== undefined) { optsOpen = false; closeModal(); return; } handleSetting(b); });
+    }
+    $('.optbody', m).innerHTML = optionsHtml(s.settings);
   }
   function handleSetting(b) {
     audio.play('tick');
     if (b.dataset.refresh !== undefined) { optsOpen = false; return confirmRefresh(); }
+    if (b.dataset.advanced !== undefined) { advanced = !advanced; return renderOptions(S); }
+    if (b.dataset.night) return send({ t: 'settings', settings: { roundsPerGame: Number(b.dataset.night) } });
     const k = b.closest('[data-k]')?.dataset.k;
     if (!k) return undefined;
     const st2 = S.settings;
     if (b.dataset.toggle !== undefined) return send({ t: 'settings', settings: { [k]: !st2[k] } });
     const d = Number(b.dataset.d);
     let v;
-    if (k === 'startingBankroll') { const i = BANKROLLS.indexOf(st2[k]); v = BANKROLLS[Math.max(0, Math.min(BANKROLLS.length - 1, (i < 0 ? 2 : i) + d))]; }
-    else if (k === 'betTimer') { const i = TIMERS.indexOf(st2[k]); v = TIMERS[Math.max(0, Math.min(TIMERS.length - 1, (i < 0 ? 0 : i) + d))]; }
+    if (k === 'betTimer') { const i = TIMERS.indexOf(st2[k]); v = TIMERS[Math.max(0, Math.min(TIMERS.length - 1, (i < 0 ? 2 : i) + d))]; }
+    else if (k === 'roundBudget') { const i = BUDGETS.indexOf(st2[k]); v = BUDGETS[Math.max(0, Math.min(BUDGETS.length - 1, (i < 0 ? 1 : i) + d))]; }
     else if (k === 'volume') v = Math.round(Math.max(0, Math.min(1, (st2.volume ?? 0.8) + d * 0.1)) * 10) / 10;
     else v = st2[k] + d;
     return send({ t: 'settings', settings: { [k]: v } });
@@ -396,17 +407,8 @@ function lobbyScreen(st) {
     if (b.dataset.refresh !== undefined) return confirmRefresh();
     if (b.dataset.options !== undefined) { optsOpen = true; return renderOptions(S); }
     if (b.dataset.kick) return send({ t: 'kick', playerId: b.dataset.kick });
-    const k = b.closest('[data-k]')?.dataset.k;
-    if (!k) return;
-    const s = S.settings;
-    if (b.dataset.toggle !== undefined) return send({ t: 'settings', settings: { [k]: !s[k] } });
-    const d = Number(b.dataset.d);
-    let v;
-    if (k === 'startingBankroll') { const i = BANKROLLS.indexOf(s[k]); v = BANKROLLS[Math.max(0, Math.min(BANKROLLS.length - 1, (i < 0 ? 2 : i) + d))]; }
-    else if (k === 'betTimer') { const i = TIMERS.indexOf(s[k]); v = TIMERS[Math.max(0, Math.min(TIMERS.length - 1, (i < 0 ? 0 : i) + d))]; }
-    else if (k === 'volume') v = Math.round(Math.max(0, Math.min(1, (s.volume ?? 0.8) + d * 0.1)) * 10) / 10;
-    else v = s[k] + d;
-    send({ t: 'settings', settings: { [k]: v } });
+    if (b.dataset.night) return send({ t: 'settings', settings: { roundsPerGame: Number(b.dataset.night) } });
+    return undefined;
   });
   return { update: (s) => render(s) };
 }
@@ -465,7 +467,6 @@ function refreshFinished(ok, msg) {
 // INTRO
 // =====================================================================================================
 let coldOpenDone = null;
-let skipExplainer = null; // true -> skip the round-1 explainer beats
 let raceView = null;
 let raceViewKind = null;
 let raceViewRound = null;
@@ -509,10 +510,170 @@ async function makeRaceView(opts, { allow2d = true } = {}) {
   return raceView;
 }
 
-function sayIntroLines(round) {
-  const lines = round.introLines?.length ? round.introLines : [{ speaker: 'jeff', text: `Welcome to Finsbury Park for round ${round.number}: ${round.title}!` }];
-  lines.slice(0, 2).forEach((l) => say(l.text, l.speaker, 3));
+// ---------- presenters (Jeff + Pam): original toon busts from the shared portrait, dressed for the studio ----------
+const PRESENTERS = {
+  jeff: { id: 'jeff', nickname: 'Jeff', role: 'Chief Correspondent', colour: { primary: '#1d3b8f', secondary: '#ff4d5a' }, suit: '#22305e', tie: '#ff4d5a',
+    look: { build: 'stocky', hat: null, hair: 'quiff', hairColour: '#8d939c', accessory: 'moustache', skin: '#f1c6a5', face: 'grin' } },
+  pam: { id: 'pam', nickname: 'Pam', role: 'Racing Analyst', colour: { primary: '#c2185b', secondary: '#ffd23f' }, suit: '#b0174f', tie: null,
+    look: { build: 'tall', hat: null, hair: 'long', hairColour: '#3a2214', accessory: null, skin: '#c68642', face: 'cheeky' } },
+};
+function presenterSvg(who, size = 360) {
+  const P = PRESENTERS[who] || PRESENTERS.jeff;
+  // the runner portrait without its colour disc, with a suit jacket drawn over the running vest
+  const svg = runnerPortrait({ ...P, lane: '' }, { size, idSuffix: `${who}${Math.random().toString(36).slice(2, 5)}` })
+    .replace(/<circle cx="60" cy="60" r="56" fill="[^"]+"\/>/, '')
+    .replace(/<path d="M0 92 L120 70 L120 120 L0 120Z"[^>]*\/>/, '');
+  const w = P.look.build === 'stocky' ? 50 : 40;
+  const sy = P.look.build === 'stocky' ? 77 : 79;
+  const ink = '#14183c';
+  const tie = P.tie ? `<path d="M57 ${sy + 3} L63 ${sy + 3} L65.5 ${sy + 30} L60 ${sy + 38} L54.5 ${sy + 30}Z" fill="${P.tie}" stroke="${ink}" stroke-width="3" stroke-linejoin="round"/>`
+    : `<circle cx="60" cy="${sy + 16}" r="4.5" fill="#ffd23f" stroke="${ink}" stroke-width="2.5"/><circle cx="52" cy="${sy + 11}" r="3.5" fill="#fff" stroke="${ink}" stroke-width="2"/><circle cx="68" cy="${sy + 11}" r="3.5" fill="#fff" stroke="${ink}" stroke-width="2"/>`;
+  const suit = `<svg class="suit" viewBox="0 0 120 120" width="${size}" height="${size}"><path d="M${60 - w} 126 Q${60 - w} ${sy + 6} 46 ${sy} L74 ${sy} Q${60 + w} ${sy + 6} ${60 + w} 126Z" fill="${P.suit}" stroke="${ink}" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M46 ${sy} L60 ${sy + 30} L74 ${sy}Z" fill="#fff" stroke="${ink}" stroke-width="4" stroke-linejoin="round"/>${tie}
+    <path d="M46 ${sy} L40 ${sy + 16} L52 ${sy + 18} L60 ${sy + 34} M74 ${sy} L80 ${sy + 16} L68 ${sy + 18} L60 ${sy + 34}" fill="none" stroke="${ink}" stroke-width="3.5" stroke-linejoin="round"/>
+    <rect x="${60 + w - 26}" y="${sy + 22}" width="9" height="5" rx="2" fill="#ffd23f" stroke="${ink}" stroke-width="2"/></svg>`;
+  return `<div class="bust">${svg}${suit}</div>`;
 }
+
+// ---------- news-desk cold open (replaces the old rule slides) ----------
+// Lines come from the game module's newsDeskScript(players, settings) via the server (introExtras.newsDesk), or the
+// browser-safe moments module, or this fallback. Lower-thirds carry a headline strap + the caption of the line.
+function newsDeskFallback(st) {
+  const ns = st.players.map((p) => p.name);
+  const both = ns.length >= 2 ? `${ns.slice(0, -1).join(', ')} and ${ns.at(-1)}` : ns[0] || 'our player';
+  const n = st.roundsPerGame, b = budgetOf(st);
+  return {
+    lines: [
+      { speaker: 'jeff', strap: 'GOOD EVENING FROM THE SOFA', text: `Good evening, and welcome to MARKRUN News. I'm Jeff.` },
+      { speaker: 'pam', strap: `TONIGHT: ${ns.join(' v ').toUpperCase() || 'THE BIG NIGHT'}`, text: `And I'm Pam. Tonight, ${both} put their money where their mouths are.` },
+      { speaker: 'jeff', strap: 'FIVE RUNNERS. ALL OF THEM MARK.', text: 'Every race: five real Saturday mornings at Finsbury parkrun. Every runner is Mark. Only one of them is quick.' },
+      { speaker: 'pam', strap: `${money(b)} TO BET, EVERY ROUND`, text: `You each get ${b} Parkpounds to bet every round. Winnings go on your score. Losses come off it.` },
+      { speaker: 'jeff', strap: '🔥 HOT TIP = THE BOOKIE DOESN\'T KNOW', text: "Your phones have secret clues. A hot tip is something the bookie hasn't priced in. Use it." },
+      { speaker: 'pam', strap: `${n} RACES · THE LAST ONE PAYS DOUBLE`, text: `${n} races tonight, and the last one pays double. Back to the park!` },
+    ],
+    ticker: [`${ns.join(' AND ').toUpperCase() || 'PLAYERS'} ARRIVE ON SOFA, LOOKING CONFIDENT`, 'LOCAL MAN RUNS SAME 5K NINETY-EIGHT TIMES', "BOOKIE 'TERRIFIED' OF HOT TIPS", "PARKRUN VOLUNTEERS 'UNBELIEVABLY NICE' — OFFICIAL",
+      'WEATHER: GRASS WET, AGAIN', 'THE HILL: STILL THERE', `${n} RACES TONIGHT · FINAL ROUND PAYS DOUBLE`],
+  };
+}
+function newsDeskScript(st) {
+  const fromServer = st.introExtras?.newsDesk;
+  if (fromServer?.lines?.length) return fromServer;
+  const m = moment('newsDeskScript', st.players.map((p) => ({ id: p.id, name: p.name })), { ...st.settings, rounds: st.roundsPerGame, budget: budgetOf(st) });
+  const lines = Array.isArray(m) ? m : m?.lines;
+  if (Array.isArray(lines) && lines.some((l) => l?.text)) return { lines: lines.filter((l) => l?.text), ticker: m?.ticker };
+  return newsDeskFallback(st);
+}
+const strapOf = (l) => l.strap || l.headline || l.lowerThird || l.caption || l.title || '';
+async function playNewsDesk(root, st, tok) {
+  const script = newsDeskScript(st);
+  const fb = newsDeskFallback(st);
+  const lines = script.lines.slice(0, 10);
+  const ticker = (script.ticker?.length ? script.ticker : fb.ticker).map((t) => esc(String(t).toUpperCase()));
+  const tick = ticker.join('<i>◆</i>');
+  const now = new Date();
+  const desk = el(`<div class="newsdesk">
+    <div class="nd-bg"><div class="nd-beam b1"></div><div class="nd-beam b2"></div></div>
+    <div class="nd-wall"><div class="nd-sky"></div>${decoWorld()}<div class="nd-live-tag">📍 LIVE FROM FINSBURY PARK</div></div>
+    <div class="nd-bug"><span class="nb1">MARKRUN</span><span class="nb2">NEWS</span><span class="nb3"><i></i>LIVE</span><span class="nb4">${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}</span></div>
+    <div class="pres jeff">${presenterSvg('jeff', 380)}</div>
+    <div class="pres pam">${presenterSvg('pam', 380)}</div>
+    <div class="nd-desk"><svg viewBox="0 0 1400 250" preserveAspectRatio="none"><defs><linearGradient id="ndg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a62e0"/><stop offset="1" stop-color="#173c9c"/></linearGradient></defs>
+      <polygon points="70,40 1330,40 1392,246 8,246" fill="url(#ndg)" stroke="#14183c" stroke-width="10" stroke-linejoin="round"/><polygon points="40,6 1360,6 1330,44 70,44" fill="#e9f1ff" stroke="#14183c" stroke-width="10" stroke-linejoin="round"/></svg>
+      <div class="nd-desklogo outlined">MARK<span>RUN</span> <em>NEWS</em></div>
+      <div class="nd-plate jeff">JEFF</div><div class="nd-plate pam">PAM</div></div>
+    <div class="nd-l3"><div class="nd-top"><span class="nd-tag">BREAKING</span><span class="nd-strap"><span></span></span></div><div class="nd-cap"><span class="who"></span><span class="txt"></span></div></div>
+    <div class="nd-ticker"><span class="nd-tk">MARKRUN NEWS</span><div class="nd-scroll"><div class="nd-run">${tick}<i>◆</i>${tick}<i>◆</i></div></div></div>
+  </div>`);
+  root.appendChild(desk);
+  document.body.classList.add('newsdesk-on');
+  audio.play('sting'); audio.play('fanfare');
+  let skipped = false;
+  setSkip(() => { skipped = true; voice.clear(); });
+  const strapEl = $('.nd-strap > span', desk), capWho = $('.nd-cap .who', desk), capTxt = $('.nd-cap .txt', desk), l3 = $('.nd-l3', desk);
+  await sleepT(900, tok);
+  const t0 = Date.now();
+  for (let i = 0; i < lines.length && !tok.cancelled && !skipped; i++) {
+    const l = lines[i];
+    const who = l.speaker === 'pam' ? 'pam' : 'jeff';
+    desk.querySelectorAll('.pres, .nd-plate').forEach((x) => x.classList.toggle('talk', x.classList.contains(who)));
+    const strap = strapOf(l) || strapOf(fb.lines[i] || {}) || 'MARKRUN NEWS';
+    if (strapEl.textContent !== strap) { strapEl.textContent = strap; l3.classList.remove('in'); void l3.offsetWidth; l3.classList.add('in'); audio.play('whoosh'); }
+    capWho.textContent = who.toUpperCase(); capWho.className = `who ${who}`;
+    capTxt.textContent = l.text;
+    say(l.text, who, 3);
+    const words = String(l.text).split(/\s+/).length;
+    const min = Math.min(6500, Math.max(2600, words * 330 + 900));
+    const end = Date.now() + T(min);
+    while (!tok.cancelled && !skipped && (Date.now() < end || (SPEED <= 1.5 && voice.busy && Date.now() < end + 3000))) await new Promise((r) => setTimeout(r, 100));
+    if (Date.now() - t0 > T(40000)) break; // the cold open never outstays its welcome
+  }
+  setSkip(null);
+  voice.clear();
+  if (tok.cancelled) return;
+  desk.classList.add('out');
+  playWipe();
+  await sleepT(WIPE_MID, tok);
+  desk.remove();
+  document.body.classList.remove('newsdesk-on');
+}
+
+// ---------- theme card: big label, blurb, up to 3 explainer lines, an icon; the presenters read it out ----------
+function themeLinesFor(st, theme) {
+  const fromServer = st.introExtras?.themeLines;
+  if (Array.isArray(fromServer) && fromServer.length) return fromServer;
+  const m = moment('themeAnnouncement', theme);
+  const arr = Array.isArray(m) ? m : m?.lines || (m?.text ? [m] : null);
+  if (Array.isArray(arr) && arr.some((l) => l?.text)) return arr.filter((l) => l?.text);
+  const ex = (theme.explainer || []).filter(Boolean);
+  return [{ speaker: 'pam', text: `This round: ${theme.label}! ${theme.blurb || ''}`.trim() }, ...(ex[0] ? [{ speaker: 'jeff', text: ex[0] }] : [])];
+}
+async function playThemeCard(root, st, tok) {
+  const round = st.round;
+  const t = round.theme;
+  const ex = (Array.isArray(t.explainer) ? t.explainer : []).filter(Boolean).slice(0, 3);
+  const dbl = Number(round.payoutMultiplier) >= 2;
+  const card = el(`<div class="theme-show th-${esc(t.key || 'x')} wx-${esc(t.visual?.weather || 'clear')}">
+    <div class="ts-rays"></div>
+    <div class="ts-icon anim-pop"><span>${themeIcon(t)}</span></div>
+    <div class="ts-body">
+      <div class="ts-kick">ROUND ${round.number} OF ${st.roundsPerGame} · THIS ROUND'S THEME</div>
+      <div class="ts-label outlined" style="font-size:${t.label.length > 24 ? 92 : t.label.length > 18 ? 108 : 124}px">${esc(t.label)}</div>
+      ${t.blurb ? `<div class="ts-blurb">${esc(t.blurb)}</div>` : ''}
+      ${ex.length ? `<ul class="ts-ex">${ex.map((x, i) => `<li style="animation-delay:${0.5 + i * 0.35}s">${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${dbl ? '<div class="ts-x2 outlined">FINAL ROUND · EVERY WIN PAYS DOUBLE</div>' : ''}
+    </div>
+    <div class="ts-pres"><div class="mini jeff">${presenterSvg('jeff', 130)}</div><div class="mini pam">${presenterSvg('pam', 130)}</div></div>
+  </div>`);
+  root.appendChild(card);
+  audio.play('reveal'); audio.play('fanfare');
+  let skipped = false;
+  setSkip(() => { skipped = true; voice.clear(); });
+  const lines = themeLinesFor(st, t).slice(0, 3);
+  const t0 = Date.now();
+  (async () => {
+    for (const l of lines) {
+      if (tok.cancelled || skipped) return;
+      const who = l.speaker === 'pam' ? 'pam' : 'jeff';
+      card.querySelectorAll('.mini').forEach((x) => x.classList.toggle('talk', x.classList.contains(who)));
+      say(l.text, who, 3);
+      await waitVoice(tok, Math.min(5000, String(l.text).split(/\s+/).length * 330 + 700), 6500);
+    }
+  })();
+  // ~8-10 s: long enough to read, never longer than the lines need
+  while (!tok.cancelled && !skipped) {
+    const el2 = Date.now() - t0;
+    if (el2 > T(10500)) break;
+    if (el2 > T(8000) && (SPEED > 1.5 || !voice.busy)) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  setSkip(null);
+  if (tok.cancelled) return;
+  voice.clear();
+  playWipe();
+  await sleepT(WIPE_MID, tok);
+  card.remove();
+}
+
 function introScreen(st) {
   const tok = makeToken();
   const round = st.round;
@@ -520,19 +681,18 @@ function introScreen(st) {
   const root = el(`<div class="intro">${decoWorld()}<div class="tint"></div><div class="stagebox"></div><div class="intro-dots">${runners.map(() => '<i></i>').join('')}</div></div>`);
   screenEl.appendChild(root);
   const box = $('.stagebox', root);
-  const bail = (st.bailouts || []).map((b) => `${esc(st.players.find((p) => p.id === b.playerId)?.name || '')} got a ${money(b.amount)} bailout from the Bank of Mum &amp; Dad`).join('<br>');
-
-  const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div><div class="rs">${runners.length} runners. All of them Mark. Only one of them is having a good day.</div>${round.theme?.label ? `<div class="theme-badge panel slant grape"><div class="unslant"><span class="tk">THEME</span>${esc(round.theme.label)}</div></div>${round.theme.blurb ? `<div class="tblurb">${esc(round.theme.blurb)}</div>` : ''}` : ''}${Number(round.payoutMultiplier) >= 2 ? '<div class="double-badge outlined">DOUBLE PAYOUT FINALE ×2</div>' : ''}${round.notice ? `<div class="bail panel grape" style="color:#fff">🃏 ${esc(round.notice)}</div><br>` : ''}${bail ? `<div class="bail panel yellow">💸 ${bail}</div>` : ''}</div></div>`;
-  const cardHtml = (r) => `<div class="l3 anim-left" style="--c1:${esc(r.colour.primary)}"><div class="l3p">${portrait(r, 150)}</div><div class="l3t"><b>${esc(tvName(r))}</b><span>${esc(r.tagline || '')}</span></div><div class="l3o"><small>ODDS</small><span class="num">${esc(r.odds?.display || '')}</span></div></div>`;
+  const dbl = Number(round.payoutMultiplier) >= 2;
+  const titleHtml = `<div class="title-card"><div class="anim-pop"><div class="rn outlined white">ROUND ${round.number} <span style="opacity:.8">of ${st.roundsPerGame}</span></div><div class="rt outlined" style="font-size:${round.title.length > 22 ? 104 : 150}px">${esc(round.title)}</div>${dbl ? '<div class="double-badge outlined">DOUBLE PAYOUT FINALE ×2</div>' : ''}${round.notice ? `<div class="bail panel grape" style="color:#fff">🃏 ${esc(round.notice)}</div>` : ''}</div></div>`;
+  const moneyOf = (r) => winsHtml(round, { type: 'win', runnerId: r.id, stake: EXAMPLE_STAKE });
+  // lower-third: name, rank and plain money. The spoken intro line is the caption (subtitle), so it isn't repeated here.
+  const cardHtml = (r) => `<div class="l3 anim-left" style="--c1:${esc(r.colour.primary)}"><div class="l3p">${portrait(r, 150)}</div><div class="l3t">${rankHtml(round, r)}<b>${esc(tvName(r))}</b></div><div class="l3o">${moneyOf(r)}</div></div>`;
   async function showRunner(i) {
     const r = runners[i];
     $$('.intro-dots i', root).forEach((d, j) => d.classList.toggle('on', j === i));
     box.innerHTML = cardHtml(r);
     audio.play('whoosh');
     say(r.intro || `${r.nickname}. ${r.tagline || ''}`, i % 2 ? 'pam' : 'jeff', 3);
-    const cp = clueParts(r.publicClue, 8);
-    if (cp.kicker && !/^…/.test(cp.kicker)) say(`${cp.headline} ${cp.kicker}`, i % 2 ? 'jeff' : 'pam', 2); // the joke lives in the kicker
-    await waitVoice(tok, 4800, 6500); // intros <= ~45 s in total
+    await waitVoice(tok, 5200, 6500); // ~6 s per runner
   }
   async function finish() {
     if (tok.cancelled) return;
@@ -547,49 +707,34 @@ function introScreen(st) {
   const t0 = Date.now();
   const hb = setInterval(() => send({ t: 'progress', phase: 'INTRO', roundId: round.roundId, value: Date.now() - t0 }), 2000);
   tok.timers.push(hb);
+  const coldKey = `markrun.coldopen.${st.sessionId}.${st.gameNumber}`;
+  const seenCold = () => { if (coldOpenDone === `${st.sessionId}.${st.gameNumber}`) return true; try { return sessionStorage.getItem(coldKey) === '1'; } catch { return false; } };
   async function coldOpen() {
-    if (round.number !== 1 || coldOpenDone === st.gameNumber) return;
-    coldOpenDone = st.gameNumber;
-    box.innerHTML = `<div class="cold"><div class="cw outlined">MARK<span>RUN</span></div><div class="cs outlined white thin">${esc(st.players.map((p) => p.name).join(' vs '))}</div><div class="cp">${st.players.map((p) => avatarHtml(p.avatar, 110)).join('<span class="vsx outlined">VS</span>')}</div></div>`;
-    audio.play('drumroll', { dur: 1.4 }); setTimeout(() => { audio.play('fanfare'); audio.play('crowd', { dur: 3, peak: 0.3 }); }, T(1500));
-    const lines = moment('coldOpenLines', st.players.map((p) => ({ name: p.name }))) || [{ speaker: 'jeff', text: `Good evening, ${st.players.map((p) => p.name).join(' and ')}! Welcome to MARKRUN!` }];
-    await sleepT(1600, tok);
-    lines.slice(0, 2).forEach((l) => say(l.text, l.speaker, 3));
-    await waitVoice(tok, 6000, 9000);
+    if (round.number !== 1 || seenCold()) return;
+    coldOpenDone = `${st.sessionId}.${st.gameNumber}`;
+    try { sessionStorage.setItem(coldKey, '1'); } catch { /* */ }
+    root.classList.add('segment-on');
+    await playNewsDesk(root, st, tok);
+    root.classList.remove('segment-on');
   }
-  async function explainer() {
-    if (round.number !== 1) return;
-    const beats = [
-      ['📺 + 🤫', 'One clue on the telly,', 'one secret on your phone.', 'One clue on the telly, one secret on your phone. Read both.'],
-      ['🔥', 'HOT TIP', "means the bookie doesn't know this.", "If it's got a fire on it, the bookie doesn't know about it. Use it."],
-      ['½ · ×2', 'Half your pot per round.', 'The final round pays DOUBLE.', 'You can bet half your pot each round. The final round pays double. Pace yourselves.'],
-    ];
-    skipExplainer = false;
-    for (const [icon, l1, l2, voiceLine] of beats) {
-      if (tok.cancelled || skipExplainer) break;
-      box.innerHTML = `<div class="explain"><div class="anim-pop"><div class="ei">${icon}</div><div class="e1 outlined">${esc(l1)}</div><div class="e2 outlined white thin">${esc(l2)}</div></div><div class="eskip">SPACE to skip</div></div>`;
-      audio.play('reveal');
-      say(voiceLine, 'pam', 3);
-      const t0 = Date.now();
-      while (!skipExplainer && !tok.cancelled && (Date.now() - t0 < T(4500) || (SPEED <= 1.5 && voice.busy && Date.now() - t0 < 10000))) await new Promise((r) => setTimeout(r, 100));
-    }
-    skipExplainer = null;
-    voice.clear();
+  async function themeCard() {
+    if (!round.theme?.label || tok.cancelled) return;
+    root.classList.add('segment-on');
+    await playThemeCard(root, st, tok);
+    root.classList.remove('segment-on');
   }
   async function groupIntro(v) { // from round 2: one group frame and one joke line instead of five intros
-    box.innerHTML = `${titleHtml}<div class="lineup">${runners.map((r) => `<div class="lu"><div class="rp">${portrait(r, 120)}</div><b>${esc(runnerShort(r))}</b><span class="num">${esc(r.odds?.display || '')}</span></div>`).join('')}</div>`;
+    box.innerHTML = `${titleHtml}<div class="lineup">${runners.map((r) => `<div class="lu"><div class="rp">${portrait(r, 120)}</div><b>${esc(runnerShort(r))}</b>${rankHtml(round, r)}<span class="lm">${moneyOf(r)}</span></div>`).join('')}</div>`;
     audio.play('fanfare');
     const line = (round.introLines || []).find((l) => l.text) || { speaker: 'jeff', text: `Round ${round.number}: ${round.title}! Five Marks, one winner.` };
     say(line.text, line.speaker || 'jeff', 3);
-    const joke = runners.map((r) => r.tagline).filter(Boolean)[Math.floor(Math.random() * runners.length)];
-    if (joke) say(joke, 'pam', 2);
     if (v) { try { const info = v.playIntro(() => {}); const n = runners.length; v.seek?.((info?.flyoverS ?? 7) + n * (info?.perRunnerS ?? 4.2) + 0.5); } catch (e) { console.warn(e); } }
-    await waitVoice(tok, 5000, 11000);
+    await waitVoice(tok, 5500, 9000);
   }
   (async () => {
     await coldOpen();
     if (tok.cancelled) return;
-    await explainer();
+    await themeCard();
     if (tok.cancelled) return;
     if (round.number >= 2) {
       let v = null;
@@ -602,7 +747,8 @@ function introScreen(st) {
       await finish();
       return;
     }
-    // 3D: helicopter fly-over + a close-up per runner; our card + voice line hold each shot (onIntroRunner)
+    // 3D: helicopter fly-over (the 3D view shows its own title card) + a close-up per runner; our lower-third and
+    // voice line hold each shot (onIntroRunner)
     if (!FORCE_2D && Race3D?.createRaceView) {
       const byId = new Map(runners.map((r, i) => [r.id, i]));
       const v = await makeRaceView({
@@ -613,9 +759,10 @@ function introScreen(st) {
         document.body.classList.add('racing');
         root.classList.add('over3d');
         root.querySelector('.clouds')?.remove(); root.querySelector('.hills')?.remove();
-        box.innerHTML = titleHtml;
+        box.innerHTML = '';
         audio.play('fanfare');
-        sayIntroLines(round);
+        const l0 = (round.introLines || []).find((l) => l.text);
+        if (l0) say(l0.text, l0.speaker || 'jeff', 3);
         let done = false;
         const guard = setTimeout(() => { if (!done) { done = true; finish(); } }, T(150000));
         tok.timers.push(guard);
@@ -626,24 +773,27 @@ function introScreen(st) {
     if (tok.cancelled) return;
     box.innerHTML = titleHtml;
     audio.play('fanfare');
-    sayIntroLines(round);
-    await waitVoice(tok, 4200, 6000);
-    for (let i = 0; i < runners.length && !tok.cancelled; i++) { await showRunner(i); if (!tok.cancelled) await sleepT(700, tok); }
+    const l0 = (round.introLines || []).find((l) => l.text);
+    if (l0) say(l0.text, l0.speaker || 'jeff', 3);
+    await waitVoice(tok, 3500, 5500);
+    for (let i = 0; i < runners.length && !tok.cancelled; i++) { await showRunner(i); if (!tok.cancelled) await sleepT(500, tok); }
     await finish();
   })();
-  return { destroy: () => { cancelToken(tok); } };
+  return { destroy: () => { cancelToken(tok); setSkip(null); document.body.classList.remove('newsdesk-on'); } };
 }
 
 // =====================================================================================================
 // BETTING
 // =====================================================================================================
 const tvName = (r) => (r.nickname.length <= 18 ? r.nickname : runnerShort(r));
-function runnerCardHtml(r) {
+// One card per runner: face, RANK (favourite..outsider), name, plain money ("50pp wins 200pp", fraction small), clue.
+function runnerCardHtml(round, r) {
   const { headline, kicker } = clueParts(r.publicClue, 8);
   return `<div class="rc panel" data-rid="${r.id}">
     <div class="top stripe" style="--c1:${esc(r.colour.primary)};--c2:${esc(shadeHex(r.colour.primary))}"><div class="rp">${portrait(r, 170)}</div></div>
-    <div class="odds"><span class="num">${esc(r.odds?.display || '')}</span></div>
+    <div class="rk">${rankHtml(round, r)}</div>
     <div class="nick">${esc(tvName(r))}</div>
+    <div class="money">${winsHtml(round, { type: 'win', runnerId: r.id, stake: EXAMPLE_STAKE })}</div>
     <div class="clue"><b>${esc(headline)}</b>${kicker ? `<small>${esc(kicker)}</small>` : ''}</div>
   </div>`;
 }
@@ -658,12 +808,12 @@ function themeBadge(round) {
   return `${t?.label ? `<div class="theme-badge panel slant grape"><div class="unslant"><span class="tk">THEME</span>${esc(t.label)}</div></div>` : ''}${dbl ? '<div class="double-badge outlined">DOUBLE PAYOUT ×2</div>' : ''}`;
 }
 function stripHtml(round) {
-  const mus = (round.matchups || []).map((m) => {
+  const mus = (round.matchups || []).slice(0, 1).map((m) => {
     const a = runnerById(round, m.a), b = runnerById(round, m.b);
     if (!a || !b) return '';
-    return `<span class="si"><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(runnerShort(a))} <em>${esc(m.odds.displayA || `×${m.odds.a}`)}</em> <span class="vs">v</span> <i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(runnerShort(b))} <em>${esc(m.odds.displayB || `×${m.odds.b}`)}</em></span>`;
+    return `<span class="si"><span class="sk">⚔️ HEAD-TO-HEAD</span><i class="dot" style="background:${esc(a.colour.primary)}"></i>${esc(runnerShort(a))} <span class="vs">v</span> <i class="dot" style="background:${esc(b.colour.primary)}"></i>${esc(runnerShort(b))}</span>`;
   });
-  const props = (round.props || []).map((p) => `<span class="si prop">🎡 ${esc(p.text)} <em>${esc(p.odds?.displayYes || '')}</em></span>`);
+  const props = (round.props || []).map((p) => `<span class="si prop"><span class="sk">🎡 SIDE BET</span>${esc(p.text)}</span>`);
   return [...mus, ...props].filter(Boolean).join('<span class="sep">·</span>');
 }
 function bettingScreen(st) {
@@ -671,7 +821,7 @@ function bettingScreen(st) {
   const runners = [...round.runners].sort((a, b) => a.lane - b.lane);
   const root = el(`<div class="betting">
     <div class="bet-head"><div class="h outlined">PLACE YOUR BETS!</div><div class="rt">Round ${round.number}/${st.roundsPerGame} · ${esc(round.title)}</div>${themeBadge(round)}<div class="timer num hidden"></div></div>
-    <div class="runner-grid n${runners.length}">${runners.map((r) => runnerCardHtml(r)).join('')}</div>
+    <div class="runner-grid n${runners.length}">${runners.map((r) => runnerCardHtml(round, r)).join('')}</div>
     <div class="bstrip">${stripHtml(round)}</div>
     ${round.notice ? `<div class="notice panel grape">🃏 ${esc(round.notice)}</div>` : ''}
   </div>`);
@@ -679,12 +829,22 @@ function bettingScreen(st) {
   $$('.rc', root).forEach((c, i) => { c.style.animation = `slide-up .5s ${i * 0.08}s cubic-bezier(.2,1.3,.4,1) both`; });
   const timerEl = $('.timer', root);
   let lastSec = null;
-  function tick() {
+  let hurried = false;
+  function tick() { // soft bet timer: a hurry-up nudge, then the server locks each slip as it stands
     if (!S?.deadline || S.phase !== 'BETTING' || S.revealed) { timerEl.classList.add('hidden'); return; }
     const left = Math.max(0, Math.ceil((S.deadline - net.serverNow()) / 1000));
     timerEl.classList.remove('hidden');
     timerEl.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    timerEl.classList.toggle('hurry', left <= 20);
     if (left <= 10 && left !== lastSec) audio.play('tick');
+    if (left <= 20 && left > 0 && !hurried && S.players.some((p) => !p.locked)) {
+      hurried = true;
+      const slow = S.players.filter((p) => !p.locked).map((p) => p.name);
+      root.appendChild(el(`<div class="hurry-up"><div class="anim-pop outlined">HURRY UP!</div><small>${esc(slow.join(' & '))} — ${left} seconds, then your slip locks as it is</small></div>`));
+      audio.play('bell');
+      say(`${slow.join(' and ')}, twenty seconds! Get those bets locked in!`, 'jeff', 3);
+      setTimeout(() => root.querySelector('.hurry-up')?.classList.add('out'), T(4200));
+    }
     lastSec = left;
   }
   const iv = setInterval(tick, 250); tick();
@@ -694,7 +854,6 @@ function bettingScreen(st) {
     ['jeff', 'Head-to-heads are a lovely way to lose money slowly.'],
   ];
   if (Number(round.payoutMultiplier) >= 2) say('Final round, and every payout is doubled! Fortunes will be made. Mostly lost.', 'jeff', 3);
-  else if (round.theme?.label) say(`Today's theme: ${round.theme.label}. ${round.theme.blurb || ''}`, 'pam', 2);
   const quips = runners.map((r) => ({ r, k: clueParts(r.publicClue, 8).kicker })).filter((x) => x.k && !/^…/.test(x.k));
   const pick = quips[Math.floor(Math.random() * quips.length)];
   const tipTimer = setTimeout(() => { if (pick) say(`${runnerShort(pick.r)}: ${pick.k}`, 'pam', 1); else { const t = tips[Math.floor(Math.random() * tips.length)]; say(t[1], t[0], 1); } }, T(12000));
@@ -717,7 +876,7 @@ function revealScreen(st) {
   const pcol = (pid) => st.players.find((p) => p.id === pid)?.avatar?.colour || '#fff';
   const root = el(`<div class="faceoff">
     <div class="rh outlined">THE BETS ARE IN!</div>
-    <div class="fo-grid">${runners.map((r) => `<div class="fo-card" data-rid="${r.id}"><div class="fo-top" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 150)}</div></div><b>${esc(tvName(r))}</b><span class="num">${esc(r.odds?.display || '')}</span><div class="fo-chips"></div></div>`).join('')}</div>
+    <div class="fo-grid">${runners.map((r) => `<div class="fo-card" data-rid="${r.id}"><div class="fo-top" style="background:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 150)}</div></div><b>${esc(tvName(r))}</b>${rankHtml(round, r, 'fo-rank')}<div class="fo-chips"></div></div>`).join('')}</div>
     <div class="fo-side"></div>
     <div class="fo-legend">${st.players.map((p) => `<span class="lg">${avatarHtml(p.avatar, 40)}<b>${esc(p.name)}</b><i data-tot="${p.id}">0pp</i></span>`).join('')}</div>
   </div>`);
@@ -733,10 +892,10 @@ function revealScreen(st) {
       const p = st.players.find((x) => x.id === playerId);
       const rid = betRunnerId(bet);
       const big = i === seq.length - 1 && seq.length > 1;
-      const chip = el(`<div class="fchip ${big ? 'big' : ''} anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<b>${money(bet.stake)}</b><small>wins +${money(betWin(round, bet))}</small>${bet.type === 'h2h' ? '<i>⚔️</i>' : bet.type === 'special' || bet.boost ? '<i>🚀</i>' : ''}</div>`);
+      const chip = el(`<div class="fchip ${big ? 'big' : ''} anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<b>${money(bet.stake)}</b><small>wins ${money(betWin(round, bet))}</small>${bet.type === 'h2h' ? '<i>⚔️</i>' : bet.type === 'special' || bet.boost ? '<i>🚀</i>' : ''}</div>`);
       const card = rid ? root.querySelector(`.fo-card[data-rid="${rid}"] .fo-chips`) : null;
       if (card) card.appendChild(chip);
-      else $('.fo-side', root).appendChild(el(`<div class="fside anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<span>🎡 ${esc(betLabel(round, bet))}</span><b>${money(bet.stake)}</b><small>wins +${money(betWin(round, bet))}</small></div>`));
+      else $('.fo-side', root).appendChild(el(`<div class="fside anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<span>🎡 ${esc(betLabel(round, bet))}</span><b>${money(bet.stake)}</b><small>wins ${money(betWin(round, bet))}</small></div>`));
       if (rid) root.querySelector(`.fo-card[data-rid="${rid}"]`)?.classList.add('backed');
       audio.play(big ? 'kaching' : 'chip', { p: bet.stake / maxStake });
       tot[playerId] = (tot[playerId] || 0) + bet.stake;
@@ -753,7 +912,8 @@ function revealScreen(st) {
       for (const x of ba.filter((q) => q.type === 'h2h')) { const y = bb.find((q) => q.type === 'h2h' && q.matchupId === x.matchupId && q.pick !== x.pick); if (y) clashes.push([x.pick, y.pick]); }
       const top = (bs, p) => bs.filter((q) => q.type === 'win' || q.type === 'special').sort((u, v) => v.stake - u.stake)[0];
       const wa = top(ba), wb = top(bb);
-      if (!clashes.length && wa && wb && wa.runnerId !== wb.runnerId && wa.stake >= 0.2 * pa.bankroll && wb.stake >= 0.2 * pb.bankroll) clashes.push([wa.runnerId, wb.runnerId]);
+      const budget = budgetOf(st);
+      if (!clashes.length && wa && wb && wa.runnerId !== wb.runnerId && wa.stake >= 0.2 * budget && wb.stake >= 0.2 * budget) clashes.push([wa.runnerId, wb.runnerId]);
       if (clashes.length) {
         for (const rid of clashes[0]) root.querySelector(`.fo-card[data-rid="${rid}"]`)?.classList.add('clash');
         root.appendChild(el('<div class="clash-stamp"><div class="anim-pop outlined">CLASH!</div></div>'));
@@ -779,6 +939,7 @@ function revealScreen(st) {
 // =====================================================================================================
 // RACE (+ HALFWAY MARKET)
 // =====================================================================================================
+const marketSecs = (m) => Math.max(0, Math.ceil(((m?.closesAt ?? 0) - net.serverNow()) / 1000)); // same clock as the phones
 function marketHtml(s) {
   const m = s.market;
   const round = s.round;
@@ -787,9 +948,10 @@ function marketHtml(s) {
   const rows = (m.standings || []).map((x) => {
     const r = runnerById(round, x.runnerId);
     const o = m.odds?.[x.runnerId];
-    return `<div class="mkrow">${ordinalHtml(x.place)}<span class="rp">${r ? portrait(r, 64) : ''}</span><span class="nm">${esc(r?.nickname || x.runnerId)}</span><span class="gp">${x.place === 1 ? 'LEADS' : `+${Number(x.gapS).toFixed(1)}s`}</span><span class="od num">${esc(o?.display || '')}</span></div>`;
+    const hyp = { type: 'inplay', runnerId: x.runnerId, stake: EXAMPLE_STAKE, odds: o?.win, display: o?.display };
+    return `<div class="mkrow">${ordinalHtml(x.place)}<span class="rp">${r ? portrait(r, 64) : ''}</span><span class="nm">${esc(r?.nickname || x.runnerId)}</span><span class="gp">${x.place === 1 ? 'LEADS' : `+${Number(x.gapS).toFixed(1)}s`}</span><span class="od">${o?.win ? winsHtml(round, hyp) : ''}</span></div>`;
   }).join('');
-  return `<div class="mk panel white"><div class="mkh"><span class="outlined">HALFWAY MARKET</span><span class="mkt num" data-mkt></span></div>
+  return `<div class="mk panel white"><div class="mkh"><span class="outlined">HALFWAY MARKET</span><span class="mkt num" data-mkt>${marketSecs(m)}s</span></div>
     <div class="mks">One bet each, on your phone. Prices from the standings right now.</div>
     <div class="mkrows">${rows}</div>
     <div class="mkp">${s.players.map((p) => `<span class="mkpl ${inBets.has(p.id) ? 'in' : ''}">${avatarHtml(p.avatar, 44)}${esc(p.name)} ${inBets.has(p.id) ? '✓ IN' : '…'}</span>`).join('')}</div></div>`;
@@ -866,9 +1028,16 @@ function raceScreen(st) {
     mkLayer.innerHTML = marketHtml(S);
     mkIv = setInterval(() => {
       const t = mkLayer.querySelector('[data-mkt]');
-      if (t && S?.market?.closesAt) { const left = Math.max(0, Math.ceil((S.market.closesAt - net.serverNow()) / 1000)); if (left <= 10 && left !== t.dataset.last * 1) { t.dataset.last = left; audio.play('tick'); } t.textContent = `${left}s`; }
+      if (t && S?.market?.closesAt) { const left = marketSecs(S.market); if (left <= 5 && left !== t.dataset.last * 1) { t.dataset.last = left; audio.play('tick'); } t.textContent = `${left}s`; }
     }, 200);
-    await new Promise((res) => { marketResolve = res; setTimeout(res, 20000); tok.timers.push(setTimeout(() => { if (!S?.market) res(); }, 3500)); });
+    // the server owns the market clock (closesAt): resume when it says closed (safety: closesAt + 3 s, or no market)
+    await new Promise((res) => {
+      marketResolve = res;
+      tok.timers.push(setTimeout(() => { if (!S?.market) res(); }, 3500));
+      const guard = setInterval(() => { if (S?.market && net.serverNow() > S.market.closesAt + 3000) res(); }, 500);
+      tok.timers.push(guard);
+      tok.timers.push(setTimeout(res, 60000));
+    });
     clearInterval(mkIv);
     marketState = 'done';
     mkLayer.innerHTML = '';
@@ -952,7 +1121,9 @@ function raceScreen(st) {
         const lr = runnerById(s.round, lead?.runnerId), sr = runnerById(s.round, sec?.runnerId);
         if (lr) say(`${lr.nickname} leads at halfway and is now ${s.market.odds?.[lead.runnerId]?.display || 'odds-on'}.${sr ? ` ${sr.nickname}, ${Number(sec.gapS).toFixed(1)} seconds back, is ${s.market.odds?.[sec.runnerId]?.display || ''}.` : ''}`, 'jeff', 3);
       }
+      const again = !!mkLayer.querySelector('.mk');
       mkLayer.innerHTML = marketHtml(s);
+      if (again) mkLayer.querySelector('.mk')?.classList.add('again'); // no re-pop on every state push
     },
     destroy: () => { cancelToken(tok); clearInterval(clockIv); clearInterval(mkIv); clearInterval(ifIv); marketResolve?.(); audio.stopMusic(0.8); },
   };
@@ -1088,15 +1259,15 @@ function resultsScreen(st) {
     const t = tok;
     const drinking = s.settings.drinkingMode;
     root.innerHTML = head('PAY DAY', 'The bookie settles up 💰') + `<div class="payouts">${s.players.map((p) => {
-      const pay = res.payouts?.[p.id] || { bets: [], net: 0, bankroll: p.bankroll };
-      const lines = (pay.bets || []).map((b) => { const o = betOutcome(b); return `<div class="pl ${o.kind === 'won' ? 'won' : o.kind === 'push' ? 'push' : 'lost'}"><span class="mark">${o.kind === 'won' ? '✅' : o.kind === 'push' ? '↩️' : '❌'}</span><div class="lb">${esc(betLabel(round, b))}<small>staked ${money(b.stake)} · ${esc(oddsText(round, b))}${o.kind === 'won' ? ` · returned ${money(b.returned)}` : ''}</small></div><div class="r">${o.text}</div></div>`; }).join('') || '<div class="pl show"><div class="lb">No bets placed. Sensible. Boring.</div></div>';
+      const pay = res.payouts?.[p.id] || { bets: [], net: 0, score: scoreOf(p) };
+      const lines = (pay.bets || []).map((b) => { const o = betOutcome(b); return `<div class="pl ${o.kind === 'won' ? 'won' : o.kind === 'push' ? 'push' : 'lost'}"><span class="mark">${o.kind === 'won' ? '✅' : o.kind === 'push' ? '↩️' : '❌'}</span><div class="lb">${esc(betLabel(round, b))}<small>${money(b.stake)} at ${esc(oddsText(round, b))}</small></div><div class="r">${o.text}</div></div>`; }).join('') || '<div class="pl show"><div class="lb">No bets placed. Sensible. Boring.</div></div>';
       return `<div class="pay panel slant" data-pid="${p.id}" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;flex-direction:column;height:100%">
         <div class="who">${avatarHtml(p.avatar, 90)}${esc(p.name)}</div>
         <div class="lines">${lines}</div>
         <div class="net num outlined ${pay.net > 0 ? 'green' : pay.net < 0 ? 'red' : 'white'}" data-net="${pay.net}" style="visibility:hidden">${signedMoney(pay.net)}</div>
         ${drinking ? drinkHtml(pay.net, p.id) : ''}
       </div></div>`;
-    }).join('')}</div>${tugHtml(s, true)}`;
+    }).join('')}</div>${scoreBarHtml(s)}`;
     await sleepT(600, t);
     for (const l of $$('.pl', root)) { if (t.cancelled) return; l.classList.add('show'); audio.play(l.classList.contains('won') ? 'kaching' : 'pop'); await sleepT(700, t); }
     await sleepT(400, t);
@@ -1111,7 +1282,7 @@ function resultsScreen(st) {
       if (!best || pay.net > best.net) best = { ...pay, p, panel };
       if (!worst || pay.net < worst.net) worst = { ...pay, p, panel };
     }
-    tugAnimate(root, s);
+    scoreBarAnimate(root);
     if (best && best.net > 0) audio.play('coins', { n: Math.min(30, 8 + Math.round(best.net / 40)) });
     await sleepT(1900, t);
     if (t.cancelled) return;
@@ -1157,15 +1328,23 @@ function resultsScreen(st) {
     done(4);
   }
 
-  function runStage(s) {
+  async function runStage(s) {
     if (s.resultsStage === shownStage) return;
     if (tok) cancelToken(tok);
     tok = makeToken();
+    const my = tok;
     const first = shownStage === -1;
     shownStage = s.resultsStage;
     voice.clear();
     subsEl.innerHTML = '';
-    if (!first) playWipe();
+    if (!first) { // swap the stage only once the wipe fully covers the screen, then let it clear before animating
+      playWipe();
+      await new Promise((r) => setTimeout(r, WIPE_MID));
+      if (my.cancelled) return;
+      root.textContent = '';
+      await new Promise((r) => setTimeout(r, WIPE_MS - WIPE_MID - 120));
+      if (my.cancelled) return;
+    }
     const name = s.resultStages[s.resultsStage];
     log({ type: 'results-stage', stage: name });
     if (name !== 'order' && raceView) disposeRaceView();
@@ -1178,22 +1357,23 @@ function resultsScreen(st) {
   if (res) runStage(st);
   return { update: (s) => { if (s.results) runStage(s); }, destroy: () => { if (tok) cancelToken(tok); disposeRaceView(); } };
 }
-// payouts: one bar, each player's share of the money on the sofa, sliding from before to after
-function tugHtml(s, before) {
+// payouts: each player's SCORE before -> after this round (scores can be negative, so a counter, not a share bar)
+function scoreBarHtml(s) {
   const res = s.results;
-  const rows = s.players.map((p) => { const pay = res?.payouts?.[p.id]; const after = pay?.bankroll ?? p.bankroll; return { p, before: Math.max(0, after - (pay?.net || 0)), after: Math.max(0, after) }; });
-  const tot = rows.reduce((a, r) => a + (before ? r.before : r.after), 0) || 1;
-  return `<div class="tug">${rows.map((r) => `<div class="seg" data-pid="${r.p.id}" data-after="${r.after}" style="flex-grow:${Math.max(0.0001, (before ? r.before : r.after) / tot)};background:${esc(r.p.avatar.colour)}">${avatarHtml(r.p.avatar, 56)}<b class="num" data-from="${r.before}">${money(before ? r.before : r.after)}</b></div>`).join('')}</div>`;
+  return `<div class="scorebar">${s.players.map((p) => {
+    const pay = res?.payouts?.[p.id];
+    const after = Number.isFinite(pay?.score) ? pay.score : scoreOf(p);
+    const before = after - (pay?.net || 0);
+    return `<div class="sbp" style="--pc:${esc(p.avatar.colour)}">${avatarHtml(p.avatar, 56)}<span class="sbl">SCORE</span><b class="num" data-from="${before}" data-to="${after}">${signedMoney(before)}</b></div>`;
+  }).join('')}</div>`;
 }
-function tugAnimate(root, s) {
-  const segs = $$('.tug .seg', root);
-  const tot = segs.reduce((a, x) => a + Number(x.dataset.after), 0) || 1;
-  segs.forEach((x) => {
-    x.style.flexGrow = String(Math.max(0.0001, Number(x.dataset.after) / tot));
-    const b = x.querySelector('b');
-    countUp(b, Number(b.dataset.from), Number(x.dataset.after), T(1600), (v) => money(v));
-  });
-  void s;
+function scoreBarAnimate(root) {
+  for (const b of $$('.scorebar b', root)) {
+    const from = Number(b.dataset.from), to = Number(b.dataset.to);
+    if (from === to) continue;
+    countUp(b, from, to, T(1600), (v) => signedMoney(v));
+    b.closest('.sbp')?.classList.add(to > from ? 'up' : 'down');
+  }
 }
 function winLine(name, net) {
   const l = [`${name} cleans up! Up ${moneySay(net)}. Insufferable for the rest of the evening.`, `Kerching! ${name} is ${moneySay(net)} richer and won't let anyone forget it.`, `${name} read that race like a book.`];
@@ -1210,28 +1390,28 @@ function loseLine(name, net) {
 function standingsHtml(s, { compact = false } = {}) {
   const rank = rankOf(s.players);
   const last = s.history.at(-1);
-  return [...s.players].sort((a, b) => b.bankroll - a.bankroll).map((p) => {
+  return byScore(s.players).map((p) => {
     const r = rank.get(p.id);
     const d = last?.nets?.[p.id] ?? 0;
     return `<div class="srow panel slant ${r === 1 && !compact ? 'lead' : ''}" style="${r === 1 && !compact ? '' : `background:${esc(p.avatar.colour)}`}"><div class="unslant" style="display:flex;align-items:center;gap:26px;width:100%">
       ${ordinalHtml(r)}${avatarHtml(p.avatar, compact ? 70 : 96)}<div class="nm">${esc(p.name)}</div>
-      ${compact ? '' : `<span class="dl ${d > 0 ? 'up' : d < 0 ? 'down' : 'flat'}">${signedMoney(d)}</span>`}
-      <div class="bk num">${money(p.bankroll)}</div>
+      ${compact || (s.history?.length || 0) < 2 ? '' : `<span class="dl ${d > 0 ? 'up' : d < 0 ? 'down' : 'flat'}"><small>this round</small> ${signedMoney(d)}</span>`}
+      <div class="bk num">${signedMoney(scoreOf(p))}</div>
       ${!compact && p.ready ? '<span class="tag" style="background:var(--grass);color:#fff">✓ READY</span>' : ''}
     </div></div>`;
   }).join('');
 }
-function chartSvg(s) {
+function chartSvg(s) { // cumulative score per round, from 0
   const hist = s.history;
-  const start = s.settings.startingBankroll;
-  const series = s.players.map((p) => ({ p, pts: [start, ...hist.map((h) => h.bankrolls?.[p.id] ?? start)] }));
+  const series = s.players.map((p) => ({ p, pts: [0, ...hist.map((h) => h.scores?.[p.id] ?? 0)] }));
   const n = Math.max(2, (hist.length || 0) + 1);
-  const maxV = Math.max(start * 1.2, ...series.flatMap((x) => x.pts));
+  const all = series.flatMap((x) => x.pts);
+  const maxV = Math.max(100, ...all) * 1.1, minV = Math.min(-100, ...all) * 1.1;
   const W = 540, H = 420, pad = 36;
   const xs = (i) => pad + (i * (W - pad * 2)) / (n - 1);
-  const ys = (v) => H - pad - (v / maxV) * (H - pad * 2);
-  const grid = [0, 0.5, 1].map((f) => `<line x1="${pad}" x2="${W - pad}" y1="${ys(maxV * f)}" y2="${ys(maxV * f)}" stroke="#14183c22" stroke-width="2"/>`).join('');
-  const base = `<line x1="${pad}" x2="${W - pad}" y1="${ys(start)}" y2="${ys(start)}" stroke="#14183c55" stroke-width="2" stroke-dasharray="8 8"/>`;
+  const ys = (v) => H - pad - ((v - minV) / (maxV - minV)) * (H - pad * 2);
+  const grid = [minV, maxV].map((v) => `<line x1="${pad}" x2="${W - pad}" y1="${ys(v)}" y2="${ys(v)}" stroke="#14183c22" stroke-width="2"/>`).join('');
+  const base = `<line x1="${pad}" x2="${W - pad}" y1="${ys(0)}" y2="${ys(0)}" stroke="#14183c66" stroke-width="3" stroke-dasharray="8 8"/><text x="${W - pad}" y="${ys(0) - 8}" text-anchor="end" font-family="Lilita One" font-size="18" fill="#14183c99">0</text>`;
   const lines = series.map(({ p, pts }) => `<polyline fill="none" stroke="#14183c" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" points="${pts.map((v, i) => `${xs(i)},${ys(v)}`).join(' ')}"/><polyline fill="none" stroke="${esc(p.avatar.colour)}" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" points="${pts.map((v, i) => `${xs(i)},${ys(v)}`).join(' ')}"/>${pts.map((v, i) => `<circle cx="${xs(i)}" cy="${ys(v)}" r="8" fill="${esc(p.avatar.colour)}" stroke="#14183c" stroke-width="4"/>`).join('')}`).join('');
   const labels = Array.from({ length: n }, (_, i) => `<text x="${xs(i)}" y="${H - 6}" text-anchor="middle" font-family="Lilita One" font-size="20" fill="#14183c">${i === 0 ? 'Start' : `R${i}`}</text>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="440">${grid}${base}${lines}${labels}</svg>`;
@@ -1258,16 +1438,16 @@ function scoreScreen(st) {
     const showChart = s.history.length >= 2;
     root.innerHTML = `<div class="res-head"><div class="h outlined">STANDINGS</div><div class="sh">After round ${s.roundNumber} of ${s.roundsPerGame}</div></div>
       <div class="standings ${showChart ? '' : 'solo'}">${standingsHtml(s)}</div>
-      ${showChart ? `<div class="chart panel white"><div class="ct">The money, round by round</div>${chartSvg(s)}</div>` : ''}
+      ${showChart ? `<div class="chart panel white"><div class="ct">Score, round by round</div>${chartSvg(s)}</div>` : ''}
       ${recapHtml(s, showChart)}
       <div class="upnext panel yellow">${upnext}<span class="cd"></span></div>`;
   }
   render(st);
-  const s0 = [...st.players].sort((a, b) => b.bankroll - a.bankroll);
+  const s0 = byScore(st.players);
   if (s0.length >= 2) {
-    const gap = s0[0].bankroll - s0[1].bankroll;
+    const gap = scoreOf(s0[0]) - scoreOf(s0[1]);
     say(gap === 0 ? "It's dead level at the top!" : `${s0[0].name} leads by ${moneySay(gap)}.`, 'jeff', 2);
-  } else if (s0[0]) say(`${s0[0].name} is on ${moneySay(s0[0].bankroll)}.`, 'jeff', 2);
+  } else if (s0[0]) say(`${s0[0].name} is on ${scoreOf(s0[0]) < 0 ? 'minus ' : ''}${moneySay(scoreOf(s0[0]))}.`, 'jeff', 2);
   iv = setInterval(() => {
     const cd = root.querySelector('.cd');
     if (!cd || !S) return;
@@ -1280,15 +1460,15 @@ function scoreScreen(st) {
 // FINALE
 // =====================================================================================================
 function finaleScreen(st) {
-  const sorted = [...st.players].sort((a, b) => b.bankroll - a.bankroll);
+  const sorted = byScore(st.players);
   const champ = sorted[0];
-  const tie = sorted.length > 1 && sorted[1].bankroll === champ?.bankroll;
+  const tie = sorted.length > 1 && scoreOf(sorted[1]) === scoreOf(champ);
   const awards = (st.history || []).flatMap((h) => (h.awards || []).filter((a) => a.text).map((a) => ({ title: a.title, text: `${a.text} (round ${h.round})`, playerId: a.playerId }))).slice(0, 3);
-  const reel = [...(st.superlatives || []).filter((x) => x && x.title && x.text), ...awards].slice(0, 7);
+  const reel = [...(st.superlatives || []), ...awards].filter((x) => x && String(x.title || '').trim() && String(x.text || '').trim()).slice(0, 6);
   const root = el(`<div class="finale"><div class="rays"></div><div class="fconf"></div>
     <div class="champ">${champ ? `<div class="h outlined">${tie ? "IT'S A DRAW!" : 'CHAMPION!'}</div>
-      <div class="who"><div class="crown">👑</div>${avatarHtml(champ.avatar, 200)}<div class="nm outlined white">${esc(tie ? sorted.filter((p) => p.bankroll === champ.bankroll).map((p) => p.name).join(' & ') : champ.name)}</div><div class="bk num">${money(champ.bankroll)}</div></div>` : '<div class="h outlined">GAME OVER</div>'}
-      <div class="others">${sorted.slice(1).map((p, i) => `<div class="srow panel slant" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:20px">${ordinalHtml(i + 2)}${avatarHtml(p.avatar, 64)}<div class="nm">${esc(p.name)}</div><div class="bk num">${money(p.bankroll)}</div></div></div>`).join('')}</div>
+      <div class="who"><div class="crown">👑</div>${avatarHtml(champ.avatar, 200)}<div class="nm outlined white">${esc(tie ? sorted.filter((p) => scoreOf(p) === scoreOf(champ)).map((p) => p.name).join(' & ') : champ.name)}</div><div class="bk num">${signedMoney(scoreOf(champ))}</div></div>` : '<div class="h outlined">GAME OVER</div>'}
+      <div class="others">${sorted.slice(1).map((p, i) => `<div class="srow panel slant" style="background:${esc(p.avatar.colour)}"><div class="unslant" style="display:flex;align-items:center;gap:20px">${ordinalHtml(i + 2)}${avatarHtml(p.avatar, 64)}<div class="nm">${esc(p.name)}</div><div class="bk num">${signedMoney(scoreOf(p))}</div></div></div>`).join('')}</div>
     </div>
     <div class="reel">${reel.length ? '<div class="reel-h outlined white thin">THE NIGHT IN AWARDS</div><div class="reel-card"></div><div class="reel-dots"></div>' : ''}</div>
   </div>`);
@@ -1297,20 +1477,30 @@ function finaleScreen(st) {
   audio.play('drumroll', { dur: 1.6 });
   setTimeout(() => { audio.play('fanfare'); audio.play('crowd', { dur: 5, peak: 0.45 }); confetti(conf, { count: 200, duration: 4500, contained: true, zIndex: 0 }); }, T(1700));
   const again = setInterval(() => confetti(conf, { count: 50, duration: 3500, contained: true, zIndex: 0 }), T(7000));
-  if (champ) say(tie ? 'We have a dead heat! Nobody wins, which is very British.' : `Ladies and gentlemen, your MARKRUN champion: ${champ.name}, with ${moneySay(champ.bankroll)}!`, 'jeff', 3);
+  if (champ) say(tie ? 'We have a dead heat! Nobody wins, which is very British.' : `Ladies and gentlemen, your MARKRUN champion: ${champ.name}, finishing on ${scoreOf(champ) < 0 ? 'minus ' : ''}${moneySay(scoreOf(champ))}!`, 'jeff', 3);
+  // one award at a time; after the last one the reel ENDS on a closing card (it never cycles onto an empty card)
   let k = 0, reelIv = null;
   const card = $('.reel-card', root);
+  const loser = sorted.length > 1 ? sorted.at(-1) : null;
   function showReel() {
-    if (!card || !reel.length) return;
-    const x = reel[k % reel.length];
+    if (!card) return;
+    if (k >= reel.length) {
+      clearInterval(reelIv); reelIv = null;
+      card.innerHTML = `<div class="rc2 panel yellow end anim-pop"><div class="tro">🏁</div><div class="t outlined white thin">THAT'S THE NIGHT!</div><div class="x">${loser ? `${esc(loser.name)}, are you going to take that lying down?` : 'Same again?'}</div><div class="x small">Press SPACE, or tap READY on your phones, for a rematch.</div></div>`;
+      $$('.reel-dots i', root).forEach((d) => d.classList.add('on'));
+      const l = moment('rematchLine', st.players.map((p) => ({ name: p.name, bankroll: scoreOf(p), score: scoreOf(p) })));
+      say(l?.text || 'Press space, or tap ready on your phones, to go again.', l?.speaker || 'pam', 2);
+      return;
+    }
+    const x = reel[k];
     const p = st.players.find((q) => q.id === x.playerId);
-    card.innerHTML = `<div class="rc2 panel ${p ? '' : 'yellow'} anim-pop" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="tro">🏆</div>${p ? avatarHtml(p.avatar, 84) : ''}<div class="t outlined ${p ? 'white' : ''} thin">${esc(x.title)}</div>${p ? `<div class="who2">${esc(p.name)}</div>` : ''}<div class="x">${esc(x.text || '')}</div></div>`;
-    $('.reel-dots', root).innerHTML = reel.map((_, i) => `<i class="${i === k % reel.length ? 'on' : ''}"></i>`).join('');
+    card.innerHTML = `<div class="rc2 panel ${p ? '' : 'yellow'} anim-pop" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="tro">🏆</div>${p ? avatarHtml(p.avatar, 84) : ''}<div class="t outlined ${p ? 'white' : ''} thin">${esc(x.title)}</div>${p ? `<div class="who2">${esc(p.name)}</div>` : ''}<div class="x">${esc(x.text)}</div></div>`;
+    $('.reel-dots', root).innerHTML = reel.map((_, i) => `<i class="${i === k ? 'on' : ''}"></i>`).join('');
     audio.play('reveal');
-    if (k < reel.length) say(`${x.title}! ${x.text || ''}`, k % 2 ? 'pam' : 'jeff', 2);
+    say(`${x.title}! ${x.text}`, k % 2 ? 'pam' : 'jeff', 2);
     k++;
   }
   const startReel = setTimeout(() => { showReel(); reelIv = setInterval(showReel, T(6500)); }, T(6500));
-  setTimeout(() => { const l = moment('rematchLine', st.players.map((p) => ({ name: p.name, bankroll: p.bankroll }))); say(l?.text || 'Press space, or tap ready on your phones, to go again.', l?.speaker || 'pam', 2); }, T(6500 * (Math.min(reel.length, 7) + 1)));
+  if (!reel.length) setTimeout(() => { const l = moment('rematchLine', st.players.map((p) => ({ name: p.name, bankroll: scoreOf(p), score: scoreOf(p) }))); say(l?.text || 'Press space, or tap ready on your phones, to go again.', l?.speaker || 'pam', 2); }, T(6500));
   return { destroy: () => { clearInterval(again); clearInterval(reelIv); clearTimeout(startReel); } };
 }

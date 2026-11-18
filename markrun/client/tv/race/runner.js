@@ -4,6 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { toon, mesh, canvasTexture } from './toon.js';
 import { FONT, outlinedText, roundRect, mulberry } from './world.js';
+import { resolveLook } from '../../shared/portrait.js';
 
 const BUILDS = {
   stocky: { torso: [0.9, 0.76, 0.58], leg: 0.66, legR: 0.16, arm: 0.66, armR: 0.14, head: 0.47, hand: 0.19, shoe: [0.34, 0.25, 0.6] },
@@ -11,7 +12,6 @@ const BUILDS = {
   compact: { torso: [0.68, 0.6, 0.5], leg: 0.52, legR: 0.13, arm: 0.52, armR: 0.11, head: 0.5, hand: 0.17, shoe: [0.3, 0.23, 0.5] },
   tall: { torso: [0.7, 0.94, 0.46], leg: 0.92, legR: 0.125, arm: 0.8, armR: 0.11, head: 0.43, hand: 0.17, shoe: [0.31, 0.24, 0.6] },
 };
-const HAIR_COLS = ['#2b1d14', '#5a3a1e', '#c8642a', '#e8c66a', '#1d1d24', '#a9a9b3', '#3a2a1e', '#8a5a2b', '#ff5fa2'];
 const OL = 3.2;
 const geoCache = new Map();
 const G = (key, fn) => { if (!geoCache.has(key)) geoCache.set(key, fn()); return geoCache.get(key); };
@@ -132,15 +132,16 @@ function popTexture(kind) {
 }
 
 export function createRunner(info, opts = {}) {
-  const look = info.look || {};
+  // one look everywhere: the portraits (client/shared/portrait.js) build from the same resolved look
+  const look = resolveLook(info);
   const B = BUILDS[look.build] || BUILDS.compact;
   const seed = hash(info.id + (info.nickname || ''));
   const R = mulberry(seed);
-  const primary = info.colour?.primary || '#ff4757', secondary = info.colour?.secondary || '#ffffff';
-  const skin = look.skin || '#f1c6a5';
-  const hairCol = HAIR_COLS[seed % HAIR_COLS.length];
+  const primary = look.primary, secondary = look.secondary;
+  const skin = look.skin;
+  const hairCol = look.hairCol;
   const disposables = [];
-  const mShirt = toon(primary), mShorts = toon(secondary), mSkin = toon(skin), mHair = toon(hairCol);
+  const mShirt = toon(primary), mShorts = toon(look.shorts), mSkin = toon(skin), mHair = toon(hairCol);
   const shoeCol = new THREE.Color(secondary).getHSL({}).l > 0.85 ? '#ffffff' : secondary;
   const mShoe = toon(shoeCol), mSole = toon('#ffffff'), mDark = toon('#22202c');
   const ink = (geo, mat, ol = OL) => mesh(geo, mat, { ol, olRef: 9 });
@@ -209,6 +210,7 @@ export function createRunner(info, opts = {}) {
     legs.push({ hp, kn, an });
   }
   buildAccessory(look.accessory);
+  if (look.prop) buildAccessory(look.prop);
   // props held in the hand (candyfloss souvenir after a funfair detour)
   const floss = new THREE.Group(); floss.visible = false;
   {
@@ -268,19 +270,20 @@ export function createRunner(info, opts = {}) {
   }
   function buildHat(hat) {
     if (!hat) return;
-    const mA = toon(secondary === '#ffffff' || secondary === '#f8f8f8' ? primary : secondary), mB = toon(primary);
+    const mA = toon(look.hatCol), mB = toon(look.hatTrim); // lane colour + trim (as in the portrait)
+    const mBrim = toon(new THREE.Color(look.hatCol).multiplyScalar(0.78).getStyle());
     if (hat === 'backwards-cap') {
       const d = ink(G(`capd${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.42)), mA); d.position.y = hr * 0.98; d.rotation.x = -0.18; head.add(d);
-      const brim = ink(G(`brim${hr}`, () => new THREE.CylinderGeometry(hr * 0.75, hr * 0.75, hr * 0.08, 20, 1, false, -Math.PI / 2, Math.PI).scale(1.2, 1, 1.15)), mB);
+      const brim = ink(G(`brim${hr}`, () => new THREE.CylinderGeometry(hr * 0.75, hr * 0.75, hr * 0.08, 20, 1, false, -Math.PI / 2, Math.PI).scale(1.2, 1, 1.15)), mBrim);
       brim.position.set(0, hr * 1.42, -hr * 0.62); brim.rotation.set(-0.12, Math.PI, 0); head.add(brim);
     } else if (hat === 'bobble') {
-      const d = ink(G(`bean${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 1.15, 1)), mB); d.position.y = hr * 0.96; d.rotation.x = -0.12; head.add(d);
-      const rim = ink(G(`brim2${hr}`, () => new THREE.TorusGeometry(hr * 1.05, hr * 0.17, 8, 24)), mA); rim.rotation.x = Math.PI / 2 - 0.12; rim.position.y = hr * 1.12; head.add(rim);
-      const bob = ink(G(`bigbob${hr}`, () => new THREE.IcosahedronGeometry(hr * 0.48, 1)), mA); bob.position.y = hr * 2.45; head.add(bob); head.userData.bobble = bob;
+      const d = ink(G(`bean${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 1.25, 1)), mA); d.position.y = hr * 0.96; d.rotation.x = -0.12; head.add(d);
+      const rim = ink(G(`brim2${hr}`, () => new THREE.TorusGeometry(hr * 1.05, hr * 0.17, 8, 24)), mB); rim.rotation.x = Math.PI / 2 - 0.12; rim.position.y = hr * 1.12; head.add(rim);
+      const bob = ink(G(`bigbob${hr}`, () => new THREE.IcosahedronGeometry(hr * 0.5, 1)), mB); bob.position.y = hr * 2.5; head.add(bob); head.userData.bobble = bob;
     } else if (hat === 'cap' || hat === 'visor') {
       if (hat === 'cap') { const d = ink(G(`capd${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.42)), mA); d.position.y = hr * 0.98; d.rotation.x = -0.18; head.add(d); }
       else { const band = ink(G(`vband${hr}`, () => new THREE.TorusGeometry(hr * 1.0, hr * 0.12, 8, 24)), mA); band.rotation.x = Math.PI / 2 - 0.25; band.position.y = hr * 1.35; head.add(band); }
-      const brim = ink(G(`brim${hr}`, () => new THREE.CylinderGeometry(hr * 0.75, hr * 0.75, hr * 0.08, 20, 1, false, -Math.PI / 2, Math.PI).scale(1.2, 1, 1.15)), mB);
+      const brim = ink(G(`brim${hr}`, () => new THREE.CylinderGeometry(hr * 0.75, hr * 0.75, hr * 0.08, 20, 1, false, -Math.PI / 2, Math.PI).scale(1.2, 1, 1.15)), mBrim);
       brim.position.set(0, hr * 1.42, hr * 0.62); brim.rotation.x = 0.12; head.add(brim);
     } else if (hat === 'beanie') {
       const d = ink(G(`bean${hr}`, () => new THREE.SphereGeometry(hr * 1.1, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 1.15, 1)), mA); d.position.y = hr * 0.96; d.rotation.x = -0.12; head.add(d);
@@ -288,10 +291,12 @@ export function createRunner(info, opts = {}) {
       const bob = ink(G(`bob${hr}`, () => new THREE.IcosahedronGeometry(hr * 0.3, 1)), mB); bob.position.y = hr * 2.25; head.add(bob);
     } else if (hat === 'headband' || hat === 'sweatband') {
       const b = ink(G(`hb${hr}`, () => new THREE.TorusGeometry(hr * 1.0, hr * 0.13, 8, 28)), mA); b.rotation.x = Math.PI / 2 - 0.2; b.position.y = hr * 1.3; head.add(b);
-      const t1 = ink(G(`hbt${hr}`, () => new RoundedBoxGeometry(hr * 0.2, hr * 0.5, hr * 0.08, 2, 0.02)), mA); t1.position.set(0.12, hr * 1.1, -hr * 1.05); t1.rotation.z = 0.5; head.add(t1); head.userData.tail = t1;
+      const st = mesh(G(`hbs${hr}`, () => new THREE.TorusGeometry(hr * 1.02, hr * 0.045, 6, 28, Math.PI * 0.5).rotateZ(Math.PI * 0.25)), mB, { cast: false }); st.rotation.x = Math.PI / 2 - 0.2; st.position.y = hr * 1.3; st.rotation.z = Math.PI; head.add(st);
+      if (hat === 'headband') { const t1 = ink(G(`hbt${hr}`, () => new RoundedBoxGeometry(hr * 0.22, hr * 0.7, hr * 0.08, 2, 0.02).translate(0, -hr * 0.3, 0)), mA); t1.position.set(0.12, hr * 1.3, -hr * 1.0); t1.rotation.z = 0.5; head.add(t1); head.userData.tail = t1; }
     } else if (hat === 'bucket') {
       const d = ink(G(`buck${hr}`, () => new THREE.CylinderGeometry(hr * 0.8, hr * 1.02, hr * 0.7, 20)), mA); d.position.y = hr * 1.75; head.add(d);
-      const b = ink(G(`buckb${hr}`, () => new THREE.CylinderGeometry(hr * 1.5, hr * 1.5, hr * 0.06, 24)), mB); b.position.y = hr * 1.42; b.rotation.x = 0.1; head.add(b);
+      const b = ink(G(`buckb${hr}`, () => new THREE.CylinderGeometry(hr * 1.5, hr * 1.5, hr * 0.06, 24)), mBrim); b.position.y = hr * 1.42; b.rotation.x = 0.1; head.add(b);
+      const bd = mesh(G(`buckband${hr}`, () => new THREE.CylinderGeometry(hr * 0.98, hr * 1.02, hr * 0.16, 20, 1, true)), mB, { cast: false }); bd.position.y = hr * 1.52; head.add(bd);
     } else if (hat === 'crown' || hat === 'tiara') {
       const c = ink(G(`crown${hr}`, () => new THREE.CylinderGeometry(hr * 0.7, hr * 0.62, hr * 0.5, 8, 1, true)), toon('#ffd23f', { side: THREE.DoubleSide })); c.position.y = hr * 2.0; head.add(c);
     } else if (hat === 'wizard' || hat === 'party') {
@@ -326,7 +331,8 @@ export function createRunner(info, opts = {}) {
       const sc = ink(G('scarf', () => new THREE.TorusGeometry(0.22, 0.08, 8, 18)), toon(secondary)); sc.rotation.x = Math.PI / 2; sc.position.y = 0.02; neck.add(sc);
       const tail = ink(G('scarft', () => new RoundedBoxGeometry(0.14, 0.5, 0.06, 2, 0.03)), toon(secondary)); tail.position.set(0.1, -0.15, -0.25); tail.rotation.x = 0.5; neck.add(tail); head.userData.tail2 = tail;
     } else if (acc === 'cape') {
-      const cp = ink(G(`cape${look.build}`, () => new THREE.PlaneGeometry(B.torso[0] * 1.2, B.torso[1] * 1.5, 1, 4).translate(0, -B.torso[1] * 0.75, 0)), toon(secondary, { side: THREE.DoubleSide }), 2);
+      // signature cape: wide and long enough to read as a silhouette from the side
+      const cp = ink(G(`cape${look.build}`, () => new THREE.PlaneGeometry(B.torso[0] * 1.55, B.torso[1] * 2.1, 2, 6).translate(0, -B.torso[1] * 1.05, 0)), toon(secondary, { side: THREE.DoubleSide }), 2.5);
       const pivot = new THREE.Group(); pivot.position.set(0, B.torso[1], -B.torso[2] / 2 - 0.03); pivot.add(cp); torso.add(pivot); head.userData.cape = pivot;
     } else if (acc === 'backpack') {
       const bp = ink(G(`bp${look.build}`, () => new RoundedBoxGeometry(B.torso[0] * 0.7, B.torso[1] * 0.7, 0.25, 3, 0.08)), toon(secondary)); bp.position.set(0, B.torso[1] * 0.5, -B.torso[2] / 2 - 0.12); torso.add(bp);
@@ -446,7 +452,7 @@ export function createRunner(info, opts = {}) {
     if (head.userData.bobble) head.userData.bobble.position.y = hr * 2.45 + Math.abs(Math.sin(st.phase)) * 0.04;
     if (head.userData.pony) head.userData.pony.rotation.x = 0.4 + Math.sin(st.phase * 2) * 0.35;
     if (head.userData.tail) head.userData.tail.rotation.x = 0.6 + Math.sin(st.phase * 2) * 0.3;
-    if (head.userData.cape) head.userData.cape.rotation.x = -0.3 - Math.min(1.1, (p.speed ?? 0) * 0.15) + Math.sin(t * 8) * 0.08;
+    if (head.userData.cape) head.userData.cape.rotation.x = 0.25 + Math.min(1.0, (p.speed ?? 0) * 0.14) + Math.sin(t * 8) * 0.08;
     if (p.expr) expr = p.expr;
     setExpr(expr);
     if (pop.visible) { pop.position.y = topY + 0.45 + Math.sin(t * 6) * 0.08; const sc = 0.9 + Math.sin(t * 9) * 0.05; pop.scale.set(sc, sc, sc); }

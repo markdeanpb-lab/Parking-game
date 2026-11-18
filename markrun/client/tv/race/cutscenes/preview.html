@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MARKRUN cutscene preview</title>
+<link rel="stylesheet" href="/client/shared/theme.css">
+<style>
+  html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;font-family:Nunito,sans-serif}
+  #stage{position:absolute;inset:0}
+  #sub{position:absolute;left:0;right:0;bottom:0;height:15%;display:flex;align-items:center;justify-content:center;color:#fff;font:700 2.2vw Nunito,sans-serif;text-shadow:0 2px 0 #000;pointer-events:none;z-index:9}
+  #ctl{position:absolute;left:8px;bottom:8px;display:flex;flex-wrap:wrap;gap:4px;z-index:10;max-width:70vw}
+  #ctl button{font:13px sans-serif;padding:3px 7px}
+  body.shot #ctl{display:none}
+</style></head>
+<body>
+<div id="stage"></div>
+<div id="sub"></div>
+<div id="ctl"></div>
+<script type="module" src="/client/dist/cutscene-preview.js"></script>
+</body></html>

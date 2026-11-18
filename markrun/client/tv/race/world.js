@@ -186,6 +186,9 @@ export function buildWorld(scene, C, opts) {
   }
 
   // ---------- terrain mesh ----------
+  const farMats = [];
+  const groundU = { uGrassTint: { value: new THREE.Color(1, 1, 1) }, uFrost: { value: 0 }, uWet: { value: 0 }, uLitter: { value: 0 } };
+  const themeRefs = { groundU, crowns: [], flags: null, poles: null, rope: null, tufts: null, flowers: null };
   {
     const n = T.nx * T.nz; const pos = new Float32Array(n * 3), uv = new Float32Array(n * 2);
     for (let j = 0; j < T.nz; j++) for (let i = 0; i < T.nx; i++) {
@@ -209,24 +212,33 @@ export function buildWorld(scene, C, opts) {
     disposables.push(detail);
     tmat.onBeforeCompile = (sh) => {
       sh.uniforms.uDetail = { value: detail };
+      Object.assign(sh.uniforms, groundU);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos; uniform sampler2D uDetail;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos; uniform sampler2D uDetail; uniform vec3 uGrassTint; uniform float uFrost; uniform float uWet; uniform float uLitter;')
         .replace('#include <map_fragment>', `#include <map_fragment>
           float dd = length(vWPos - cameraPosition);
           float d1 = texture2D(uDetail, vWPos.xz / 3.0).r, d2 = texture2D(uDetail, vWPos.xz / 11.0).r;
           float fade = 1.0 - smoothstep(25.0, 140.0, dd);
-          diffuseColor.rgb *= mix(1.0, 0.8 + 0.4 * mix(d2, d1, fade), 0.55);`);
+          diffuseColor.rgb *= mix(1.0, 0.8 + 0.4 * mix(d2, d1, fade), 0.55);
+          // theme grade (weather.js): grass tint, hoar frost, wet ground, fallen leaves
+          float gm = clamp((diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * 5.0, 0.0, 1.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uGrassTint, gm);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.93, 0.98) * (0.86 + 0.2 * d1), gm * uFrost * (0.55 + 0.45 * d2));
+          diffuseColor.rgb *= 1.0 - uWet * 0.18;
+          float lf = step(0.62, texture2D(uDetail, vWPos.xz / 1.7 + 0.37).r) * step(0.5, d2);
+          diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.85, 0.42, 0.12), vec3(0.95, 0.72, 0.18), d1), gm * lf * uLitter);`);
     };
-    tmat.customProgramCacheKey = () => 'terrain-detail';
+    tmat.customProgramCacheKey = () => 'terrain-detail-theme';
     const m = mesh(geo, tmat, { cast: false });
     m.name = 'terrain'; add(m);
     // skirt ground far beyond (town-coloured) so drone shots never see the edge
-    const far = new THREE.Mesh(new THREE.RingGeometry(700, 5200, 48, 1), toon(0xc9d6a0));
+    const far = new THREE.Mesh(new THREE.RingGeometry(700, 5200, 48, 1), toon(0xc9d6a0)); farMats.push(far.material);
     far.rotation.x = -Math.PI / 2; far.position.set(T.x0 + Wm / 2, -2, T.z0 + Hm / 2); far.receiveShadow = false; add(far);
-    const fill = new THREE.Mesh(new THREE.PlaneGeometry(Wm + 1800, Hm + 1800), toon(0xd0d5b5)); fill.rotation.x = -Math.PI / 2; fill.position.set(T.x0 + Wm / 2, -3, T.z0 + Hm / 2); add(fill);
+    const fill = new THREE.Mesh(new THREE.PlaneGeometry(Wm + 1800, Hm + 1800), toon(0xd0d5b5)); farMats.push(fill.material); fill.rotation.x = -Math.PI / 2; fill.position.set(T.x0 + Wm / 2, -3, T.z0 + Hm / 2); add(fill);
   }
 
   // ---------- course path ribbon ----------
+  let pathMatRef = null;
   const pathTex = canvasTexture(256, 256, (g, w, h) => {
     g.fillStyle = '#7f8fb0'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 1600; i++) { g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.07)' : 'rgba(30,40,70,0.08)'; g.fillRect(rnd() * w, rnd() * h, 2, 2); }
@@ -240,7 +252,7 @@ export function buildWorld(scene, C, opts) {
     for (const rb of C.ribbons) geos.push(ribbonGeometry(rb));
     const geo = mergeGeometries(geos);
     const m = mesh(geo, toon(0xffffff, { map: pathTex }), { cast: false });
-    m.name = 'path'; add(m);
+    m.name = 'path'; add(m); pathMatRef = m.material;
     const skirtGeo = mergeGeometries(C.ribbons.map((rb) => ribbonGeometry(rb, true)));
     const sk = mesh(skirtGeo, toon(0x5a6582), { cast: false }); add(sk);
   }
@@ -281,6 +293,7 @@ export function buildWorld(scene, C, opts) {
 
   // ---------- lake water + boats ----------
   const waterU = { uTime: { value: 0 } };
+  const windU = { value: 0 };
   const lakes = park.features.filter((f) => f.kind === 'water' && f.closed);
   for (const f of lakes) {
     const level = (f._level ?? Math.min(...f.pts.map((p) => C.heightAt(p[0], p[1])))) + 0.05;
@@ -386,7 +399,7 @@ ${THREE.ShaderChunk.fog_fragment}
   const archGroup = new THREE.Group(); add(archGroup);
   function arch(s, label, colA, colB) {
     const g = new THREE.Group();
-    const R = PATH_W / 2 + 1.4, tube = 0.85;
+    const R = PATH_W / 2 + 2.5, tube = 0.85; // wide: the head-on finish camera sees the runners between the legs
     const stripe = canvasTexture(256, 32, (c, w, h) => { for (let i = 0; i < 16; i++) { c.fillStyle = i % 2 ? colA : colB; c.fillRect((i * w) / 16, 0, w / 16 + 1, h); } }, { repeat: false });
     disposables.push(stripe);
     const tor = new THREE.TorusGeometry(R, tube, 14, 40, Math.PI); tor.scale(1, 1.25, 1);
@@ -577,11 +590,23 @@ ${THREE.ShaderChunk.fog_fragment}
     const tri = new THREE.BufferGeometry();
     tri.setAttribute('position', new THREE.Float32BufferAttribute([-0.3, 0, 0, 0.3, 0, 0, 0, -0.62, 0], 3)); tri.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
     const fcols = flagList.map((_, i) => [0xff3d8b, 0xffd23f, 0x2e9bff, 0x3ddc84, 0xff8a3d, 0xffffff][i % 6]);
-    instanced(tri, toon(0xffffff, { side: THREE.DoubleSide }), flagList, { colors: fcols, cast: false });
+    // bunting flags flutter in the wind (vertex shader; strength set by the theme)
+    const flagMat = toon(0xffffff, { side: THREE.DoubleSide, name: 'bunting' });
+    flagMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = waterU.uTime; sh.uniforms.uWind = windU;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          float ph = instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.23;
+          float k = -position.y / 0.62;
+          transformed.z += k * (0.08 + 0.55 * uWind) * sin(uTime * (3.0 + 6.0 * uWind) + ph);
+          transformed.x += k * 0.12 * uWind * sin(uTime * 7.0 + ph * 1.7);`);
+    };
+    flagMat.customProgramCacheKey = () => 'bunting-flutter';
+    themeRefs.flags = instanced(tri, flagMat, flagList, { colors: fcols, cast: false });
     const pole = new THREE.CylinderGeometry(0.07, 0.09, 3.3, 6); pole.translate(0, 1.65, 0);
-    instanced(pole, toon(0xffffff), poleList, { ol: 1.5 });
+    themeRefs.poles = instanced(pole, toon(0xffffff), poleList, { ol: 1.5 });
     const ropeGeo = new THREE.BufferGeometry().setFromPoints(ropes.flatMap((pts) => pts.slice(0, -1).flatMap((p, i) => [p, pts[i + 1]])));
-    const rl = new THREE.LineSegments(ropeGeo, new THREE.LineBasicMaterial({ color: 0x333333 })); add(rl); disposables.push(ropeGeo);
+    const rl = new THREE.LineSegments(ropeGeo, new THREE.LineBasicMaterial({ color: 0x333333 })); add(rl); disposables.push(ropeGeo); themeRefs.rope = rl;
     // white picket fence segments
     const pk = [];
     for (let i = 0; i < 4; i++) { const b = new THREE.BoxGeometry(0.16, 1.0, 0.06); b.translate(-0.9 + i * 0.6, 0.5, 0); pk.push(b); }
@@ -668,13 +693,14 @@ ${THREE.ShaderChunk.fog_fragment}
     const cone = mergeGeometries([new THREE.ConeGeometry(3.0, 4.2, 8).translate(0, 5.0, 0), new THREE.ConeGeometry(2.4, 3.6, 8).translate(0, 7.2, 0), new THREE.ConeGeometry(1.6, 3.0, 8).translate(0, 9.2, 0)].map(flatGeo));
     const tlist = trees.map((t) => ({ x: t.x, y: C.heightAt(t.x, t.z) - 0.2, z: t.z, ry: rnd() * 6.28, s: t.s }));
     instanced(trunkG, toon(0x8a5a36), tlist, { ol: 2, olRef: 40, chunk: 160, occluder: true });
-    const crownMat = toon(0xffffff);
+    const crownMat = toon(0xffffff, { name: 'crowns' }); themeRefs.crownMat = crownMat;
     lolli.computeVertexNormals();
     const kinds = [lolli, blob, cone];
     kinds.forEach((g, k) => {
       const l = tlist.filter((_, i) => trees[i].kind === k);
       instanced(g, crownMat, l, { ol: 2.2, olRef: 40, colors: l.map(() => greens[Math.floor(rnd() * greens.length)]), chunk: 160, occluder: true });
     });
+    themeRefs.crowns = registry.filter((e) => e.im.material === crownMat).map((e) => e.im);
     anchors.treeCount = trees.length;
   }
 
@@ -691,8 +717,10 @@ ${THREE.ShaderChunk.fog_fragment}
       if (rnd() < 0.62) tl.push({ x, y, z, ry: rnd() * 6, s: 0.5 + rnd() * 0.6 });
       else { fl.push({ x, y, z, ry: rnd() * 6, s: 0.35 + rnd() * 0.25 }); fc.push(['#ff5d8f', '#ffd93b', '#ffffff', '#b06bff', '#ff8a3d', '#57c7ff'][Math.floor(rnd() * 6)]); }
     }
-    instanced(tuft, toon(0x4fbf38), tl, { cast: false, chunk: 120 });
-    instanced(flower, toon(0xffffff), fl, { cast: false, colors: fc, chunk: 120 });
+    const tuftMat = toon(0x4fbf38, { name: 'tufts' }), flowerMat = toon(0xffffff, { name: 'flowers' });
+    instanced(tuft, tuftMat, tl, { cast: false, chunk: 120 });
+    instanced(flower, flowerMat, fl, { cast: false, colors: fc, chunk: 120 });
+    themeRefs.tuftMat = tuftMat; themeRefs.flowers = registry.filter((e) => e.im.material === flowerMat).map((e) => e.im);
   }
 
   // ---------- sky, clouds, distant hills ----------
@@ -708,22 +736,25 @@ ${THREE.ShaderChunk.fog_fragment}
   const ctr = [T.x0 + Wm / 2, T.z0 + Hm / 2];
   const clouds = [];
   for (let i = 0; i < 26; i++) { const a = rnd() * 6.28, r = 300 + rnd() * 1300; clouds.push({ x: ctr[0] + Math.cos(a) * r, y: 170 + rnd() * 120, z: ctr[1] + Math.sin(a) * r, ry: rnd() * 6, s: 0.8 + rnd() * 1.4 }); }
-  const cloudMesh = instanced(cloudGeo, toon(0xffffff, { emissive: 0x6a88b0, emissiveIntensity: 0.35, fog: false }), clouds, { ol: 1.5, olRef: 300, cast: false });
+  const cloudMat = toon(0xffffff, { emissive: 0x6a88b0, emissiveIntensity: 0.35, fog: false });
+  const cloudMesh = instanced(cloudGeo, cloudMat, clouds, { ol: 1.5, olRef: 300, cast: false });
+  Object.assign(themeRefs, { skyMat, cloudMat, cloudMesh, pathMat: null });
   const hills = [];
   for (let i = 0; i < 18; i++) { const a = (i / 18) * 6.28 + rnd() * 0.2; const r = 1900 + rnd() * 500; hills.push({ x: ctr[0] + Math.cos(a) * r, y: -40, z: ctr[1] + Math.sin(a) * r, sx: 320 + rnd() * 260, sy: 80 + rnd() * 90, sz: 260 + rnd() * 200, ry: rnd() * 6 }); }
-  instanced(new THREE.SphereGeometry(1, 24, 12), toon(0x6cc77a), hills, { cast: false, colors: hills.map((_, i) => [0x7acb7f, 0x5fb985, 0x8fd18a][i % 3]) });
+  themeRefs.hills = instanced(new THREE.SphereGeometry(1, 24, 12), toon(0x6cc77a), hills, { cast: false, colors: hills.map((_, i) => [0x7acb7f, 0x5fb985, 0x8fd18a][i % 3]) });
 
   function update(t) {
     waterU.uTime.value = t;
     for (const b of boats) { b.g.position.y = (C.lake?._waterLevel ?? 0) + 0.1 + Math.sin(t * 1.7 + b.ph) * 0.08; b.g.rotation.z = Math.sin(t * 1.3 + b.ph) * 0.06; b.g.rotation.y = b.a + Math.sin(t * 0.1 + b.ph) * 0.4; }
-    if (cloudMesh) cloudMesh.position.x = Math.sin(t * 0.01) * 40;
+    if (cloudMesh) cloudMesh.position.x = Math.sin(t * 0.01) * 40 + t * windU.value * 6;
   }
   function dispose() {
     group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     for (const d of disposables) d.dispose?.();
     scene.remove(group); scene.remove(sky);
   }
-  return { group, anchors, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath, registerInstanced, clearArea, redrawGround, setOcclusionCorridor };
+  themeRefs.pathMat = pathMatRef; themeRefs.windU = windU; themeRefs.farMats = farMats;
+  return { group, anchors, theme: themeRefs, update, dispose, inPark, clearOf, reserve, blocked, groundTex, onPath, registerInstanced, clearArea, redrawGround, setOcclusionCorridor };
 }
 
 // non-indexed with per-face normals (the toon material has no flatShading option)

@@ -17,7 +17,8 @@ export function isBoosted(pub, b, playerId = b.playerId) {
   return !!sp && (b.type === 'special' || (b.type === 'win' && b.boost === true)) && (playerId == null || playerId === sp.playerId);
 }
 
-// "If the race ended now" net per player. orderNow: runner ids in current race order (leader first).
+// "If the race ended now" net per player (this round's profit or loss; add it to the player's score for a live score).
+// orderNow: runner ids in current race order (leader first). Budget-independent: the net is returns minus stakes.
 // Win / special / in-play (locked odds) / head-to-head bets settle against orderNow; props are unresolved (count 0).
 export function provisionalNet(publicRound, betsByPlayer, orderNow) {
   const pub = publicRound;

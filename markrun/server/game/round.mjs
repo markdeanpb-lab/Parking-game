@@ -10,7 +10,7 @@ import { getMemory, peekMemory, saveMemory, ensureSessionSchema, pickLine } from
 import { leakContext, checkRound, checkText } from './leak.mjs';
 import { settle } from './settle.mjs';
 import { buildRacePlan } from './raceplan.mjs';
-import { chooseTheme, themeInfo, bandOf, THEMES } from './themes.mjs';
+import { chooseTheme, themeInfo, bandOf, THEMES, themeAnnouncement } from './themes.mjs';
 import { chooseHotTips } from './hottips.mjs';
 import { joinClue } from './headlines.mjs';
 import { makeProps, setLapStats, inPlayMarket as ipm, betRevealOrder as bro, sessionSuperlatives as ss } from './markets.mjs';
@@ -18,10 +18,11 @@ import { makeProps, setLapStats, inPlayMarket as ipm, betRevealOrder as bro, ses
 export const CURRENCY = { name: 'Parkpounds', singular: 'Parkpound', short: 'pp', symbol: 'ℙ' };
 export { COMMENTATORS };
 export { provisionalNet } from './provisional.mjs';
-export { coldOpenLines, lockLine, stampLine, rematchLine, awardLines } from './moments.mjs';
+export { coldOpenLines, lockLine, stampLine, rematchLine, awardLines, newsDeskScript } from './moments.mjs';
+export { themeAnnouncement } from './themes.mjs';
 
 export const DEFAULT_SETTINGS = {
-  startingBankroll: 1000,
+  roundBudget: 500,      // F5 economy: a fresh betting budget every round (NOT the score). Net profit is banked into the score.
   rounds: 8,
   drinks: false,
   playerNames: [],
@@ -34,7 +35,9 @@ export const DEFAULT_SETTINGS = {
   sigma: MODEL_DEFAULTS.sigma,
   lambda: MODEL_DEFAULTS.lambda,
   margin: MODEL_DEFAULTS.margin,
-  formHoldsBonus: 5,     // selection curation: prefer fields where the form guide broadly holds
+  supScale: MODEL_DEFAULTS.supScale,
+  supBottomX: MODEL_DEFAULTS.supBottomX,
+  formHoldsBonus: 3,     // selection curation: prefer fields where the form guide broadly holds (iteration 4: decisive clues do the rest)
   formGapBonus: 2,       // selection: prefer fields with clear public form differences (no outcomes)
   publicPricedBonus: 0.9,// clue assignment: prefer public clues the bookie can price
   minStake: 10,
@@ -42,7 +45,9 @@ export const DEFAULT_SETTINGS = {
 };
 export function normalizeSettings(s = {}) {
   const o = { ...DEFAULT_SETTINGS, ...(s || {}) };
-  o.startingBankroll = Math.max(100, Math.round(Number(o.startingBankroll) || DEFAULT_SETTINGS.startingBankroll));
+  const b = s?.roundBudget ?? s?.budget; // the host may pass either name
+  o.roundBudget = Math.max(50, Math.min(100000, Math.round((Number(b) || DEFAULT_SETTINGS.roundBudget) / 10) * 10));
+  o.minStake = Math.max(1, Math.min(o.roundBudget, Math.round(Number(o.minStake) || DEFAULT_SETTINGS.minStake)));
   o.rounds = Math.max(1, Math.min(20, Math.round(Number(o.rounds) || DEFAULT_SETTINGS.rounds)));
   o.drinks = !!o.drinks;
   return o;
@@ -63,7 +68,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   mem.themes ||= []; mem.bands ||= [];
   const data = loadData(hist);
   setLapStats(data);
-  const model = getModel(hist, { lambda: S.lambda, features: S.modelFeatures });
+  const model = getModel(hist, { lambda: S.lambda, features: S.modelFeatures, supScale: S.supScale, supBottomX: S.supBottomX });
   if (!players.length) players = [{ id: 'p1', name: 'Player 1' }];
 
   // 1. theme + field
@@ -98,11 +103,16 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
     const fav = s[0], out = s.at(-1);
     return (fav >= 2.5 && fav <= 3.5 ? 1 : -Math.abs(Math.log(fav / 3))) + (out >= 11 ? 1 : out / 11 - 1);
   };
+  // decisive clues: one public every round; a second, private one in most rounds, for the player whose turn it is
+  // (alternates through the session so both players get the same number of private key clues)
+  mem.decisiveTurn ??= 0;
+  const privDec = players.length && R.chance(S.privateDecisiveRate ?? 0.65) ? 1 + (mem.decisiveTurn % players.length) : null;
   let chosen = null;
   for (const alt of (sel.alternatives?.length ? sel.alternatives : [sel])) {
     const ps = R.shuffle(alt.perfs);
     const ents = ps.map((p, i) => ({ runnerId: `r${i + 1}`, perf: p, cands: candidatesFor(p, ps, R, mem) }));
-    const asg = assignClues(ents, slots, R, model, { publicPricedBonus: S.publicPricedBonus, boost: (e, c) => (e.perf.pool === 'novelty' && (c.hint || 0) >= 4 ? 1.2 : 0) });
+    const asg = assignClues(ents, slots, R, model, { publicPricedBonus: S.publicPricedBonus, privateDecisiveSlot: privDec, privateStrength: S.privateStrength ?? 0.6, publicStrength: S.publicStrength ?? 0.35,
+      boost: (e, c) => (e.perf.pool === 'novelty' && (c.hint || 0) >= 4 ? 1.2 : 0) });
     const m = ps.map((p, i) => predict(model, p.date, asg[`r${i + 1}`].map(({ slot, clue }) => ({ features: clue.features, weight: slot === 0 ? 1 : S.privateWeight }))));
     const shape = shapeOf(winProbs(m, S.sigma).map((q) => oddsFromProb(q, S.margin).win));
     if (!chosen || shape > chosen.shape + 1e-9) chosen = { shape, perfs: ps, entries: ents, assigned: asg, alt };
@@ -136,7 +146,8 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
     clues[id] = { public: null, private: {} };
     for (const { slot, clue } of assigned[id]) {
       const c = safe({ id: `c${lane}${'abcdefgh'[slot]}`, text: clue.text, headline: clue.headline, kicker: clue.kicker, category: clue.cat, label: CATEGORY_LABEL[clue.cat] || 'Clue', tier: slot === 0 ? undefined : 'gossip',
-        style: clue.style || 'fact', voice: clue.voice, lean: clue.lean, family: clue.family, features: clue.features, signal: clue.signal, said: clue.said, factKeys: clue.factKeys }, id);
+        style: clue.style || 'fact', voice: clue.voice, lean: clue.lean, family: clue.family, features: clue.features, signal: clue.signal, said: clue.said, factKeys: clue.factKeys,
+        ...(clue.decisive ? { decisive: true } : {}) }, id);
       if (slot === 0) clues[id].public = c; else clues[id].private[slots[slot]] = c;
     }
   });
@@ -150,7 +161,8 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const counts = Object.fromEntries(pids.map((pid) => [pid, 1 + (runnerPid && pid !== runnerPid ? 1 : 0) + (trailPid === pid ? 1 : 0)]));
   const preMus = perfs.map((p, i) => predict(model, p.date, assigned[ids[i]].map(({ slot, clue }) => ({ features: clue.features, weight: slot === 0 ? 1 : S.privateWeight }))));
   const marketProb = Object.fromEntries(winProbs(preMus, S.sigma).map((q, i) => [ids[i], q]));
-  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, favourBias: S.tipFavourBias ?? 6, rivalBias: S.tipRivalBias ?? 2, decisiveDamp: S.tipDecisiveDamp ?? 0.6, positiveShare: S.tipPositiveShare ?? 0.6 });
+  const avoid = Object.fromEntries(pids.map((pid) => [pid, new Set(ids.filter((id) => clues[id].private[pid]?.decisive))]));
+  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, avoid, favourBias: S.tipFavourBias ?? 6, rivalBias: S.tipRivalBias ?? 2, decisiveDamp: S.tipDecisiveDamp ?? 0.6, positiveShare: S.tipPositiveShare ?? 0.6 });
   for (const [pid, list] of Object.entries(tips)) {
     for (const t of list) {
       const old = clues[t.runnerId].private[pid];
@@ -186,9 +198,13 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
     odds: { win: odds[i].win, display: odds[i].display, decimalText: odds[i].win.toFixed(2) },
   }));
 
-  // 7. head-to-heads where the price and the clues disagree; prop bet; multiplier
+  // ranks: 1 = favourite .. 5 = outsider (shortest price first; ties broken by the house's probability)
+  const byPrice = ids.map((id, i) => ({ id, i })).sort((a, b) => runners[a.i].odds.win - runners[b.i].odds.win || probs[b.i] - probs[a.i]);
+  byPrice.forEach(({ i }, k) => { runners[i].rank = k + 1; });
+
+  // 7. ONE head-to-head (the pair where the price and the clues disagree most); side bet only in The Funfair Stakes; multiplier
   const matchups = pickMatchups(R, ids, mus, clues, { ...S, sigma });
-  const divOpen = !theme.funfair && (mem.diverted ?? 0) < 1; // could a diversion run have been drawn this round?
+  const divOpen = false; // the "anyone at the funfair?" side bet is gone: the funfair prop lives only in The Funfair Stakes
   const { props, outcomes: propOutcomes } = makeProps({ theme, perfs, plan, settings: S, rng: R, divOpen });
   const payoutMultiplier = roundNumber === S.rounds ? 2 : 1;
   // Underdog Special (final round, trailing player only): ONE win pick at boosted odds (winnings x1.5)
@@ -197,14 +213,14 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
 
   // 8. commentary
   plan.commentary = raceCommentary({ plan, runners, clues: Object.fromEntries(ids.map((id) => [id, { public: clues[id].public, private: Object.values(clues[id].private) }])), wildcardId, rng: R, mem });
-  const thInfo = themeInfo(theme, R);
+  const thInfo = themeInfo(theme, R, perfs);
 
   const pub = {
     roundId, number: roundNumber, title,
     theme: thInfo,
     runners, matchups, ...(props.length ? { props } : {}), payoutMultiplier,
     ...(underdogSpecial ? { underdogSpecial } : {}),
-    rules: { minStake: S.minStake, maxBetsPerPlayer: S.maxBetsPerPlayer },
+    rules: { budget: S.roundBudget, minStake: S.minStake, maxBetsPerPlayer: S.maxBetsPerPlayer },
     wildcard: !!sel.wildcard,
     ...(sel.wildcard ? { notice: 'WILDCARD ROUND: one of these five was not exactly trying that morning. Read the clues.' } : {}),
     introLines: introLines(R, mem, { title, wildcard: sel.wildcard, theme: thInfo, finale: payoutMultiplier > 1 }).map(({ speaker, text }) => ({ speaker, text })),
@@ -242,6 +258,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   mem.bands.push(bandOf([...perfs].map((p) => p.officialS).sort((a, b) => a - b)[2]));
   for (const p of perfs) mem.perfs.add(p.date);
   if (sel.wildcard) mem.wildcards = (mem.wildcards || 0) + 1;
+  if (privDec != null && Object.values(clues).some((c) => c.private[slots[privDec]]?.decisive)) mem.decisiveTurn++;
   if (!theme.funfair && perfs.some((p) => p.diversions?.length)) mem.diverted = (mem.diverted || 0) + 1;
   mem.rounds = roundNumber;
   if (sess) {
@@ -273,36 +290,38 @@ function pickMatchups(R, ids, mus, clues, S) {
     pairs.push({ i, j, p, score });
   }
   pairs.sort((a, b) => b.score - a.score);
-  const first = pairs[0];
-  const second = pairs.find((q) => q.i !== first.i && q.i !== first.j && q.j !== first.i && q.j !== first.j);
-  return [first, second].filter(Boolean).map((q, k) => {
+  return pairs.slice(0, 1).map((q, k) => {
     const swap = R.chance(0.5);
     const [ia, ib, pa] = swap ? [q.j, q.i, 1 - q.p] : [q.i, q.j, q.p];
-    const oa = oddsFromProb(pa, S.margin), ob = oddsFromProb(1 - pa, S.margin);
-    return { id: `m${k + 1}`, a: ids[ia], b: ids[ib], odds: { a: oa.win, b: ob.win, displayA: oa.display, displayB: ob.display } };
+    const oa = oddsFromProb(pa, S.h2hMargin ?? S.margin), ob = oddsFromProb(1 - pa, S.h2hMargin ?? S.margin);
+    // the phones show each runner's PUBLIC clue headline on the head-to-head card
+    return { id: `m${k + 1}`, a: ids[ia], b: ids[ib], clueA: clues[ids[ia]].public.headline, clueB: clues[ids[ib]].public.headline,
+      odds: { a: oa.win, b: ob.win, displayA: oa.display, displayB: ob.display } };
   });
 }
 
 const memFor = (round) => peekMemory(round.hidden?.sessionId) || getMemory(null, round.hidden?.sessionId || 'default');
 
-export function settleRound(round, betsByPlayer = {}, bankrolls = {}, rng) {
-  return settle(round, betsByPlayer, bankrolls, { rng: makeRng(rng), mem: memFor(round), inPlay: ipm(round) });
+// scores: { [playerId]: cumulative score BEFORE this round } (banked net profit; may be negative). Missing = 0.
+// Returns payouts[pid] = { bets, staked, returned, net, score, budget, unspent } where score = previous score + net.
+export function settleRound(round, betsByPlayer = {}, scores = {}, rng) {
+  return settle(round, betsByPlayer, scores || {}, { rng: makeRng(rng), mem: memFor(round), inPlay: ipm(round) });
 }
 
 // HALFWAY MARKET: priced only from the on-screen standings at 2500 m.
 export function inPlayMarket(round) { return ipm(round); }
 
-// Bet reveal sequence for the TV: smallest to largest stake relative to bankroll, with clash / opposition lines.
-export function betRevealOrder(round, betsByPlayer, bankrolls, players, rng) {
+// Bet reveal sequence for the TV: smallest to largest stake (as a share of the round budget), with clash / opposition lines.
+// The third argument is ignored (it used to be bankrolls; every player now has the same per-round budget).
+export function betRevealOrder(round, betsByPlayer, _legacy, players, rng) {
   const ps = players?.length ? players : round.hidden?.players || [];
-  return bro(round, betsByPlayer || {}, bankrolls || {}, ps, { rng: makeRng(rng), mem: memFor(round) });
+  return bro(round, betsByPlayer || {}, null, ps, { rng: makeRng(rng), mem: memFor(round) });
 }
 
 // Commentary for the end of betting (legacy shape): the reveal lines in order, then "betting closed". [{ speaker, text }]
 export function betReactionLines(round, betsByPlayer, players, rng) {
   const ps = players?.length ? players : round.hidden?.players || [];
-  const bankrolls = Object.fromEntries(ps.map((p) => [p.id, p.bankroll ?? round.hidden?.settings?.startingBankroll ?? 1000]));
-  const seq = bro(round, betsByPlayer || {}, bankrolls, ps, { rng: makeRng(rng), mem: memFor(round), closing: true });
+  const seq = bro(round, betsByPlayer || {}, null, ps, { rng: makeRng(rng), mem: memFor(round), closing: true });
   return seq.map((x) => x.line);
 }
 

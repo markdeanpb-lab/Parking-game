@@ -234,3 +234,75 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 .rv-line .rl { flex: 1; min-width: 0; }
 .rv-line .rl small { display: block; font-size: 12px; color: #4a5080; font-weight: 800; }
 .rv-line .rl small b { font-family: var(--font-body); font-size: 12px; color: var(--grass-deep); font-weight: 900; }
+
+/* ===== iteration 4: budget/score header, rank + plain money, round card, head-to-head duel, soft timer ===== */
+.tb .tm.up b { color: #7dffb3; }
+.tb .tm.down b { color: #ff9aa2; }
+.tb .clock { flex: none; margin-left: auto; font-family: var(--font-display); font-size: 16px; padding: 3px 9px; border-radius: 10px; background: rgba(255,255,255,.14); border: 2px solid rgba(255,255,255,.3); }
+.tb .clock + .tm { margin-left: 10px; }
+.tb .clock.hurry { background: var(--tomato); border-color: #fff; animation: pulse .8s ease-in-out infinite; }
+
+.strip .tbtn { flex: 0 0 auto; width: 40px; height: 44px; border-radius: 12px; border: 2px solid transparent; background: rgba(20,24,60,.3); font-family: var(--emoji); font-size: 22px; padding: 0; cursor: pointer; }
+.strip .tbtn.on { border-color: var(--sun); background: rgba(20,24,60,.65); }
+.strip .face .fo { font-size: 11px; letter-spacing: .02em; }
+
+/* runner screen: rank chip + money line lead, the fraction stays small */
+.rhead.hero .rn { gap: 6px; }
+.rhead .rn .rank { font-size: 17px; align-self: center; }
+.rhead .rn .money { font-size: 25px; color: #fff; text-shadow: 0 3px 0 var(--ink); }
+.rhead .rn .money .wins-line b.w { color: #7dffb3; }
+.rhead .rn .money .frac { color: #fff; opacity: .8; font-size: 14px; text-shadow: none; }
+
+/* this round: theme + budget */
+.theme-card { background: #fff; color: var(--ink); border: 4px solid var(--ink); border-radius: 20px; box-shadow: 0 6px 0 var(--ink); padding: 12px 14px 14px; text-align: center; }
+.theme-card .ti { font-family: var(--emoji); font-size: 54px; line-height: 1; }
+.theme-card .tl { font-family: var(--font-display); font-size: 28px; line-height: 1.05; margin-top: 4px; }
+.theme-card .tb3 { font-weight: 800; font-size: 15px; line-height: 1.25; color: #3a4070; margin-top: 6px; }
+.theme-card .tex { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 2px dashed #c9d2ee; text-align: left; font-size: 14px; font-weight: 800; line-height: 1.25; }
+.theme-card .tex li { padding-left: 20px; position: relative; margin: 3px 0; }
+.theme-card .tex li::before { content: '▸'; position: absolute; left: 4px; color: var(--tomato); }
+.x2 { align-self: center; font-family: var(--font-display); font-size: 18px; background: var(--tomato); color: #fff; border: 3px solid var(--ink); border-radius: 12px; padding: 4px 12px; transform: rotate(-2deg); }
+.budget-pill { align-self: center; text-align: center; color: #fff; font-weight: 900; font-size: 16px; }
+.budget-pill b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 40px; color: var(--sun); -webkit-text-stroke: 6px var(--ink); paint-order: stroke fill; line-height: 1.05; }
+.budget-pill small { display: block; font-size: 13px; opacity: .85; }
+
+/* head-to-head: a duel */
+.duel-h { font-size: 30px; transform: rotate(-2deg); color: var(--sun); }
+.side.duel { padding: 10px 6px 12px; gap: 5px; border-top: 10px solid var(--c1, var(--ink)); min-width: 0; }
+.side.duel .rp svg { width: 76px; height: 76px; }
+.side.duel b { font-size: 20px; }
+.side.duel .rank { font-size: 13px; }
+.side .dm { font-size: 17px; color: var(--ink); }
+.side .dm .frac { display: block; text-align: center; font-size: 11px; }
+.side .dc { font-size: 13px; font-weight: 800; line-height: 1.2; color: #3a4070; text-align: center; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.side.on .dc { color: var(--ink); }
+.sides .vs { font-size: 28px; }
+.hints { display: flex; flex-direction: column; gap: 4px; background: rgba(20,24,60,.35); border-radius: 14px; padding: 8px 12px; font-weight: 800; font-size: 14px; line-height: 1.25; }
+.side.yn .dm { font-size: 18px; }
+
+/* tray: the money line is the headline */
+.tray .ts .tw { flex: 1; font-family: var(--font-display); font-size: 22px; color: #fff; white-space: nowrap; }
+.tray .ts .tw .num { font-size: 34px; }
+.tray .ts .tw b.w { color: #7dffb3; font-weight: 400; font-size: 30px; }
+.tray .ts .tw small { font-family: var(--font-body); font-weight: 800; font-size: 12px; opacity: .75; }
+
+/* market */
+.sheet.market .mkq { margin: 0 0 6px; font-size: 14px; }
+.mkr .o { text-align: right; line-height: 1; }
+.mkr .o b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 20px; color: var(--grass-deep); }
+.mkr .o small { display: block; font-family: var(--font-body); font-weight: 900; font-size: 12px; color: #4a5080; margin-top: 3px; }
+
+/* race: three big reactions */
+.reacts { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.re { aspect-ratio: auto; height: 64px; font-size: 34px; }
+@media (max-height: 760px) {
+  .theme-card .ti { font-size: 44px; }
+  .theme-card .tl { font-size: 24px; }
+  .budget-pill b { font-size: 34px; }
+  .side.duel .rp svg { width: 62px; height: 62px; }
+  .duel-h { font-size: 26px; }
+  .rhead .rn .money { font-size: 22px; }
+  .re { height: 56px; }
+}
+.side .dm small.frac { display: block; background: none; color: #4a5080; padding: 0; border-radius: 0; font-family: var(--font-body); font-weight: 900; font-size: 12px; text-align: center; }
+.scr.flow.round .main { justify-content: center; }

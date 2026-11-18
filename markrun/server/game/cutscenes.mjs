@@ -1,0 +1,380 @@
+// MARKRUN cutscene planner (data-driven; docs/CUTSCENE_IDEAS.md, first batch of 12 + the funfair five-beat package).
+//
+//   planCutscenes({ racePlan, runners, theme, rng, sessionMemory, backedBy?, roundNumber?, force? })
+//     -> [{ id, kind, who, mode, atBroadcastS, durationS, params, lines, truth, group? }]
+//
+// The rule: THE SLOWDOWN IS REAL, THE REASON IS MADE UP. Every cutscene is triggered by something that really happened in a
+// runner's pacing table, weather or finishing margin. Nothing here changes a time, a position or the time map:
+//   - 'freeze' / 'replay': the TV holds the broadcast clock at atBroadcastS for durationS wall seconds, then resumes at the
+//     exact same broadcast second (so every runner still crosses the line at officialS).
+//   - 'slowmo': the shared broadcast clock runs at params.rate between atBroadcastS and params.untilBroadcastS (eased),
+//     the same for ALL runners. durationS is the resulting wall time.
+//   - 'inset': plays live while the race runs (params.pip: picture-in-picture box, else a live camera beat), durationS wall s.
+//   - 'pre' / 'post': before the gun (no clock cost) / after the last finisher (the clock is already past every finish).
+// Pacing (RULES): <= 3 pausing cutscenes and <= 18 s of pause per race, >= 20 broadcast s apart, >= 6 s between any two;
+// none in the first 8 broadcast s, none once the leader is inside the final 300 m, no pause during a live battle;
+// per-kind cooldowns across the night via sessionMemory.cutscenes.
+//
+// `runners`: [{ id, nickname?, shortName?, personality?, facts?, features?, perf?: { facts, features } }] (any subset;
+//   pacing comes from racePlan.runners[].progress, weather from facts.weather). `backedBy` ({ runnerId: [names] } or an
+//   array of ids) is optional: when the call happens after betting it tilts featured-runner choice towards backed runners.
+// `force`: a cutscene kind; plans that kind for the best-fitting runner even when the trigger threshold is not met
+//   (preview / screenshots only). Never used by the game.
+import { distanceAt, timeAtDistance, raceToBroadcast, broadcastToRace } from './raceplan.mjs';
+import { makeRng } from './rng.mjs';
+
+export const RULES = {
+  maxPausing: 3, maxPauseS: 18, pauseGapS: 20, anyGapS: 6, startQuietS: 8, noGoM: 4700, maxInsets: 3,
+  cooldownRaces: 4, cooldownLiveRaces: 3, marketGapS: 6, battleGapS: 2, battleWindowS: 3.5, scrumM: 1000,
+};
+const HILLS = [[1720, 1960], [4220, 4460]];
+// lap-1 equivalent course zones (approximate metres; lap 2 = m - 2500)
+const ZONES = { start: [0, 600], avenue: [800, 1310], hill: [1720, 1960], lake: [1980, 2320] };
+const geo = (m) => (m >= 2500 ? m - 2500 : m);
+const zoneOf = (m) => { const g = geo(m); for (const [k, [a, b]] of Object.entries(ZONES)) if (g >= a && g <= b && !(k === 'start' && m >= 2500)) return k; return 'park'; };
+
+// catalogue keys -> metadata (cat = variety category, pausing = counts against the pause budget)
+export const CUTSCENE_KINDS = {
+  funfair_sign: { cat: 'funfair', label: 'Diversion!', ref: 'section 1, beat 1' },
+  funfair_stretch: { cat: 'funfair', label: 'Funfair slow-mo', ref: 'section 1, beat 2' },
+  funfair_drone: { cat: 'funfair', label: 'The whole fair', ref: 'section 1, beat 3' },
+  hook_a_duck: { cat: 'funfair', label: 'Hook-a-Duck Hustle', ref: 'F2' },
+  test_strength: { cat: 'funfair', label: 'Test Your Strength', ref: 'F1' },
+  funfair_rejoin: { cat: 'funfair', label: 'Back on course', ref: 'section 1, beat 5' },
+  goose_toll: { cat: 'slow', label: 'Goose Toll Booth', ref: 'A1' },
+  treadmill_hill: { cat: 'hill', label: 'The Treadmill Hill', ref: 'C2' },
+  everest: { cat: 'hill', label: 'Everest Expedition', ref: 'C1' },
+  spaghetti_legs: { cat: 'fade', label: 'Spaghetti Legs', ref: 'E2' },
+  cannonball: { cat: 'start', label: 'Human Cannonball', ref: 'E1' },
+  raincloud: { cat: 'weather', label: 'Personal Raincloud', ref: 'W1' },
+  mirror_signal: { cat: 'overtake', label: 'Mirror, Signal, Manoeuvre', ref: 'D1' },
+  ice_cream_van: { cat: 'surge', label: 'The Ice-Cream Van Jingle', ref: 'B2' },
+  photographer: { cat: 'finish', label: 'The Wildlife Photographer', ref: 'X1' },
+  sore_loser_var: { cat: 'finish', label: 'Sore Loser VAR', ref: 'X5' },
+};
+export const PAUSING = new Set(['freeze', 'replay']);
+// default wall durations (s)
+const DUR = { funfair_sign: 2.6, funfair_drone: 3.8, hook_a_duck: 7, hook_a_duck2: 5, test_strength: 6.5, test_strength2: 6, funfair_rejoin: 2.8,
+  goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 5.5, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 7 };
+
+const r1 = (x) => Math.round(x * 10) / 10;
+const r2 = (x) => Math.round(x * 100) / 100;
+const pct = (ratio) => Math.round(Math.abs(ratio - 1) * 100);
+const km = (m) => `${(m / 1000).toFixed(1)} km`;
+
+// ---------------- per-runner pacing analysis (pure) ----------------
+export function runnerStats(pr) {
+  const P = pr.progress, T = pr.officialS, avg = T / 5000;
+  const t = (m) => timeAtDistance(P, m);
+  const pace = (m0, m1) => (t(m1) - t(m0)) / (m1 - m0) / avg; // 1 = his own average pace; 1.2 = 20% slower
+  const divs = (pr.diversions || []).map((d) => [d.fromM, d.toM]);
+  const excluded = (a, b, { hills = true, div = true } = {}) => (hills && HILLS.some(([h0, h1]) => a < h1 && b > h0)) || (div && divs.some(([d0, d1]) => a < d1 + 25 && b > d0 - 25));
+  const windows = (len, lo, hi, opt) => { const out = []; for (let m0 = lo; m0 + len <= hi; m0 += 25) if (!excluded(m0, m0 + len, opt)) out.push({ m0, m1: m0 + len, ratio: pace(m0, m0 + len) }); return out; };
+  const w250 = windows(250, 100, RULES.noGoM);
+  const worst = w250.reduce((a, w) => (!a || w.ratio > a.ratio ? w : a), null);
+  const best = w250.reduce((a, w) => (!a || w.ratio < a.ratio ? w : a), null);
+  const lap2 = windows(250, 2500, RULES.noGoM);
+  const bestMid = w250.filter((w) => w.m0 >= 600).reduce((a, w) => (!a || w.ratio < a.ratio ? w : a), null);
+  const worstLap2 = lap2.reduce((a, w) => (!a || w.ratio > a.ratio ? w : a), null);
+  const t2500 = t(2500);
+  return {
+    avg, pace, worst, best, bestMid, worstLap2,
+    firstKmVsAvg: t(1000) / (avg * 1000) - 1,
+    halfRatio: (T - t2500) / t2500,
+    kick: pace(4600, 5000) - 1,
+    hill1: pace(...HILLS[0]), hill2: pace(...HILLS[1]),
+    divPace: (pr.diversions || []).map((d) => ({ ...d, ratio: pace(d.fromM, d.toM), costS: (pace(d.fromM, d.toM) - 1) * avg * (d.toM - d.fromM) })),
+  };
+}
+
+// ---------------- planner ----------------
+export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemory = null, backedBy = null, roundNumber = null, force = null } = {}) {
+  if (!racePlan?.runners?.length || !racePlan.timeMap?.map) return [];
+  const R = rng && typeof rng === 'object' && typeof rng.next === 'function' ? rng : makeRng(rng ?? hashSeed(racePlan.roundId || 'x'));
+  const tm = racePlan.timeMap;
+  const PR = racePlan.runners;
+  const byId = Object.fromEntries(PR.map((r) => [r.id, r]));
+  const info = Object.fromEntries(PR.map((r) => {
+    const x = runners.find((q) => q.id === r.id) || {};
+    const p = x.perf || x;
+    return [r.id, { name: x.shortName || x.nickname || null, personality: x.personality || null, facts: p.facts || x.facts || {}, features: p.features || x.features || {} }];
+  }));
+  const S = Object.fromEntries(PR.map((r) => [r.id, runnerStats(r)]));
+  const backed = new Set(Array.isArray(backedBy) ? backedBy : Object.keys(backedBy || {}).filter((k) => (backedBy[k] || []).length));
+  const mem = sessionMemory || null;
+  const cm = mem ? (mem.cutscenes ||= { races: 0, last: {}, funfairSigs: [], goose: 0 }) : { races: 0, last: {}, funfairSigs: [], goose: 0 };
+  const raceNo = roundNumber ?? cm.races + 1;
+  const name = (id) => info[id]?.name || 'He';
+  const B = (id, m) => raceToBroadcast(tm, timeAtDistance(byId[id].progress, m));
+  const order = [...PR].sort((a, b) => a.officialS - b.officialS);
+  const firstFinishB = raceToBroadcast(tm, order[0].officialS), lastFinishB = raceToBroadcast(tm, order.at(-1).officialS);
+  const leaderM = (b) => { const t = broadcastToRace(tm, Math.max(0, b)); return Math.max(...PR.map((r) => distanceAt(r.progress, t))); };
+  const lapB = (racePlan.events || []).find((e) => e.type === 'lap')?.broadcastS ?? null;
+  const evts = (racePlan.events || []).filter((e) => e.type === 'overtake' || e.type === 'lead_change');
+  // live battle: two runners within ~2 s who are actually contesting: a pass within +-3.5 broadcast s (once the field has
+  // left the start scrum: in the first km places reshuffle every few seconds and that IS the scrum), or a lead duel in km 4-5
+  const battle = (b) => {
+    if (leaderM(b) >= RULES.scrumM && evts.some((e) => Math.abs(e.broadcastS - b) <= RULES.battleWindowS)) return true;
+    const t = broadcastToRace(tm, Math.max(0, b));
+    const live = PR.filter((r) => t < r.officialS).map((r) => ({ r, d: distanceAt(r.progress, t) })).sort((a, c) => c.d - a.d);
+    if (live.length < 2 || live[0].d < 3500) return false;
+    return timeAtDistance(live[1].r.progress, live[0].d) - t <= RULES.battleGapS;
+  };
+  const LIVE_KINDS = new Set(['cannonball', 'raincloud', 'mirror_signal', 'photographer', 'sore_loser_var']);
+  const freshness = (kind) => { const l = cm.last?.[kind]; if (l == null) return 1; const ago = raceNo - l; return ago >= (LIVE_KINDS.has(kind) ? RULES.cooldownLiveRaces : RULES.cooldownRaces) ? 0.6 : -1; };
+  const cool = (kind) => force === kind || freshness(kind) >= 0;
+  const rel = (id) => (backed.has(id) ? 1 : 0);
+
+  const out = [];
+  const pausing = () => out.filter((c) => PAUSING.has(c.mode));
+  const pauseS = () => pausing().reduce((s, c) => s + c.durationS, 0);
+  // span of broadcast time a cutscene occupies (for spacing)
+  const span = (c) => [c.atBroadcastS, c.mode === 'slowmo' ? c.params.untilBroadcastS : c.atBroadcastS + (PAUSING.has(c.mode) || c.mode === 'post' ? 0 : c.durationS)];
+  function fits(c, { ignoreGroup = null } = {}) {
+    if (force && c.kind === force) return true;
+    const [a, b] = span(c);
+    if (c.mode === 'pre') return !out.some((x) => x.mode === 'pre');
+    if (c.mode === 'post') return !out.some((x) => x.mode === 'post');
+    if (a < RULES.startQuietS) return false;
+    if (leaderM(b + (PAUSING.has(c.mode) ? 0.3 : 0.5)) >= RULES.noGoM) return false;
+    if (PAUSING.has(c.mode)) {
+      if (pausing().length >= RULES.maxPausing || pauseS() + c.durationS > RULES.maxPauseS + 1e-9) return false;
+      if (pausing().some((x) => Math.abs(x.atBroadcastS - a) < RULES.pauseGapS && (!ignoreGroup || x.group !== ignoreGroup))) return false;
+      if (lapB != null && Math.abs(lapB - a) < RULES.marketGapS) return false;
+      if (!c.params?.allowBattle && battle(a)) return false;
+    }
+    if (c.mode === 'inset' && c.params?.pip && out.filter((x) => x.mode === 'inset' && x.params?.pip).length >= RULES.maxInsets) return false;
+    for (const x of out) {
+      if (x.mode === 'pre' || x.mode === 'post' || x.mode === 'slowmo') continue;
+      if (ignoreGroup && x.group === ignoreGroup) continue;
+      const [xa, xb] = span(x);
+      if (a < xb + RULES.anyGapS && b > xa - RULES.anyGapS) return false;
+    }
+    return true;
+  }
+  const mk = (kind, who, mode, atBroadcastS, extra = {}) => ({ id: '', kind, who, mode, atBroadcastS: r2(atBroadcastS), durationS: extra.durationS ?? DUR[kind], params: extra.params || {}, lines: extra.lines || [], truth: extra.truth || '', ...(extra.group ? { group: extra.group } : {}), _score: extra.score ?? 0 });
+
+  // ---------- 1. funfair package (the fix for "you couldn't even see the funfair") ----------
+  const diverters = PR.filter((r) => r.diversions?.length);
+  if (diverters.length) {
+    const cand = [...diverters].sort((a, b) => (rel(b.id) - rel(a.id)) || (Math.abs(S[b.id].divPace[0].ratio - 1) - Math.abs(S[a.id].divPace[0].ratio - 1)));
+    for (const r of cand) {
+      const pkg = funfairPackage(r);
+      if (pkg) { out.push(...pkg); break; }
+    }
+  }
+  function funfairPackage(r) {
+    const id = r.id, st = S[id];
+    const sigs = ['hook_a_duck', 'test_strength'];
+    const usedSigs = cm.funfairSigs || [];
+    let sig = force && sigs.includes(force) ? force : sigs.find((s) => !usedSigs.includes(s)) || R.pick(sigs);
+    const pkg = [];
+    const laps = st.divPace.slice(0, 2);
+    for (const [i, d] of laps.entries()) {
+      const lap = i + 1, g = `funfair-${lap}`;
+      const mid = Math.round((d.fromM + d.toM) / 2);
+      const slowFrom = B(id, d.fromM - (lap === 1 ? 55 : 25)), slowTo = B(id, d.toM + 15);
+      const rate = lap === 1 ? 0.4 : 0.55;
+      const sl = mk('funfair_stretch', id, 'slowmo', slowFrom, { group: g, durationS: r1((slowTo - slowFrom) / rate + 1.2), params: { rate, untilBroadcastS: r2(slowTo), lap, fromM: d.fromM, toM: d.toM, easeS: 0.6 } });
+      const lines = [];
+      const v = d.ratio <= 0.97 ? 'fast' : d.ratio >= 1.03 ? 'slow' : 'even';
+      const variant = sig === 'test_strength' ? (lap === 1 ? (v === 'fast' ? 'launch' : 'creep') : 'ding') : (lap === 1 ? 'hook' : 'swap');
+      const tag = { lap, fromM: d.fromM, toM: d.toM, maxOffM: d.maxOffM, atM: mid, ratio: r2(d.ratio), costS: r1(d.costS), variant };
+      const setLines = sig === 'hook_a_duck'
+        ? (lap === 1 ? [{ speaker: 'pam', text: 'He\'s won a goose. Of course he has.' }] : [{ speaker: 'jeff', text: 'He\'s only gone and traded UP!' }])
+        : (lap === 1 ? (variant === 'launch' ? [{ speaker: 'jeff', text: 'He\'s been LAUNCHED back onto the course!' }] : [{ speaker: 'pam', text: 'Parkrunner. Fair.' }]) : [{ speaker: 'jeff', text: 'DING DING DING! Somebody fetch that bell!' }]);
+      const setKind = sig;
+      const setDur = sig === 'hook_a_duck' ? (lap === 1 ? DUR.hook_a_duck : DUR.hook_a_duck2) : (lap === 1 ? DUR.test_strength : DUR.test_strength2);
+      const setB = B(id, mid);
+      let setPiece = mk(setKind, id, 'freeze', setB, { group: g, durationS: setDur, params: { ...tag, stage: 'fair' }, lines: setLines, score: 10 });
+      const rejoinLine = v === 'even' ? { speaker: 'pam', text: 'And he\'s lost... no time at all. Suspicious.' }
+        : v === 'slow' ? { speaker: 'jeff', text: `That cost him ${Math.max(1, Math.round(d.costS))} seconds!` }
+          : { speaker: 'pam', text: 'He came out quicker than he went in. I want a steward\'s enquiry.' };
+      const rejoin = mk('funfair_rejoin', id, 'inset', B(id, d.toM - 22), { group: g, params: { ...tag, pip: false }, lines: [rejoinLine] });
+      if (lap === 1) {
+        pkg.push(sl, mk('funfair_sign', id, 'inset', B(id, d.fromM - 50), { group: g, params: { ...tag, pip: false }, lines: [{ speaker: 'jeff', text: 'Hang on, hang on, there\'s a DIVERSION!' }] }));
+        pkg.push(mk('funfair_drone', id, 'inset', B(id, d.fromM + 25), { group: g, params: { ...tag, pip: false }, lines: [] }));
+      } else pkg.push(sl);
+      pkg.push(setPiece, rejoin);
+      const truthAll = `${name(id)}'s real GPS trace left the usual course at ${km(d.fromM)} and bulged up to ${d.maxOffM} m round the fairground before rejoining at ${km(d.toM)}${laps.length > 1 ? ' (he did it on both laps)' : ''}. Through that detour he ran ${v === 'even' ? 'within 3% of' : `${pct(d.ratio)}% ${v === 'slow' ? 'slower than' : 'quicker than'}`} his average pace. The ${sig === 'hook_a_duck' ? 'hook-a-duck' : 'strongman'} bit is a dramatisation.`;
+      setPiece.truth = truthAll;
+      for (const c of pkg) if (c.group === g && !c.truth) c.truth = truthAll;
+    }
+    // check the package against the rules as a unit (internal beats may sit close together)
+    const keep = [];
+    const saved = out.length;
+    for (const c of pkg) {
+      if (fits(c, { ignoreGroup: c.group })) { out.push(c); keep.push(c); continue; }
+      // the lap-2 set piece may fall back to a live picture-in-picture inset if the pause budget / spacing is tight
+      if (PAUSING.has(c.mode) && c.params.lap === 2) {
+        const alt = { ...c, mode: 'inset', durationS: 4.5, params: { ...c.params, pip: true } };
+        if (fits(alt, { ignoreGroup: c.group })) { out.push(alt); keep.push(alt); continue; }
+      }
+      if (c.kind === 'funfair_stretch' || c.kind === 'funfair_sign' || c.kind === 'funfair_drone') continue; // optional beats
+      if (c.params.lap === 1 && (c.kind === sig)) { out.length = saved; return null; } // no lap-1 set piece -> no package
+    }
+    out.length = saved;
+    if (!keep.some((c) => c.kind === sig)) return null;
+    // the lap-2 payoff needs its lap-1 set-up (and vice versa the set-up is still fine alone)
+    cm._sig = sig;
+    return keep;
+  }
+
+  // ---------- 2. candidates from real triggers ----------
+  const C = [];
+  const isForced = (k) => force === k;
+  // E1 Human Cannonball (pre): the most extreme fast start, first km >= 6% quicker than average
+  {
+    const r = [...PR].sort((a, b) => S[a.id].firstKmVsAvg - S[b.id].firstKmVsAvg)[0];
+    const f = S[r.id].firstKmVsAvg;
+    if ((f <= -0.06 || isForced('cannonball')) && cool('cannonball')) C.push(mk('cannonball', r.id, 'pre', -3.2, { params: { firstKmVsAvg: r2(f) }, score: 3 + Math.abs(f) * 20 + rel(r.id) * 2,
+      lines: [{ speaker: 'jeff', text: 'He\'s shot out like a CANNONBALL!' }],
+      truth: `${name(r.id)}'s first kilometre really was ${pct(1 + f)}% quicker than his average pace for the whole run: the quickest start in this field.` }));
+  }
+  // E2 Spaghetti Legs (replay): a fade after a fast start, at his worst lap-2 window
+  for (const r of PR) {
+    const s = S[r.id], w = s.worstLap2;
+    if (!w || !cool('spaghetti_legs')) continue;
+    const ok = s.halfRatio >= 1.05 && s.firstKmVsAvg <= -0.03 && w.ratio >= 1.08;
+    if (!ok && !isForced('spaghetti_legs')) continue;
+    C.push(mk('spaghetti_legs', r.id, 'replay', B(r.id, w.m1) + 0.8, { params: { m0: w.m0, m1: w.m1, atM: Math.round((w.m0 + w.m1) / 2), ratio: r2(w.ratio), halfRatio: r2(s.halfRatio) },
+      score: 4 + (s.halfRatio - 1) * 40 + rel(r.id) * 2, lines: [{ speaker: 'pam', text: 'Legs: al dente.' }],
+      truth: `${name(r.id)} went off quick (first km ${pct(1 + s.firstKmVsAvg)}% faster than his average) and ran the second half ${pct(s.halfRatio)}% slower than the first. His slowest lap-2 stretch was 250 m at ${pct(w.ratio)}% slower than average, around ${km(w.m0)}.` }));
+  }
+  // A1 Goose Toll Booth (replay): his worst 250 m (>= 12% slower than his own average; the catalogue's 20% almost never happens in
+  // the smoothed 1 Hz data: the 90th percentile is 15%) by the boating lake, anywhere on the goose's night (race 3+), or >= 15% anywhere
+  for (const r of PR) {
+    const w = S[r.id].worst; if (!w || !cool('goose_toll')) continue;
+    const z = zoneOf((w.m0 + w.m1) / 2);
+    // the goose lives by the lake; on his night (race 3+) or on a really sharp slowdown he will set up anywhere
+    const arc = raceNo >= 3 && !(cm.goose > 0);
+    if (!((w.ratio >= 1.12 && (z === 'lake' || arc || w.ratio >= 1.15)) || isForced('goose_toll'))) continue;
+    C.push(mk('goose_toll', r.id, 'replay', B(r.id, w.m1) + 0.8, { params: { m0: w.m0, m1: w.m1, atM: Math.round((w.m0 + w.m1) / 2), ratio: r2(w.ratio), zone: z },
+      score: 5 + (w.ratio - 1) * 20 + (z === 'lake' ? 1.5 : 0) + rel(r.id) * 2, lines: [{ speaker: 'jeff', text: 'He\'s been TOLLED!' }],
+      truth: `${name(r.id)} really did slow ${pct(w.ratio)}% below his own average for 250 m${z === 'lake' ? ' by the boating lake' : ''} (${km(w.m0)} to ${km(w.m1)}). Why? Nobody knows. We blame the goose.` }));
+  }
+  // C1 Everest Expedition (freeze): the biggest lap-1 Hill slowdown, >= 1.18x
+  {
+    const r = [...PR].sort((a, b) => S[b.id].hill1 - S[a.id].hill1)[0];
+    const h = S[r.id].hill1;
+    if ((h >= 1.18 || isForced('everest')) && cool('everest')) C.push(mk('everest', r.id, 'freeze', B(r.id, 1700), { params: { atM: 1720, ratio: r2(h) }, score: 5 + (h - 1) * 15 + rel(r.id) * 2,
+      lines: [{ speaker: 'pam', text: 'It\'s about thirteen metres high, Jeff.' }],
+      truth: `The Hill is real: about 13 m of climb from ${km(1720)}. ${name(r.id)} went up it ${pct(h)}% slower than his average pace, the slowest climb in this field. No sherpas were involved.` }));
+  }
+  // C2 Treadmill Hill (replay): lap-2 Hill slower than lap 1 (biggest difference); played at his lap-2 crest
+  {
+    const r = [...PR].sort((a, b) => (S[b.id].hill2 - S[b.id].hill1) - (S[a.id].hill2 - S[a.id].hill1))[0];
+    const d = S[r.id].hill2 - S[r.id].hill1;
+    if ((d >= 0.04 || isForced('treadmill_hill')) && cool('treadmill_hill')) C.push(mk('treadmill_hill', r.id, 'replay', B(r.id, 4460) + 0.6, { params: { atM: 4300, hill1: r2(S[r.id].hill1), hill2: r2(S[r.id].hill2) },
+      score: 4 + d * 25 + rel(r.id) * 2, lines: [{ speaker: 'pam', text: 'Same tree. Same bench. Same goose.' }],
+      truth: `${name(r.id)} climbed the Hill ${pct(1 + d)}% slower on lap 2 than on lap 1 (${pct(S[r.id].hill1)}% then ${pct(S[r.id].hill2)}% off his average pace). It only felt like a loop.` }));
+  }
+  // B2 Ice-Cream Van Jingle (freeze, then a live chase): his best mid-race 250 m (>= 11% quicker than average, from 600 m) on a 12 C+ morning
+  for (const r of PR) {
+    const w = S[r.id].bestMid; if (!w || !cool('ice_cream_van')) continue;
+    const temp = info[r.id].facts?.weather?.temp_c;
+    if (!((w.ratio <= 0.89 && temp != null && temp >= 12) || isForced('ice_cream_van'))) continue;
+    C.push(mk('ice_cream_van', r.id, 'freeze', B(r.id, w.m0), { params: { m0: w.m0, m1: w.m1, atM: w.m0, ratio: r2(w.ratio), tempC: temp ?? null, liveTailS: 3 },
+      score: 4 + (1 - w.ratio) * 15 + rel(r.id) * 2, lines: [{ speaker: 'jeff', text: 'He\'s heard the VAN!' }],
+      truth: `${name(r.id)} really did surge: 250 m at ${pct(w.ratio)}% quicker than his average from ${km(w.m0)}${temp != null ? `, on a ${Math.round(temp)}°C morning` : ''}. There was no van. Sorry.` }));
+  }
+  // W1 Personal Raincloud (inset): it was raining on his Saturday (code 7-8 or > 0.3 mm)
+  for (const r of PR) {
+    const w = info[r.id].facts?.weather || {};
+    const wet = w.coco === 7 || w.coco === 8 || (w.prcp_mm ?? 0) > 0.3;
+    if ((!wet && !isForced('raincloud')) || !cool('raincloud')) continue;
+    for (const m of [1150, 3050, 650, 3550]) C.push(mk('raincloud', r.id, 'inset', B(r.id, m), { params: { atM: m, pip: true, coco: w.coco ?? null, prcpMm: w.prcp_mm ?? null },
+      score: 3 + rel(r.id) * 2 - (m === 1150 ? 0 : 0.2), lines: [{ speaker: 'jeff', text: 'It\'s only raining on HIM!' }],
+      truth: `It really was ${w.coco === 8 ? 'raining' : 'drizzling'} on ${name(r.id)}'s Saturday${w.prcp_mm ? ` (${w.prcp_mm} mm)` : ''}. The other four ran on different days, in different weather. Every Mark brings his own.` }));
+  }
+  // D1 Mirror, Signal, Manoeuvre (inset): a real overtake (prefer backed runners, then the front of the race)
+  {
+    for (const e of evts) {
+      if (e.type !== 'overtake' && !isForced('mirror_signal')) continue;
+      if (!cool('mirror_signal')) break;
+      const by = e.by || e.to, on = e.on || e.from;
+      C.push(mk('mirror_signal', by, 'inset', e.broadcastS - 1.6, { params: { on, atM: e.atM, pip: true, eventRaceS: r1(e.raceS) },
+        score: 2.5 + (rel(by) + rel(on)) * 2 + (e.atM > 1000 && e.atM < 4000 ? 0.5 : 0), lines: [{ speaker: 'pam', text: 'Mirror, signal, manoeuvre.' }],
+        truth: `${name(by)} really did overtake ${info[on]?.name || 'a rival'} at ${km(e.atM)}. Indicating is optional in parkrun.` }));
+    }
+  }
+  // X1 Wildlife Photographer / X5 Sore Loser VAR (post): real finishing margins
+  {
+    const gaps = order.slice(1).map((r, i) => ({ a: order[i], b: r, g: r.officialS - order[i].officialS, place: i + 1 }));
+    const top = gaps[0];
+    const postB = Math.min(lastFinishB + 3.2, Math.max(lastFinishB + 0.9, firstFinishB + 6.5));
+    const photo = gaps.find((x) => x.g <= 1.0);
+    if ((photo || isForced('photographer')) && cool('photographer')) {
+      const x = photo || top;
+      C.push(mk('photographer', x.a.id, 'post', postB, { params: { other: x.b.id, marginS: r1(x.g), place: x.place, finishRaceS: x.a.officialS },
+        score: x.place === 1 ? 8 : 4.5, lines: [{ speaker: 'pam', text: 'Hold on. Wrong end of the goose.' }],
+        truth: `Only ${r1(x.g)} s separated ${name(x.a.id)} and ${info[x.b.id]?.name || 'the next man'} at the line (${ordinal(x.place)} and ${ordinal(x.place + 1)}). Both real times, from different Saturdays.` }));
+    }
+    if ((top.g < 3 || isForced('sore_loser_var')) && cool('sore_loser_var')) {
+      C.push(mk('sore_loser_var', top.b.id, 'post', postB, { params: { winner: top.a.id, marginS: r1(top.g), finishRaceS: top.a.officialS },
+        score: 5.5 + (3 - top.g) * 0.5, lines: [{ speaker: 'jeff', text: 'Checking... checking... the result STANDS!' }],
+        truth: `${name(top.b.id)} really did finish just ${r1(top.g)} s behind ${name(top.a.id)}. There was no squirrel. The result stands.` }));
+    }
+  }
+
+  // callback: the cannonball who fades gets Pam's line
+  const cb = C.find((c) => c.kind === 'cannonball');
+  for (const c of C) if (c.kind === 'spaghetti_legs' && cb && c.who === cb.who) { c.lines = [{ speaker: 'pam', text: 'The cannonball\'s run out of cannon.' }]; c._score += 3; }
+
+  // ---------- 3. greedy selection within the budget ----------
+  const used = new Set(out.map((c) => CUTSCENE_KINDS[c.kind].cat));
+  const badLuck = new Map(); // featured runner -> count of "bad luck" gags (fairness when two players back different runners)
+  const scoreOf = (c) => c._score + (freshness(c.kind) > 0 ? 0 : -0.5) + (used.has(CUTSCENE_KINDS[c.kind].cat) ? -3 : 0) - (badLuck.get(c.who) || 0) * (backed.has(c.who) ? 1.5 : 0) + R.next() * 0.3;
+  const forcedFirst = (a, b) => (b.kind === force) - (a.kind === force);
+  const pool = [...C];
+  while (pool.length) {
+    pool.sort((a, b) => forcedFirst(a, b) || scoreOf(b) - scoreOf(a));
+    const c = pool.shift();
+    const cat = CUTSCENE_KINDS[c.kind].cat;
+    if (used.has(cat) && !(force === c.kind && !out.some((x) => x.kind === force))) continue; // one per category (one Hill gag, one finish gag, ...)
+    let pick = c;
+    if (!fits(pick)) {
+      // a pausing gag that can't pause here may still play as a live inset
+      if (PAUSING.has(c.mode) && ['spaghetti_legs', 'goose_toll', 'treadmill_hill'].includes(c.kind)) {
+        const alt = { ...c, mode: 'inset', durationS: Math.min(c.durationS, 4.5), params: { ...c.params, pip: true } };
+        if (fits(alt)) pick = alt; else continue;
+      } else continue;
+    }
+    out.push(pick); used.add(cat);
+    if (['goose_toll', 'spaghetti_legs', 'treadmill_hill', 'everest', 'raincloud'].includes(c.kind)) badLuck.set(c.who, (badLuck.get(c.who) || 0) + 1);
+  }
+
+  // ---------- 4. finalise + session memory ----------
+  out.sort((a, b) => a.atBroadcastS - b.atBroadcastS || (a.mode === 'slowmo' ? -1 : 1));
+  out.forEach((c, i) => { c.id = `cs${i + 1}`; delete c._score; c.lines = (c.lines || []).slice(0, 2); });
+  if (mem && !force) {
+    cm.races = raceNo;
+    for (const c of out) cm.last[c.kind] = raceNo;
+    if (cm._sig) { cm.funfairSigs = [...(cm.funfairSigs || []), cm._sig]; }
+    if (out.some((c) => c.kind === 'goose_toll')) cm.goose = (cm.goose || 0) + 1;
+  }
+  delete cm._sig;
+  return out;
+}
+
+// "What really happened" cards for the reveal: [{ cutsceneId, kind, label, runnerId, text }]
+export function cutsceneTruths(racePlan) {
+  const seen = new Set();
+  return (racePlan?.cutscenes || []).filter((c) => c.truth && !['funfair_stretch', 'funfair_sign', 'funfair_drone', 'funfair_rejoin'].includes(c.kind))
+    .filter((c) => { const k = `${c.kind}|${c.who}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((c) => ({ cutsceneId: c.id, kind: c.kind, label: CUTSCENE_KINDS[c.kind]?.label || c.kind, runnerId: c.who, text: c.truth }));
+}
+
+// Pause / slow-motion cost of a plan (wall seconds the cutscenes add to the broadcast).
+export function cutsceneCost(cutscenes = []) {
+  let pause = 0, slow = 0;
+  for (const c of cutscenes) {
+    if (PAUSING.has(c.mode)) pause += c.durationS;
+    if (c.mode === 'slowmo') slow += c.durationS - (c.params.untilBroadcastS - c.atBroadcastS);
+    if (c.mode === 'post') pause += c.durationS;
+  }
+  return { pauseS: r1(pause), slowS: r1(slow) };
+}
+
+function ordinal(n) { return `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`; }
+function hashSeed(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }

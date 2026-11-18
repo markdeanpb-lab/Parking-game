@@ -23,7 +23,7 @@ export function buildDressing(scene, C, world, park) {
   const disposables = [];
   const crowd = []; // extra Pips: { x, y, z, yaw, scale, colour?, zone }
   const tileZone = (x, z) => `lawn:${Math.floor(x / 140)},${Math.floor(z / 140)}`;
-  const pip = (x, z, yaw, scale = 0.8, colour) => crowd.push({ x, y: C.heightAt(x, z), z, yaw, scale, colour, zone: tileZone(x, z) });
+  const pip = (x, z, yaw, scale = 0.8, colour, extra) => crowd.push({ x, y: C.heightAt(x, z), z, yaw, scale, colour, zone: tileZone(x, z), ...extra });
   const { ribbonSamples } = world.anchors;
   // a random lawn spot within [dMin, dMax] metres of the course, clear of everything
   function lawnSpot(dMin, dMax, r) {
@@ -123,8 +123,9 @@ export function buildDressing(scene, C, world, park) {
     ]);
     const dogs = [], dogCols = [], prams = [], pramCols = [];
     const dc = ['#c98a4a', '#3b2a20', '#f2e6d0', '#8a8a8a', '#e0b070', '#ffffff'];
-    for (let i = 0; i < 64; i++) {
-      const sp = lawnSpot(8, 60, 1.6); if (!sp) continue;
+    for (let i = 0; i < 124; i++) {
+      // half of them close to the course, so the long-lens tracking shots always have park life behind the runners
+      const sp = i % 2 ? lawnSpot(4.5, 14, 1.6) : lawnSpot(8, 60, 1.6); if (!sp) continue;
       const yaw = R() * 6.28; // walking direction
       pip(sp.x, sp.z, yaw, 0.82);
       const fx = Math.sin(yaw), fz = Math.cos(yaw);
@@ -137,6 +138,32 @@ export function buildDressing(scene, C, world, park) {
     // instance colour multiplies the vertex colours: white body/hood take the pastel, black wheels stay black
     if (prams.length) inst(pramGeo, toon('#ffffff', { vertexColors: true }), prams, pramCols);
     void dogMesh;
+  }
+
+  // ---------- marshals (hi-vis, waving) + little clusters of supporters along the whole course ----------
+  {
+    const lap = C.LAP1_END_DRAW;
+    let side = 1;
+    for (let m = 140; m < lap - 40; m += 230) {
+      side = -side;
+      const s = C.sample(m);
+      for (const sd of [side]) {
+        const off = PATH_W / 2 + 1.7;
+        const x = s.x + s.rx * off * sd, z = s.z + s.rz * off * sd;
+        if (!world.inPark(x, z) || world.blocked(x, z, 0.8) || world.onPath(x, z, 0.9)) continue;
+        pip(x, z, Math.atan2(-s.rx * sd, -s.rz * sd), 0.92, '#d6ff1f', { marshal: true });
+      }
+    }
+    for (let m = 90; m < lap - 30; m += 120) {
+      const s = C.sample(m + R() * 40); const sd = R() < 0.5 ? -1 : 1;
+      const n = 2 + Math.floor(R() * 3);
+      for (let k = 0; k < n; k++) {
+        const off = PATH_W / 2 + 3.2 + R() * 2.5, al = (k - n / 2) * 1.2;
+        const x = s.x + s.rx * off * sd + s.tx * al, z = s.z + s.rz * off * sd + s.tz * al;
+        if (!world.inPark(x, z) || world.blocked(x, z, 0.8) || world.onPath(x, z, 1.2)) continue;
+        pip(x, z, Math.atan2(-s.rx * sd, -s.rz * sd) + (R() - 0.5) * 0.6, 0.7 + R() * 0.3);
+      }
+    }
   }
 
   // ---------- flower beds near the course ----------

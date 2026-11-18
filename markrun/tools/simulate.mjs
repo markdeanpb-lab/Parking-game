@@ -93,9 +93,32 @@ for (let s = 0; s < SESSIONS; s++) {
       led(`prop_${pr.id}_no`, 100, outc === 'no' ? Math.round(100 * pr.odds.no) : 0);
     }
 
+    // decisive clues: how many, and how often the runner a "top" superlative points at actually wins
+    for (const [rid, C] of Object.entries(H.clues)) for (const [slot, c] of [['public', C.public], ...Object.entries(C.private)]) {
+      if (!c?.decisive) continue;
+      const k2 = `${slot === 'public' ? 'pub' : 'priv'}_${c.signal < 0 ? 'top' : 'bottom'}`;
+      (S.dec ??= {})[k2] ??= [0, 0, 0]; S.dec[k2][0]++; if (rid === winner) S.dec[k2][1]++; if (order.indexOf(rid) >= 3) S.dec[k2][2]++;
+    }
+    (S.decPerRound ??= []).push(Object.values(H.clues).reduce((a, C) => a + [C.public, ...Object.values(C.private)].filter((c) => c?.decisive).length, 0));
     // win strategies
     const win = (k2, id) => led(k2, 100, id === winner ? Math.round(100 * odds(id)) : 0);
     win('favourite', fav.id); win('random', R.pick(P.runners).id); win('longshot', out.id);
+    win('second_fav', sorted[1].id);
+    // CLUE READER: what one player can see (public clue + their own private clue on each runner). The public clues are
+    // already in the price, so a sensible reader shades the market by their PRIVATE clues: a hot tip that sounds good is a
+    // strong nudge, one that sounds bad a strong shove away; gossip nudges by its signal (seconds, negative = sounds quick).
+    // Then back the best value runner (ties: the shorter price). clueTally = naive: back whoever ALL clues seen sound best on.
+    for (const pid of ['p1', 'p2']) {
+      const view = P.runners.map((r) => {
+        const C = H.clues[r.id], c = C.private[pid];
+        const q = 1 / r.odds.win;
+        const priv = !c ? 0 : c.tier === 'hot' ? (c.polarity > 0 ? 1.1 : -1.3) : -(c.signal || 0) / 10;
+        const pub = -(C.public.signal || 0) / 10;
+        return { id: r.id, ev: q * Math.exp(priv) * r.odds.win + 1e-6 * q, tally: pub + priv + 1e-6 * q };
+      });
+      win('clueReader', view.reduce((a, b) => (b.ev > a.ev ? b : a)).id);
+      win('clueTally', view.reduce((a, b) => (b.tally > a.tally ? b : a)).id);
+    }
     for (const pid of ['p1', 'p2']) {
       for (const t of H.hotTips[pid] || []) {
         // "sensible": back a good-sounding tipped runner; on a bad-sounding tip, back the favourite unless that's the tipped one
@@ -132,8 +155,11 @@ const pct = (x) => `${(100 * x).toFixed(1)}%`;
 const q = (arr, p) => { const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const N = S.rounds;
 const roi = Object.fromEntries(Object.entries(L).map(([k, v]) => [k, { roi: `${((v.returned / v.staked - 1) * 100).toFixed(1)}%`, bets: v.bets, hitRate: pct(v.wins / v.bets) }]));
+const R1 = (k) => (L[k] ? `${((L[k].returned / L[k].staked - 1) * 100).toFixed(1)}%` : 'n/a');
 const report = {
   rounds: N, sessions: SESSIONS,
+  headline: { favouriteWinRate: pct(S.favWins / N), favouriteROI: R1('favourite'), outsiderROI: R1('longshot'), randomROI: R1('random'),
+    clueReaderROI: R1('clueReader'), clueTallyROI: R1('clueTally'), hotTipSensibleROI: R1('hotTipSensible'), logLoss: `${(S.logLoss / N).toFixed(3)} (uniform ${(S.logLossU / N).toFixed(3)})` },
   favouriteWinRate: pct(S.favWins / N), favouriteTop2: pct(S.favTop2 / N),
   winsByPriceRank: S.rankWins.map((x) => pct(x / N)),
   favWinByTheme: Object.fromEntries(Object.entries(S.themeFav).map(([k, [n, w]]) => [k, `${w}/${n}`])),
@@ -148,6 +174,8 @@ const report = {
   halfwayMarket: { leaderWins: pct(S.ipLeaderWins / S.ip), logLoss: (S.ipLogLoss / S.ip).toFixed(3) },
   props: { offeredIn: pct(S.propOffered / N), funfairYesRate_whenPlausible: pct(S.propYesNon / Math.max(1, S.propNon)), funfairStakesVisitorWins: `${S.propYesFun}/${S.propFun}`, photoRate: pct(S.photoY / S.photoN), lateLeadRate: pct(S.lateY / S.lateN) },
   strategyROI_100perBet: roi,
+  decisiveClues: { perRound: S.decPerRound ? (S.decPerRound.reduce((a, b) => a + b, 0) / N).toFixed(2) : 'n/a', roundsWithNone: S.decPerRound ? S.decPerRound.filter((x) => !x).length : 'n/a',
+    pointedRunnerWins: Object.fromEntries(Object.entries(S.dec || {}).map(([k, [n, w, b]]) => [k, `${n} clues: wins ${pct(w / n)}, bottom-two ${pct(b / n)}`])) },
   themes: Object.fromEntries(Object.entries(S.themes).map(([k, v]) => [k, pct(v / N)])),
   round1Bands: S.round1Bands, consecutiveBandThemeRepeats: S.bandRepeats, maxPBDaysInAField: S.pbMax,
   archetypes: Object.fromEntries(Object.entries(S.archetypes).map(([k, v]) => [k, pct(v / N)])),

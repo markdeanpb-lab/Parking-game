@@ -8,7 +8,8 @@ export function loadSession(db = sessionDb()) {
     const row = db.prepare('SELECT value FROM kv WHERE key = ?').get(KEY);
     if (!row) return null;
     const s = JSON.parse(row.value);
-    return s && s.v === 1 && Array.isArray(s.players) ? s : null;
+    // v1 (bankroll economy) sessions are migrated by the Game (server/net/game.mjs migrateState); anything else: fresh
+    return s && (s.v === 1 || s.v === 2) && Array.isArray(s.players) ? s : null;
   } catch (e) {
     console.warn('[markrun] could not read saved session, starting fresh:', e.message);
     return null;

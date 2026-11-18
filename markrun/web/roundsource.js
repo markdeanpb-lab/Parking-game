@@ -56,16 +56,24 @@ export function createWebRoundSource({ hist, sess, fixture, log = console }) {
       if (!has('sessionSuperlatives')) return history.some((h) => h.round?.hidden?.fixture) ? fixtureSuperlatives(history, players) : undefined;
       try { return game.sessionSuperlatives(history, players); } catch (e) { log.warn('[markrun] sessionSuperlatives failed:', e.message); return undefined; }
     },
+    newsDeskScript(players, settings) {
+      if (!has('newsDeskScript')) return undefined;
+      try { return game.newsDeskScript(players, settings); } catch (e) { log.warn('[markrun] newsDeskScript failed:', e.message); return undefined; }
+    },
+    themeAnnouncement(theme) {
+      if (!has('themeAnnouncement')) return undefined;
+      try { return game.themeAnnouncement(theme); } catch (e) { log.warn('[markrun] themeAnnouncement failed:', e.message); return undefined; }
+    },
     betReactionLines(round, betsByPlayer, players) {
       if (!game || round?.source !== 'game' || !has('betReactionLines')) return [];
       try { return game.betReactionLines(round, betsByPlayer, players) || []; } catch (e) { log.warn('[markrun] betReactionLines failed:', e.message); return []; }
     },
-    async settleRound(round, betsByPlayer, bankrolls) {
+    async settleRound(round, betsByPlayer, scores) { // scores: cumulative score before this round
       let res = null;
       if (game && round.source === 'game' && has('settleRound')) {
-        try { res = await game.settleRound(round, betsByPlayer, bankrolls); } catch (e) { log.error('[markrun] settleRound failed - using fallback settlement:', e.stack || e.message); }
+        try { res = await game.settleRound(round, betsByPlayer, scores); } catch (e) { log.error('[markrun] settleRound failed - using fallback settlement:', e.stack || e.message); }
       }
-      const fb = fallbackSettle(round, betsByPlayer, bankrolls);
+      const fb = fallbackSettle(round, betsByPlayer, scores);
       if (!res) return fb;
       res.finishOrder ||= fb.finishOrder;
       res.finishOrder = res.finishOrder.map((f) => ({ ...f, timeText: f.timeText || fmtTime(f.officialS) }));
@@ -77,7 +85,7 @@ export function createWebRoundSource({ hist, sess, fixture, log = console }) {
       res.payouts ||= {};
       for (const pid of Object.keys(betsByPlayer)) {
         const p = res.payouts[pid];
-        if (!p || typeof p.bankroll !== 'number' || !Number.isFinite(p.bankroll)) res.payouts[pid] = fb.payouts[pid];
+        if (!p || !Number.isFinite(Number(p.net))) res.payouts[pid] = fb.payouts[pid];
       }
       return res;
     },

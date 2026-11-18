@@ -40,16 +40,18 @@
 import * as THREE from 'three';
 import { buildCourse, PATH_W } from './course.js';
 import { buildWorld, mulberry } from './world.js';
-import { buildCrowd, crowdMembersFromZones } from './crowd.js';
+import { buildCrowd, crowdMembersFromZones, setCrowdStyle } from './crowd.js';
+import { buildWeather, themeVisual, crowdStyleFor } from './weather.js';
 import { createRunner, disposeRunnerGeometry } from './runner.js';
 import { createSim, fmtTime } from './sim.js';
-import { buildShotList, createDirector, easeInOut, WIDE_SHOTS } from './director.js';
+import { buildShotList, createDirector, easeInOut, WIDE_SHOTS, TRACK_SHOTS } from './director.js';
 import { timeAtDistance, raceToBroadcast } from '../../../server/game/raceplan.mjs';
-import { createHud, ordText, shortOf, backerColour } from './hud.js';
+import { createHud, ordText, shortOf, backerInfo } from './hud.js';
 import { buildFunfair } from './funfair.js';
 import { outlineUniforms, disposeMaterialCache, toon, mesh, canvasTexture } from './toon.js';
 import { buildPodium } from './podium.js';
 import { buildDressing } from './dressing.js';
+import { createCutscenePlayer } from './cutscenes/index.js'; // racePlan.cutscenes playback (cutscene engineer)
 
 const PRE_ROLL = 8.5; // broadcast seconds of helicopter + start line before the gun (b runs from -PRE_ROLL)
 
@@ -58,6 +60,7 @@ export function createRaceView(container, opts = {}) {
   let plan = opts.plan || null;
   let backedBy = opts.backedBy || {};
   let backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
+  let players = opts.players || [];
   const runnersPub = [...(round?.runners || [])].sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0));
   let hasDiversion = false;
 
@@ -86,6 +89,9 @@ export function createRaceView(container, opts = {}) {
   // ---------- world ----------
   const C = buildCourse(course, park, plan);
   const world = buildWorld(scene, C, { course, park });
+  // the round's theme drives season / weather / light (round.public.theme.visual, else theme.key)
+  const visual = themeVisual(round?.theme);
+  setCrowdStyle(crowdStyleFor(visual), visual.weather === 'wind' ? 1 : 0);
   let funfair = null, fairCrowd = null;
   const crowdMembers = crowdMembersFromZones(C, world.anchors.crowdZones, 5, world.onPath, world.blocked);
   const dressing = buildDressing(scene, C, world, park);
@@ -93,6 +99,7 @@ export function createRaceView(container, opts = {}) {
   // one instanced crowd per zone so off-screen clusters are frustum-culled
   const byZone = new Map(); for (const m of crowdMembers) { const k = m.zone ?? 'x'; if (!byZone.has(k)) byZone.set(k, []); byZone.get(k).push(m); }
   const crowds = [...byZone.values()].map((list) => buildCrowd(scene, list));
+  const weather = buildWeather({ scene, world, hemi, sun, sunDir, C, visual });
   const crowd = { update: (...a) => { crowds.forEach((c) => c.update(...a)); fairCrowd?.update(...a); }, setMask: (fn) => crowds.forEach((c) => c.setMask(fn)), dispose: () => { crowds.forEach((c) => c.dispose()); fairCrowd?.dispose(); } };
 
   // ---------- runners ----------
@@ -102,8 +109,12 @@ export function createRaceView(container, opts = {}) {
   const pubById = Object.fromEntries(runnersPub.map((r) => [r.id, r]));
 
   // ---------- HUD ----------
-  const hud = createHud(container, { runners: runnersPub, backedBy, course, park, C });
+  const hud = createHud(container, { runners: runnersPub, backedBy, players, course, park, C });
   let podium = null;
+  // cutscenes (cutscenes/index.js): holds / eases the broadcast clock, drives camera + props while one plays
+  const cuts = createCutscenePlayer({ scene, camera, renderer, canvas, container, hudRoot: hud.root, C, world, runners, pubById, ids,
+    getPlan: () => plan, getSim: () => sim, getFunfair: () => funfair, updateSun: (v, sz) => updateSun(v, sz),
+    emit: (e) => { try { raceCb?.onEvent?.(e); } catch (err) { console.error(err); } } });
 
   // ---------- plan-dependent parts (rebuilt by loadPlan) ----------
   let sim = null, shots = [], director = null, timeline = [], hadDiversion = false;
@@ -127,7 +138,7 @@ export function createRaceView(container, opts = {}) {
     if (plan) {
       sim = createSim(plan, C, runnersPub);
       shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair });
-      director = createDirector({ camera, C, sim, world, funfair });
+      director = createDirector({ camera, C, sim, world, funfair }); director.setBacked(backedIds);
       for (const e of plan.events || []) timeline.push({ at: e.broadcastS, evt: { ...e, kind: 'event' } });
       for (const c of plan.commentary || []) timeline.push({ at: c.broadcastS, evt: { ...c, kind: 'commentary' } });
       timeline.sort((a, b) => a.at - b.at);
@@ -141,7 +152,7 @@ export function createRaceView(container, opts = {}) {
   let wall = 0; // wall clock seconds since creation
   let raceCb = null, introState = null, freeze = 0, photoDone = false, raceDone = false;
   // finish set-piece: slow motion on the line (all runners equally), then an instant replay, then the winner stamp
-  let replay = null, replayDone = false, curSlow = 1, finMaskSide = 0;
+  let replay = null, replayDone = false, curSlow = 1, freeze0 = 1, photoVerdict = false, maskKind = '';
   const SLOW = 0.35, REPLAY_S = 3.2;
   let evIdx = 0, countdownIdx = 0;
   let titleShown = false, hudDt = 0;
@@ -215,44 +226,50 @@ export function createRaceView(container, opts = {}) {
   // ---------- name tags / HUD state ----------
   const proj = new THREE.Vector3();
   let _rects = null, _rectsAt = -1;
-  const hudRects = () => { if (_rectsAt !== wall || !_rects) { const cr = canvas.getBoundingClientRect(); _rects = [...hud.root.querySelectorAll('.mr-tower, .mr-map, .mr-top')].filter((e) => !hud.root.classList.contains('mr-dim') && !(hud.root.classList.contains('mr-dimtop') && !e.classList.contains('mr-map'))).map((e) => {
+  const hudRects = () => { if (_rectsAt !== wall || !_rects) { const cr = canvas.getBoundingClientRect(); _rects = [...hud.root.querySelectorAll('.mr-tower, .mr-map, .mr-top, .mr-close.on')].filter((e) => !hud.root.classList.contains('mr-dim') && !(hud.root.classList.contains('mr-dimtop') && !e.classList.contains('mr-map')) && !(e.classList.contains('mr-map') && hud.root.classList.contains('mr-nomap'))).map((e) => {
         const r = e.getBoundingClientRect(); let right = r.right, bottom = r.bottom;
         if (e.classList.contains('mr-tower')) {
-          // the tower element has no height (rows are absolute) and the backer badges hang off its right edge
-          bottom = r.top + e.querySelectorAll('.mr-row').length * ((e.querySelector('.mr-row')?.offsetHeight || 40) + 6);
-          for (const bdg of e.querySelectorAll('.mr-badges')) { const br = bdg.getBoundingClientRect(); if (br.width) right = Math.max(right, br.right); }
+          // the tower element has no height (rows are absolute): use the visible rows
+          for (const row of e.querySelectorAll('.mr-row:not(.off)')) { const br = row.getBoundingClientRect(); bottom = Math.max(bottom, br.bottom); right = Math.max(right, br.right); }
         }
         return { left: r.left - cr.left, right: right - cr.left, top: r.top - cr.top, bottom: bottom - cr.top };
       }); _rectsAt = wall; } return _rects; };
   function hudState(st, showTags = true) {
     camera.updateMatrixWorld(); // project with this frame's camera (not last frame's)
     const w = canvas.clientWidth, h = canvas.clientHeight;
+    const focal = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
     const tags = [];
+    const track = mode === 'race' && TRACK_SHOTS.has(director?.shot?.type);
     for (const id of ids) {
       const r = runners[id];
-      proj.set(r.root.position.x, r.root.position.y + r.height + 0.55, r.root.position.z);
+      proj.set(r.root.position.x, r.root.position.y + r.height + 0.5, r.root.position.z);
       const dist = proj.distanceTo(camera.position);
       proj.project(camera);
-      let vis = showTags && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && proj.y < 0.82 && proj.y > -0.62 && dist > 9.5 && dist < (WIDE_SHOTS.has(director?.shot?.type) ? 450 : 150);
-      // tight close-up of this runner (body fills > ~30% of the frame height): the face is enough, no tag
-      const pxTall = (r.height / Math.max(0.1, dist)) * (h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
-      if (pxTall > h * 0.3) vis = false;
-      tags.push({ id, x: (proj.x * 0.5 + 0.5) * w, y: (-proj.y * 0.5 + 0.5) * h, visible: vis, pos: st ? st.order.indexOf(id) + 1 : 0, scale: Math.max(0.7, Math.min(1.15, 30 / dist)), dist });
+      const pxTall = (r.height / Math.max(0.1, dist)) * focal;
+      // on screen, in front, not a dot in the distance, not a close-up (the face is enough there)
+      let vis = showTags && track && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.92 && proj.y < 0.86 && proj.y > -0.5 && pxTall > h * 0.12 && pxTall < h * 0.62;
+      const sx = (proj.x * 0.5 + 0.5) * w, sy = (-proj.y * 0.5 + 0.5) * h;
+      tags.push({ id, x: sx, y: sy - 4, visible: vis, pos: st ? st.order.indexOf(id) + 1 : 0, scale: THREE.MathUtils.clamp(0.75 + pxTall / h * 0.6, 0.8, 1.05), dist, mini: false,
+        body: { l: sx - pxTall * 0.24, r: sx + pxTall * 0.24, t: sy, b: sy + pxTall * 1.05 } });
     }
-    // name tags only in wide shots, for the top 3 and backed runners; never stacked (lower position just hides)
-    const wide = mode === 'race' && WIDE_SHOTS.has(director?.shot?.type) && !director?.gliding;
+    // a runner hidden behind a nearer one gets no tag (no '3rd' floating over the 2nd placed runner)
+    for (const t of tags) if (t.visible && tags.some((o) => o !== t && o.dist < t.dist - 1 && t.x > o.body.l && t.x < o.body.r && t.y + 10 > o.body.t && t.y < o.body.b)) t.visible = false;
+    // never stacked: by position, each tag takes its spot; a clash shrinks it to the position badge, then hides it
     const orderNow = st ? st.order : ids;
-    const want = new Set([...orderNow.slice(0, 3), ...backedIds]);
-    tags.sort((a, b) => orderNow.indexOf(a.id) - orderNow.indexOf(b.id));
+    tags.sort((a, b) => (backedIds.includes(b.id) - backedIds.includes(a.id)) || (orderNow.indexOf(a.id) - orderNow.indexOf(b.id)));
     const placed = [];
+    const rects = hudRects();
     for (const t of tags) {
-      if (!wide || !want.has(t.id)) t.visible = false;
       if (!t.visible) continue;
-      const tw = (shortOf(pubById[t.id]).length * 10 + 50 + (backedBy[t.id]?.length || 0) * 18) * t.scale, th = 26 * t.scale, pad = 10;
-      const box = { l: t.x - tw / 2, r: t.x + tw / 2, t: t.y - th, b: t.y + 6 };
-      if (placed.some((p) => box.l < p.r + 4 && box.r > p.l - 4 && box.t < p.b + 2 && box.b > p.t - 2)) { t.visible = false; continue; }
-      if (hudRects().some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) { t.visible = false; continue; }
-      placed.push(box);
+      let ok = false;
+      for (const mini of [false, true]) {
+        const [tw0, th0] = hud.tagSize(t.id); const tw = (mini ? th0 * 1.5 : tw0) * t.scale, th = th0 * t.scale, pad = 8;
+        const box = { l: t.x - tw / 2, r: t.x + tw / 2, t: t.y - th - 6, b: t.y + 4 };
+        if (placed.some((p) => box.l < p.r + 4 && box.r > p.l - 4 && box.t < p.b + 2 && box.b > p.t - 2)) continue;
+        if (rects.some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) continue;
+        placed.push(box); t.mini = mini; ok = true; break;
+      }
+      if (!ok) t.visible = false;
     }
     if (!st) {
       if (mode !== 'race') return { tags, closing: null };
@@ -265,7 +282,7 @@ export function createRaceView(container, opts = {}) {
     const order = st.order.map((id, i) => {
       const r = st.byId[id];
       const show = i < 3 || backedIds.includes(id);
-      let gapText = finalKm || r.finished ? r.gapText : '';
+      let gapText = finalKm || r.finished ? (r.gapText === 'LEADER' ? '' : r.gapText) : '';
       if (!gapText && backedIds.includes(id) && i > 0 && !r.finished) {
         const ahead = st.byId[st.order[i - 1]];
         const g = st.raceS - timeAtDistance(sim.byId[st.order[i - 1]].progress, r.m);
@@ -274,10 +291,13 @@ export function createRaceView(container, opts = {}) {
       return { id, gapText, finished: r.finished, hidden: !show };
     });
     return {
-      raceS: st.raceS, leaderM: st.leader.m, tags, order, map: WIDE_SHOTS.has(director?.shot?.type), closing: closingBar(st),
-      dots: st.order.map((id, i) => ({ x: st.byId[id].x, z: st.byId[id].z, colour: pubById[id].colour.primary, lead: i === 0, focus: director?.shot?.ids?.includes(id) })),
+      raceS: st.raceS, leaderM: st.leader.m, tags, order, map: mapOn(), closing: closingBar(st),
+      dots: st.order.map((id, i) => ({ x: st.byId[id].x, z: st.byId[id].z, colour: pubById[id].colour.primary, lead: i === 0, focus: director?.shot?.ids?.includes(id), ring: backedBy[id]?.length ? backerInfo(backedBy[id][0], players).colour : null })),
     };
   }
+
+  // picture-in-picture course map: through the race, not in the finish set-piece / replays / freeze-frames
+  function mapOn() { const t = director?.shot?.type; return mode === 'race' && b > 0.5 && !replay && freeze <= 0 && marketT == null && !['finishcam', 'placecam', 'celebrate'].includes(t); }
 
   // ---------- closing-gap bar: the one backed duel that matters most right now ----------
   let closeState = null;
@@ -302,10 +322,10 @@ export function createRaceView(container, opts = {}) {
     if (!closeState || closeState.key !== cur.key) closeState = { ...cur, g0: cur.g0 ?? cur.g };
     const g0 = closeState.g0, g = cur.g, name = shortOf(pubById[cur.who]);
     const colour = pubById[cur.who].colour.primary;
-    if (g < 0.5) return { text: 'ALONGSIDE!', name, colour, hot: true };
+    if (g < 0.5) return { id: cur.who, text: 'ALONGSIDE!', name, colour, hot: true };
     const closingIn = g < g0 - 0.15;
     const verb = cur.role === 'chase' ? (closingIn ? 'closing' : 'chasing') : (closingIn ? 'under pressure' : 'holding on');
-    return { name, colour, text: closingIn ? `${verb}: ${g0.toFixed(1)} s → ${g.toFixed(1)} s` : `${verb}: ${g.toFixed(1)} s`, hot: g < 1.5 };
+    return { id: cur.who, name, colour, text: closingIn ? `${verb}: ${g0.toFixed(1)} s → ${g.toFixed(1)} s` : `${verb}: ${g.toFixed(1)} s`, hot: g < 1.5 };
   }
 
   // ---------- spatial backer rings (ground halo in each backing player's colour) ----------
@@ -317,7 +337,7 @@ export function createRaceView(container, opts = {}) {
       if (!g.parent) runners[id].root.add(g);
       for (const c of [...g.children]) { g.remove(c); c.material.dispose(); }
       (backedBy[id] || []).forEach((name, k) => {
-        const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: backerColour(name), transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+        const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: backerInfo(name, players).colour, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
         m.scale.setScalar(1 + k * 0.32); m.position.y = 0.06 + k * 0.01; m.renderOrder = 2; g.add(m);
       });
     }
@@ -326,6 +346,17 @@ export function createRaceView(container, opts = {}) {
     for (const id of ids) { const g = rings[id]; if (!g || !g.children.length) continue; const d = camera.position.distanceTo(runners[id].root.position); g.scale.setScalar(THREE.MathUtils.clamp(d * 0.016, 0.9, 3.2)); }
   }
   updateRings();
+
+  // the camera->subject sightline (2D) for the crowd mask of tracking shots
+  const sight = { ax: 0, az: 0, bx: 0, bz: 0 };
+  function corridorMask(x, z) {
+    const vx = sight.bx - sight.ax, vz = sight.bz - sight.az, L2 = vx * vx + vz * vz || 1;
+    const u = ((x - sight.ax) * vx + (z - sight.az) * vz) / L2; if (u < 0.03 || u > 0.92) return false;
+    const px = sight.ax + vx * u - x, pz = sight.az + vz * u - z; return px * px + pz * pz < 2.2 * 2.2;
+  }
+  function setBunting(on) { const T = world.theme; for (const o of [T.flags, T.poles, T.rope]) if (o) o.visible = on; }
+  // the photo-finish camera stands on the park side of the line
+  let _ps = 0; function photoSide() { if (!_ps) { const f = world.anchors.finish; _ps = world.inPark(f.x + f.rx * 16, f.z + f.rz * 16) ? 1 : -1; } return _ps; }
 
   // ---------- shadows follow the action ----------
   function updateSun(target, size) {
@@ -409,6 +440,7 @@ export function createRaceView(container, opts = {}) {
     raceCb = { onEvent, onDone };
     placeAtStart('idle');
     director.reset();
+    cuts.reset();
   }
   const countdowns = [[-3, '3'], [-2, '2'], [-1, '1'], [0, 'GO!']];
   // short stingers (UI_SPEC: <= 1.5 s, upper third, one at a time)
@@ -420,20 +452,27 @@ export function createRaceView(container, opts = {}) {
       case 'lap': return ['LAP 2', '', '#2e6fe0'];
       case 'final_stretch': return ['FINAL STRETCH', '', '#ff8a1f'];
       case 'diversion': return firedBanners.has('div') ? null : (firedBanners.add('div'), ['DISTRACTED!', '', '#b04bff']);
-      case 'finish': return e.place === 1 && !sim.photoFinish ? ['WINNER', '', '#ffb000'] : null;
+      case 'finish': return e.place === 1 && !sim.photoFinish ? ['WINNER!', shortOf(pubById[sim.finishOrder[0]]), '#ffb000', 2.2] : null;
       default: return null;
     }
   }
   function stepRace(dt) {
     if (freeze > 0) {
       freeze -= dt;
-      if (freeze <= 0) { hud.photo(false); canvas.style.filter = ''; world.anchors.finishArch.visible = true; startReplay(); }
+      // the verdict lands after the scan (~60% of the freeze)
+      if (!photoVerdict && freeze < freeze0 * 0.4) {
+        photoVerdict = true; const [a1, a2] = sim.finishOrder;
+        const mg = sim.byId[a2].officialS - sim.byId[a1].officialS;
+        hud.photoResult(shortOf(pubById[a1]), mg < 0.5 ? 'a whisker' : `${mg.toFixed(mg < 1 ? 1 : 0)} s`);
+      }
+      if (freeze <= 0) { hud.photo(false); world.anchors.finishArch.visible = true; setBunting(true); startReplay(); }
       return;
     }
     if (replay) { stepReplay(dt); return; }
+    if (cuts.hold(dt, b)) return; // freeze / replay / post cutscene: the broadcast clock holds, resumes at the same b
     const prev = b;
-    curSlow = slowFactor(b);
-    b += dt * curSlow;
+    curSlow = slowFactor(b) * cuts.rate(b); // slow-mo cutscenes ease the shared clock (every runner equally)
+    b = cuts.clamp(prev, b + dt * curSlow);
     if (b < -4.2 && !titleShown) { titleShown = true; showTitle(true); hud.setDimTop(true); }
     if (b >= -3.6 && titleShown === true) { titleShown = 'done'; showTitle(false); hud.setDimTop(false); }
     // countdown
@@ -451,7 +490,8 @@ export function createRaceView(container, opts = {}) {
     }
     // photo finish freeze-frame
     if (sim.photoFinish && !photoDone && b >= sim.firstFinishB) {
-      photoDone = true; b = sim.firstFinishB; freeze = opts.photoFreezeS ?? 1.4; { const [a1, a2] = sim.finishOrder; hud.photo(true, `${shortOf(pubById[a1])} or ${shortOf(pubById[a2])}? Checking the camera...`); } canvas.style.filter = 'grayscale(0.55) sepia(0.35) contrast(1.12)';
+      photoDone = true; b = sim.firstFinishB; freeze = freeze0 = opts.photoFreezeS ?? 2.8; photoVerdict = false;
+      { const [a1, a2] = sim.finishOrder; hud.photo(true, { a: shortOf(pubById[a1]), b: shortOf(pubById[a2]) }); }
       raceCb?.onEvent?.({ kind: 'photo_finish', broadcastS: b, ids: sim.finishOrder.slice(0, 2) });
     }
     // instant replay once the slow-mo has eased out (photo finishes go via the freeze-frame first)
@@ -483,13 +523,13 @@ export function createRaceView(container, opts = {}) {
     const info = { kind: 'winner_replay_done', winnerId, photoFinish: !!sim.photoFinish, broadcastS: b };
     try { raceCb?.onEvent?.(info); } catch (err) { console.error(err); }
     if (opts.onWinnerStamp) { try { opts.onWinnerStamp({ winnerId, photoFinish: !!sim.photoFinish }); } catch (err) { console.error(err); } }
-    else hud.showBanner('WINNER', '', '#ffb000');
+    else hud.showBanner('WINNER!', shortOf(pubById[winnerId]), '#ffb000', 2.4);
   }
 
   function applyBackedBy(bb) {
     backedBy = bb || {};
     backedIds = Object.keys(backedBy).filter((k) => (backedBy[k] || []).length);
-    hud.setBackedBy(backedBy);
+    hud.setBackedBy(backedBy); director?.setBacked(backedIds);
     updateRings();
   }
 
@@ -499,7 +539,7 @@ export function createRaceView(container, opts = {}) {
     bb = Math.max(-PRE_ROLL, Math.min(sim.lastFinishB + 3.5, Number(bb) || 0));
     mode = 'race'; introState = null; clearPodium(); raceCb = raceCb || {};
     hud.setDim(false); hud.introCard(null); hud.results(null); hud.photo(false); hud.market(false); hud.clearBanner(); hud.titleCard(false); hud.setDimTop(false);
-    canvas.style.filter = ''; world.anchors.finishArch.visible = true; marketT = null;
+    canvas.style.filter = ''; world.anchors.finishArch.visible = true; setBunting(true); marketT = null; freeze0 = 1; photoVerdict = false;
     titleShown = bb >= -3.6 ? 'done' : bb < -4.2 ? false : 'done';
     director.reset();
     // warm up animation/camera state over the last `warm` seconds without firing anything
@@ -515,6 +555,7 @@ export function createRaceView(container, opts = {}) {
     countdownIdx = countdowns.findIndex((c) => c[0] > b); if (countdownIdx < 0) countdownIdx = countdowns.length;
     photoDone = b >= sim.firstFinishB; raceDone = b >= sim.lastFinishB + 3.5; freeze = 0;
     replay = null; replayDone = b >= sim.firstFinishB + 1.1; curSlow = 1; hud.replay(false);
+    cuts.seek(b);
   }
   function seekIntro(t) {
     const I = introState; if (!I) return;
@@ -559,8 +600,15 @@ export function createRaceView(container, opts = {}) {
         // photo-finish freeze-frame: side-on at the line
         const f = world.anchors.finish;
         world.anchors.finishArch.visible = false; // virtual side-on camera looks straight down the line
-        camera.position.set(f.x + f.rx * 9 - f.tx * 0.6, f.y + 6.4, f.z + f.rz * 9 - f.tz * 0.6);
-        camera.lookAt(f.x - f.rx * 0.6 - f.tx * 0.6, f.y + 0.8, f.z - f.rz * 0.6 - f.tz * 0.6); setFov(42);
+        setBunting(false); // nothing hanging between the photo camera and the line
+        // frame the line and the runner-up: both big, side-on, low
+        const st2 = sim.stateAt(b), s2 = st2.byId[sim.finishOrder[1]];
+        const back = Math.min(7, Math.max(0.8, 5000 - s2.m)); // metres the runner-up still has to go
+        const midA = -back / 2 + 0.3, Ls = photoSide();
+        const fitH = Math.max(3.6, (back + 4.5) / 1.78);
+        const camD = 11;
+        camera.position.set(f.x + f.rx * camD * Ls + f.tx * midA, f.y + 2.3, f.z + f.rz * camD * Ls + f.tz * midA);
+        camera.lookAt(f.x + f.tx * midA, f.y + 1.15, f.z + f.tz * midA); setFov(THREE.MathUtils.radToDeg(2 * Math.atan(fitH / (2 * camD))));
         camera.updateMatrixWorld();
         const a = new THREE.Vector3(f.x + f.rx * 3, f.y + 0.05, f.z + f.rz * 3).project(camera), c = new THREE.Vector3(f.x - f.rx * 3, f.y + 0.05, f.z - f.rz * 3).project(camera);
         hud.photoLine([(a.x * 0.5 + 0.5) * canvas.clientWidth, (-a.y * 0.5 + 0.5) * canvas.clientHeight], [(c.x * 0.5 + 0.5) * canvas.clientWidth, (-c.y * 0.5 + 0.5) * canvas.clientHeight]);
@@ -586,20 +634,28 @@ export function createRaceView(container, opts = {}) {
       st = b >= 0 ? sim.stateAt(b) : null;
       if (replay) st = sim.stateAt(replayB());
       // cut away trees between a tracking camera and its subject
-      const occ = !freeze && marketT == null && ['side', 'headon', 'finishcam'].includes(director.shot?.type);
+      const occ = !freeze && marketT == null && TRACK_SHOTS.has(director.shot?.type);
       world.setOcclusionCorridor(occ ? camera.position : null, occ ? director.cam.look : null);
-      // finish-line camera: clear the near-side spectators out of its sightline down the home straight
-      const fsd = !freeze && !replay && director.shot?.type === 'finishcam' ? director.shot.fside : 0;
-      if (fsd !== finMaskSide) {
-        finMaskSide = fsd;
+      // keep spectators out of the sightline: the camera->subject corridor of tracking shots, and the near side of
+      // the line for the side-on place / photo cameras
+      const stype = director.shot?.type;
+      const kind = freeze > 0 ? `photo${photoSide()}` : replay ? '' : stype === 'placecam' ? `place${director.shot.fside || 0}` : TRACK_SHOTS.has(stype) ? 'corridor' : '';
+      if (kind !== maskKind) {
+        maskKind = kind;
         const f = world.anchors.finish;
-        crowd.setMask(fsd ? (x, z) => { const lat = ((x - f.x) * f.rx + (z - f.z) * f.rz) * fsd, al = (x - f.x) * f.tx + (z - f.z) * f.tz; return lat > 0 && lat < 16 && al > -75 && al < 14 && lat < (15 * (al + 150)) / 161 + 2.5; } : null);
+        if (kind.startsWith('photo') || kind.startsWith('place')) {
+          const sd = kind.startsWith('photo') ? photoSide() : director.shot.fside || 1;
+          crowd.setMask((x, z) => { const lat = ((x - f.x) * f.rx + (z - f.z) * f.rz) * sd, al = (x - f.x) * f.tx + (z - f.z) * f.tz; return lat > 0 && lat < 17 && al > -30 && al < 14; });
+        } else if (kind === 'corridor') crowd.setMask(corridorMask);
+        else crowd.setMask(null);
       }
+      if (kind === 'corridor') { sight.ax = camera.position.x; sight.az = camera.position.z; sight.bx = director.cam.look.x; sight.bz = director.cam.look.z; }
       if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
       else if (replay) { const u = Math.min(1, replay.t / REPLAY_S); curSlow = Math.max(0.2, (replay.b1 - replay.b0) / REPLAY_S * 1.7 * Math.pow(1 - u, 0.7)); applyRace(replayB(), ddt); }
       else applyRace(b, freeze > 0 ? 0 : ddt);
       const shotType = director.shot?.type;
       updateSun(director.cam.look, WIDE_SHOTS.has(shotType) ? 160 : 70);
+      cuts.frame(ddt, b);
     } else if (mode === 'podium' && podium) {
       world.setOcclusionCorridor(null);
       podium.update(ddt, wall);
@@ -614,15 +670,17 @@ export function createRaceView(container, opts = {}) {
       updateSun(new THREE.Vector3(startSlots[ids[0]]?.x ?? 0, 0, startSlots[ids[0]]?.z ?? 0), mode === 'intro' && introState?.idx === -1 ? 160 : 40);
     }
     hudDt += dt;
-    if (noRender) return;
+    if (noRender) { weather.update(wall, Math.min(0.1, dt), camera, null, ids.map((id) => runners[id]), true); return; }
     scaleRings(); // intermediate sub-step: simulation only
     world.update(wall);
     funfair?.update(wall);
     const rpos = ids.map((id) => runners[id].root.position);
     crowd.update(wall, camera.position, rpos, mode === 'podium' ? 0.9 : null);
-    hud.update(hudDt, mode === 'race' ? hudState(st, b > -1 && marketT == null && !replay) : hudState(null, false));
+    weather.update(wall, Math.min(0.1, dt), camera, mode === 'race' && director ? director.cam.look : null, ids.map((id) => runners[id]));
+    hud.update(hudDt, mode === 'race' ? hudState(st, b > -1 && marketT == null && !replay && !cuts.active) : hudState(null, false));
     hudDt = 0;
     renderer.render(scene, camera);
+    cuts.afterRender();
   }
   // Real elapsed wall time drives the clock (no slow motion on slow GPUs). It is sub-stepped in <=0.1 s chunks so no
   // event is skipped; a long gap (background tab) catches up at most MAX_CATCHUP s per frame.
@@ -647,7 +705,7 @@ export function createRaceView(container, opts = {}) {
     for (const id in rings) for (const c of rings[id].children) c.material.dispose(); ringGeo.dispose();
     clearPodium();
     for (const id of ids) { scene.remove(runners[id].root); runners[id].dispose(); }
-    crowd.dispose(); funfair?.dispose(); dressing.dispose(); world.dispose(); hud.dispose();
+    cuts.dispose(); crowd.dispose(); weather.dispose(); funfair?.dispose(); dressing.dispose(); world.dispose(); hud.dispose();
     scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     disposeRunnerGeometry(); disposeMaterialCache();
     renderer.dispose(); renderer.forceContextLoss?.(); canvas.remove();
@@ -668,10 +726,17 @@ export function createRaceView(container, opts = {}) {
     photoAt() { this.seek(sim.firstFinishB - 0.05); paused = false; photoDone = false; for (let i = 0; i < 3; i++) frame(1 / 30); paused = true; frame(0); },
     render() { frame(0); },
     unpause() { paused = false; },
+    // tallest on-screen runner's height as a fraction of the frame height (framing checks)
+    runnerFrac() {
+      camera.updateMatrixWorld(); let best = 0; const a = new THREE.Vector3(), c = new THREE.Vector3();
+      for (const id of ids) { const r = runners[id]; a.copy(r.root.position).project(camera); c.copy(r.root.position).setY(r.root.position.y + r.height).project(camera); if (a.z > 1 || Math.abs(a.x) > 1 || a.y > 1.2 || c.y < -1.2) continue; best = Math.max(best, Math.abs(c.y - a.y) / 2); }
+      return best;
+    },
     lookFrom(px, py, pz, lx, ly, lz, fov = 45) { mode = 'debugcam'; camera.position.set(px, py, pz); camera.lookAt(lx, ly, lz); setFov(fov); hud.setDim(true); renderer.render(scene, camera); },
     step(dt, render = true) { frame(dt, !render); },
+    cuts,
     get mode() { return mode; },
-    get b() { return b; }, get shots() { return shots; }, get sim() { return sim; }, C, get director() { return director; }, renderer, scene, camera, info: () => renderer.info, fps: () => frameStats.fps,
+    visual, get b() { return b; }, get shots() { return shots; }, get sim() { return sim; }, C, get director() { return director; }, renderer, scene, camera, info: () => renderer.info, fps: () => frameStats.fps,
   };
 
   return {
@@ -685,6 +750,8 @@ export function createRaceView(container, opts = {}) {
       }
     },
     setSpeed(x) { speed = Math.max(0.05, Number(x) || 1); },
+    // the shell's players ([{ name, avatar: { emoji, colour } }]): backers show as avatars on the tower, tags and map
+    setPlayers(list) { players = list || []; hud.setPlayers(players); updateRings(); },
     seek,
     loadPlan(pl, { backedBy: bb } = {}) {
       if (mode === 'race') throw new Error('createRaceView: loadPlan during a race');

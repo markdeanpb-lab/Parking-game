@@ -12,7 +12,7 @@ process.env.MARKRUN_ROUND_SOURCE = 'fixture';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
-const { Game, newSessionState } = await import('../server/net/game.mjs');
+const { Game, newSessionState, migrateState, normaliseRound, REACTIONS, DEFAULT_SETTINGS } = await import('../server/net/game.mjs');
 const rounds = await import('../server/net/roundsource.mjs');
 const { validateBets } = await import('../server/net/bets.mjs');
 
@@ -53,7 +53,7 @@ test('state machine: LOBBY -> INTRO -> BETTING -> RACE -> RESULTS -> SCOREBOARD 
   const sid = g.s.gameSessionId;
   await g.advance('FINALE'); assert.equal(g.s.phase, 'LOBBY');
   assert.notEqual(g.s.gameSessionId, sid, 'new game gets a new session id');
-  assert.ok(g.s.players.every((p) => p.bankroll === g.s.settings.startingBankroll));
+  assert.ok(g.s.players.every((p) => p.score === 0), 'a new game resets every score to 0');
   g.dispose();
 });
 
@@ -84,27 +84,37 @@ test('bets stay hidden until everyone has locked; phones never get the race plan
   g.dispose();
 });
 
-test('bet validation and payouts are applied to bankrolls', async () => {
+test('bet validation uses the round budget; the net is banked into a cumulative score', async () => {
   const { g, a, b } = await newGame();
   await g.start(); await g.advance('INTRO');
   const pub = g.s.round.public;
+  assert.equal(pub.rules.budget, 500, 'the round budget is in the public rules');
   assert.equal(validateBets(pub, [{ type: 'win', runnerId: 'nope', stake: 10 }], 100).ok, false);
   assert.equal(validateBets(pub, [{ type: 'win', runnerId: pub.runners[0].id, stake: 1 }], 100).ok, false);
-  assert.equal(validateBets(pub, [{ type: 'win', runnerId: pub.runners[0].id, stake: 200 }], 100).ok, false, 'cannot exceed bankroll');
-  await assert.rejects(g.lock(a.id, [{ type: 'win', runnerId: pub.runners[0].id, stake: 999999 }]));
+  assert.equal(validateBets(pub, [{ type: 'win', runnerId: pub.runners[0].id, stake: 200 }], 100).ok, false, 'cannot exceed the budget');
+  assert.equal(validateBets(pub, [{ type: 'win', runnerId: pub.runners[0].id, stake: 500 }]).ok, true, 'defaults to rules.budget');
+  await assert.rejects(g.lock(a.id, [{ type: 'win', runnerId: pub.runners[0].id, stake: 501 }]), /budget/);
   const winner = g.s.round.racePlan.finishOrder[0];
   const loser = g.s.round.racePlan.finishOrder.at(-1);
   await g.lock(a.id, [{ type: 'win', runnerId: winner, stake: 100 }]);
   await g.lock(b.id, [{ type: 'win', runnerId: loser, stake: 100 }]);
-  const start = g.s.settings.startingBankroll;
   await g.advance('BETTING');
-  assert.equal(g.player(a.id).bankroll, start, 'bankroll unchanged until RESULTS');
+  assert.equal(g.player(a.id).score, 0, 'score unchanged until RESULTS');
   assert.equal(g.phoneView(a.id).results, null, 'no results during the race');
   await g.advance('RACE');
   const odds = pub.runners.find((r) => r.id === winner).odds.win;
-  assert.equal(g.player(a.id).bankroll, start - 100 + Math.round(100 * odds));
-  assert.equal(g.player(b.id).bankroll, start - 100);
-  assert.equal(g.s.history.length, 1);
+  const netA = Math.round(100 * odds) - 100;
+  assert.equal(g.player(a.id).score, netA);
+  assert.equal(g.player(b.id).score, -100, 'scores can go negative (no bankruptcy, no bailout)');
+  assert.deepEqual({ net: g.s.results.payouts[a.id].net, score: g.s.results.payouts[a.id].score }, { net: netA, score: netA }, 'payouts carry { net, score }');
+  assert.equal(g.s.history[0].scores[b.id], -100);
+  // next round: a fresh budget for everyone, whatever their score
+  for (let i = 0; i < 5; i++) await g.advance('RESULTS');
+  await g.advance('SCOREBOARD');
+  assert.equal(g.s.phase, 'INTRO');
+  assert.equal(g.phoneView(b.id).me.budget, 500);
+  assert.equal(g.phoneView(b.id).me.score, -100);
+  assert.ok(!('bailouts' in g.commonView()), 'no bailouts any more');
   g.dispose();
 });
 
@@ -317,21 +327,98 @@ test('TV role: loopback or TV key only', async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('stakes are capped at half the bankroll per round, except the double-payout finale', async () => {
-  const { stakeCap } = await import('../server/net/bets.mjs');
+test('round budget from the settings; the halfway bet counts within it; the finale keeps the same budget', async () => {
   const { g, a, b } = await newGame();
+  await g.setSettings({ roundBudget: 300, roundsPerGame: 1 });
   await g.start(); await g.advance('INTRO');
   const pub = g.s.round.public;
-  pub.payoutMultiplier = 1;
+  assert.equal(pub.payoutMultiplier, 2, 'one-round game: the final round pays double');
+  assert.equal(pub.rules.budget, 300);
   const r0 = pub.runners[0].id;
-  assert.equal(stakeCap(pub, 1000), 500);
-  await assert.rejects(g.lock(a.id, [{ type: 'win', runnerId: r0, stake: 600 }]), /half your bankroll/);
-  await g.lock(a.id, [{ type: 'win', runnerId: r0, stake: 500 }]);
-  assert.equal(g.phoneView(b.id).me.stakeCap, 500);
-  pub.payoutMultiplier = 2;
-  assert.equal(stakeCap(pub, 1000), 1000, 'finale: all in allowed');
-  await g.lock(b.id, [{ type: 'win', runnerId: r0, stake: 1000 }]);
+  await assert.rejects(g.lock(a.id, [{ type: 'win', runnerId: r0, stake: 310 }]), /budget/);
+  await g.lock(a.id, [{ type: 'win', runnerId: r0, stake: 250 }]);
+  await g.lock(b.id, []);
+  await g.setSettings({ roundBudget: 900 });
+  assert.equal(g.s.settings.roundBudget, 300, 'budget cannot change mid-round');
+  await g.advance('BETTING');
+  await g.openMarket(pub.roundId);
+  assert.ok(g.s.market.open && g.s.market.durationS > 0, 'market carries its duration (one timer for TV and phones)');
+  await assert.rejects(g.placeInPlay(a.id, { runnerId: r0, stake: 60 }), /budget/);
+  await g.placeInPlay(a.id, { runnerId: r0, stake: 50 });
+  assert.equal(g.s.bets[a.id].reduce((t, x) => t + x.stake, 0), 300);
   g.dispose();
+});
+
+test('v1 saved sessions (bankrolls) migrate to scores; unknown versions start fresh', async () => {
+  const v1 = { v: 1, sessionId: 'x', phase: 'SCOREBOARD', roundNumber: 2, players: [{ id: 'p1', name: 'Mark', token: 't', bankroll: 1250 }, { id: 'p2', name: 'Jo', token: 'u', bankroll: 700 }],
+    settings: { startingBankroll: 1000, roundsPerGame: 4, betTimer: 0, voice: false }, history: [{ round: 1, bankrolls: { p1: 1100, p2: 950 }, nets: { p1: 100, p2: -50 } }], bailouts: [{ playerId: 'p2', amount: 100 }],
+    round: { public: { roundId: 'r', runners: [], rules: { minStake: 10 } } }, results: null, bets: {}, drafts: {}, locked: {} };
+  const s = migrateState(JSON.parse(JSON.stringify(v1)));
+  assert.equal(s.v, 2);
+  assert.deepEqual(s.players.map((p) => p.score), [250, -300]);
+  assert.ok(s.players.every((p) => !('bankroll' in p)));
+  assert.deepEqual(s.history[0].scores, { p1: 100, p2: -50 });
+  assert.equal(s.settings.roundsPerGame, 4, 'settings kept');
+  assert.equal(s.settings.voice, false);
+  assert.equal(s.settings.roundBudget, 500);
+  assert.equal(s.settings.betTimer, 90, 'the soft bet timer is the new default');
+  assert.ok(!('startingBankroll' in s.settings) && !('bailouts' in s));
+  assert.equal(s.round.public.rules.budget, 500);
+  assert.equal(migrateState({ v: 99, players: [] }), null);
+  const g = new Game({ state: JSON.parse(JSON.stringify(v1)), rounds, timeScale: 1000 });
+  assert.equal(g.s.v, 2);
+  assert.deepEqual(g.commonView().players.map((p) => p.score), [250, -300]);
+  g.dispose();
+});
+
+test('round normalisation: ranks from the odds, one head-to-head, the side bet only in The Funfair Stakes', () => {
+  const mk = (theme) => ({ public: { theme, runners: [{ id: 'r1', odds: { win: 6 } }, { id: 'r2', odds: { win: 2.5 } }, { id: 'r3', odds: { win: 11 } }],
+    matchups: [{ id: 'm1', a: 'r1', b: 'r2' }, { id: 'm2', a: 'r2', b: 'r3' }], props: [{ id: 'pr1' }], rules: { minStake: 10 } } });
+  const a = normaliseRound(mk({ key: 'winter', label: 'Winter Warriors' }), 400).public;
+  assert.deepEqual(a.runners.map((r) => r.rank), [2, 1, 3]);
+  assert.equal(a.matchups.length, 1);
+  assert.equal(a.props, undefined);
+  assert.equal(a.rules.budget, 400);
+  const f = normaliseRound(mk({ key: 'funfair', label: 'The Funfair Stakes' }), 400).public;
+  assert.equal(f.props.length, 1);
+  const ranked = mk({ key: 'x' }); ranked.public.runners.forEach((r, i) => { r.rank = 5 - i; });
+  assert.deepEqual(normaliseRound(ranked, 500).public.runners.map((r) => r.rank), [5, 4, 3], 'game-provided ranks are kept');
+});
+
+test('lobby defaults: 3 reactions, a soft 90 s bet timer, 6 rounds (Full night), 500pp budget', async () => {
+  assert.equal(REACTIONS.length, 3);
+  assert.equal(DEFAULT_SETTINGS.betTimer, 90);
+  assert.equal(DEFAULT_SETTINGS.roundsPerGame, 6);
+  assert.equal(DEFAULT_SETTINGS.roundBudget, 500);
+  const { g, a, b } = await newGame();
+  await g.start(); await g.advance('INTRO');
+  assert.ok(g.s.deadline > Date.now(), 'betting countdown armed');
+  await g.lock(a.id, []); await g.lock(b.id, []);
+  g.dispose();
+});
+
+test('presenter scripts: news desk (round 1) and theme lines reach the TV in INTRO only; fallbacks when absent', async () => {
+  const fake = { ...rounds,
+    newsDeskScript: (players, settings) => ({ lines: [{ speaker: 'jeff', text: `Good evening ${players.map((p) => p.name).join(' and ')}`, strap: 'TONIGHT' }, { speaker: 'pam', text: `${settings.rounds} rounds` }, { text: '' }], ticker: ['BREAKING: SOFA'] }),
+    themeAnnouncement: (theme) => [{ speaker: 'pam', text: `Theme: ${theme.label}` }] };
+  const g = new Game({ state: newSessionState(), rounds: fake, timeScale: 1000 });
+  const a = await g.join({ name: 'Mark' });
+  await g.join({ name: 'Jo' });
+  await g.start();
+  const tv = g.tvView();
+  assert.equal(tv.introExtras.newsDesk.lines.length, 2, 'empty lines dropped');
+  assert.equal(tv.introExtras.newsDesk.lines[0].text, 'Good evening Mark and Jo');
+  assert.equal(tv.introExtras.newsDesk.lines[1].text, '6 rounds');
+  assert.deepEqual(tv.introExtras.newsDesk.ticker, ['BREAKING: SOFA']);
+  assert.match(tv.introExtras.themeLines[0].text, /^Theme: /);
+  assert.ok(!('introExtras' in g.phoneView(a.id)), 'phones do not get the scripts');
+  await g.advance('INTRO');
+  assert.equal(g.tvView().introExtras, null, 'only during INTRO');
+  g.dispose();
+  const g2 = new Game({ state: newSessionState(), rounds, timeScale: 1000 }); // fixture: no scripts -> TV fallback
+  await g2.join({ name: 'Mark' }); await g2.start();
+  assert.equal(g2.tvView().introExtras.newsDesk, null);
+  g2.dispose();
 });
 
 test('Underdog Special: only its owner may boost, at most one pick', async () => {

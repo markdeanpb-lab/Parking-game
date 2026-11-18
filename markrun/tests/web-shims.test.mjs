@@ -84,15 +84,15 @@ test('unmodified game module runs on the shims: createRound x2 + settleRound, us
   const store = memStore();
   const sess = createSessShim(store);
   const players = [{ id: 'p1', name: 'Mark' }, { id: 'p2', name: 'Jo' }];
-  const settings = { sessionId: 'webtest-1', rounds: 2, roundsPerGame: 2, startingBankroll: 1000 };
+  const settings = { sessionId: 'webtest-1', rounds: 2, roundsPerGame: 2, roundBudget: 500, budget: 500 };
   const seen = new Set();
   for (const n of [1, 2]) {
     const r = await createRound({ hist, sess, players, roundNumber: n, settings, rng: Math.random });
     assert.equal(r.public.runners.length >= 4, true);
     assert.ok(r.racePlan?.runners?.length);
     for (const x of r.racePlan.runners) assert.equal(x.progress.length, 201);
-    const res = await settleRound(r, { p1: [{ type: 'win', runnerId: r.public.runners[0].id, stake: 50 }], p2: [] }, { p1: 1000, p2: 1000 });
-    assert.ok(res.finishOrder.length && Number.isFinite(res.payouts.p1.bankroll));
+    const res = await settleRound(r, { p1: [{ type: 'win', runnerId: r.public.runners[0].id, stake: 50 }], p2: [] }, { p1: 0, p2: 0 }); // cumulative scores before the round
+    assert.ok(res.finishOrder.length && Number.isFinite(res.payouts.p1.net));
     seen.add(r.public.runners.map((x) => x.id).join());
   }
   assert.deepEqual(hist.unknown, [], 'hist shim saw an unknown query');
@@ -110,7 +110,7 @@ test('persist.mjs snapshot round-trips through the localStorage-backed sess shim
   const sess = createSessShim(memStore());
   assert.equal(loadSession(sess), null);
   const s = newSessionState();
-  s.players.push({ id: 'p1', name: 'Mark', token: 't', bankroll: 900 });
+  s.players.push({ id: 'p1', name: 'Mark', token: 't', score: -100 });
   saveSession(s, sess);
   assert.deepEqual(loadSession(sess), s);
   clearSession(sess);
