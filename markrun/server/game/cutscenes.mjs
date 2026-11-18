@@ -190,7 +190,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
 
   // ---------- 1. funfair package (the fix for "you couldn't even see the funfair") ----------
   const diverters = PR.filter((r) => r.diversions?.length);
-  if (diverters.length) {
+  if (diverters.length && (!capped('funfair_stretch') || ['hook_a_duck', 'test_strength'].includes(force))) {
     const cand = [...diverters].sort((a, b) => (rel(b.id) - rel(a.id)) || (Math.abs(S[b.id].divPace[0].ratio - 1) - Math.abs(S[a.id].divPace[0].ratio - 1)));
     for (const r of cand) {
       const pkg = funfairPackage(r);
