@@ -746,8 +746,8 @@ SCENES.spaghetti_legs = (K, cs) => {
   const legMeshes = [];
   for (const l of A.rig.legs) { for (const c of l.hp.children) if (c.isMesh && c.geometry.type === 'CapsuleGeometry') legMeshes.push({ m: c, orig: c.material }); for (const c of l.kn.children) if (c.isMesh) legMeshes.push({ m: c, orig: c.material }); }
   // a bundle of wobbly noodles per leg (replacing thigh + shin), drawn as instanced beads along a swinging curve
-  const NSTR = 4, NSEG = 9;
-  const noodles = new THREE.InstancedMesh(I.bag.add(new THREE.SphereGeometry(0.062, 8, 6)), I.bag.mat('#f6d36b'), 2 * NSTR * NSEG); noodles.frustumCulled = false;
+  const NSTR = 4, NSEG = 15;
+  const noodles = new THREE.InstancedMesh(I.bag.add(new THREE.SphereGeometry(0.05, 8, 6)), I.bag.mat('#f6d36b'), 2 * NSTR * NSEG); noodles.frustumCulled = false;
   A.rig.hips.add(noodles); noodles.visible = false;
   const nO = new THREE.Object3D(), hipL = V(), ankL = V();
   const ball = new THREE.Group(); root.add(ball);
@@ -778,7 +778,7 @@ SCENES.spaghetti_legs = (K, cs) => {
           const ox = (sI % 2 ? 1 : -1) * 0.05 * (1 + (sI >> 1)), oz = ((sI >> 1) ? 1 : -1) * 0.04;
           for (let j = 0; j < NSEG; j++) {
             const u = j / (NSEG - 1);
-            const wig = Math.sin(u * Math.PI) * (0.22 + 0.06 * sI);
+            const wig = Math.sin(u * Math.PI) * (0.3 + 0.07 * sI);
             nO.position.set(lerp(hipL.x, ankL.x, u) + ox + Math.sin(t * 11 + u * 6 + sI + i * 2) * wig, lerp(hipL.y, ankL.y + 0.08, u), lerp(hipL.z, ankL.z, u) + oz + Math.cos(t * 9 + u * 5 + sI) * wig * 0.7);
             nO.updateMatrix(); noodles.setMatrixAt(k++, nO.matrix);
           }
@@ -844,7 +844,8 @@ SCENES.cannonball = (K, cs) => {
     K.ov.caption(bb > 0.05 && bb < 1.9 ? 'HUMAN CANNONBALL!' : null, { yellow: true });
     if (I.camera && slot) {
       const look = slot.clone().addScaledVector(V(st0.tx, 0, st0.tz), Math.max(0, bb) * 3.5 + 0.5).add(V(0, 1.3, 0));
-      K.cam(st0.p(3.6, side * 8.6, 2.6), look, 46);
+      const lat = slot ? ((slot.x - st0.x) * st0.rx + (slot.z - st0.z) * st0.rz) : 0;
+      K.cam(st0.p(-9.5 + Math.max(0, bb) * 1.5, lat + side * 1.6, 3.0), look, 44);
     }
   };
   return I;
@@ -1029,10 +1030,10 @@ function finishFrame(K, raceS, w = 960, h = 540, side = 1, extra = null) {
   const fin = K.world.anchors.finish;
   const bF = raceToBroadcast(K.plan.timeMap, raceS);
   const st = K.sim.stateAt(bF);
-  const cam = new THREE.PerspectiveCamera(30, w / h, 0.3, 2000);
+  const cam = new THREE.PerspectiveCamera(30, w / h, 0.3, 9000);
   const line = V(fin.x, fin.y, fin.z);
-  cam.position.copy(line).add(V(fin.rx * side * 9.5, 1.7, fin.rz * side * 9.5)).addScaledVector(V(fin.tx, 0, fin.tz), -0.2);
-  cam.lookAt(line.clone().add(V(0, 1.0, 0)).addScaledVector(V(fin.tx, 0, fin.tz), -0.8));
+  cam.position.copy(line).add(V(fin.rx * side * 9.5, 3.3, fin.rz * side * 9.5)).addScaledVector(V(fin.tx, 0, fin.tz), -0.2);
+  cam.lookAt(line.clone().add(V(0, 0.9, 0)).addScaledVector(V(fin.tx, 0, fin.tz), -0.8));
   return renderToCanvas(K, cam, w, h, () => {
     const saved = [];
     for (const id of K.ids) {
@@ -1070,7 +1071,7 @@ SCENES.photographer = (K, cs) => {
   const click = sprite(I.bag, bubbleTexture(I.bag, 'CLICK!', { burst: true, w: 512, h: 300, size: 120 }), 1.0, 512 / 300); root.add(click); click.visible = false;
   // prints: 1) the goose's backside, 2) the REAL finish, with Jeff's ruler
   const goose = makeGoose(I.bag, { scale: 1.4 });
-  const gooseCam = new THREE.PerspectiveCamera(34, 16 / 9, 0.1, 500);
+  const gooseCam = new THREE.PerspectiveCamera(34, 16 / 9, 0.1, 9000);
   const gp = V(fin.x, fin.y, fin.z).addScaledVector(V(fin.rx, 0, fin.rz), s * 1.2);
   goose.root.position.copy(gp); goose.root.rotation.y = Math.atan2(-fin.rx * s, -fin.rz * s);
   gooseCam.position.copy(gp).add(V(fin.rx * s * 2.1, 0.75, fin.rz * s * 2.1)); gooseCam.lookAt(gp.clone().add(V(0, 0.75, 0)));
@@ -1080,7 +1081,7 @@ SCENES.photographer = (K, cs) => {
   // Jeff's ruler against the line
   drawRuler(print2, print2.width * 0.47);
   const lab = print2.getContext('2d'); lab.font = '44px "Lilita One", sans-serif'; lab.textAlign = 'center'; lab.lineWidth = 8; lab.strokeStyle = '#1a1420'; lab.fillStyle = '#ffd23f';
-  const t2 = `${(a?.shortName || a?.nickname || 'HIM').toUpperCase()} BY ${cs.params.marginS ?? '?'}s`;
+  const t2 = `${(a?.shortName || a?.nickname || 'HIM').toUpperCase()} BY ${Number(cs.params.marginS ?? 0).toFixed(1)} s`;
   lab.strokeText(t2, print2.width / 2, 60); lab.fillText(t2, print2.width / 2, 60);
   let p1 = null, p2 = null;
   const cue = cues();
@@ -1088,8 +1089,8 @@ SCENES.photographer = (K, cs) => {
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
     const walk = smooth(0, 1.1, t);
-    const pPos = fs.p(2.0, s * lerp(9, 4.6, walk), 0);
-    place(P, pPos, Math.atan2(-fs.rx * s, -fs.rz * s) - 0.25 * s);
+    const pPos = fs.p(3.6, s * lerp(8, PATH_W / 2 - 0.7, walk), 0);
+    place(P, pPos, Math.atan2(-fs.rx * s, -fs.rz * s) - 0.5 * s);
     drive(P, dt, t < 1.1 ? 'jog' : 'idle', null, { speed: 2, rate: 1, expr: 'normal' });
     for (const arm of P.rig.arms) { arm.sh.rotation.set(-1.5, 0, 0); arm.el.rotation.x = -0.5; }
     P.rig.head.rotation.x = 0.1;
@@ -1101,7 +1102,7 @@ SCENES.photographer = (K, cs) => {
     cue('p1off', t > 3.5, () => p1?.hide());
     cue('p2', t > 3.6, () => { p2 = K.ov.print(print2, 'PRINT 2', 3); p2.show(); });
     K.ov.caption(t < 1.4 ? 'SAY CHEESE…' : null, { yellow: true });
-    K.cam(fs.p(-4.5, s * 1.8, 1.7), P.root.position.clone().add(V(0, 1.5, 0)).addScaledVector(V(fs.tx, 0, fs.tz), 1), 40);
+    K.cam(fs.p(10.5, -s * 0.8, 1.8), P.root.position.clone().add(V(0, 1.45, 0)).addScaledVector(V(fs.tx, 0, fs.tz), -0.8), 36);
   };
   const d0 = I.dispose; I.dispose = () => { p1?.remove(); p2?.remove(); d0(); };
   return I;
@@ -1156,7 +1157,7 @@ SCENES.sore_loser_var = (K, cs) => {
   const aPos = fs.p(7, s * 0.5, 0);
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
-    const jp = booth.g.localToWorld(V(0, 0.05, -0.55)); place(J, jp, booth.g.rotation.y);
+    const jp = booth.g.localToWorld(V(0, 0.05, -0.25)); place(J, jp, booth.g.rotation.y);
     drive(J, dt, t > 3.6 && t < 4.3 ? 'pose' : 'idle', 'point', { expr: t > 3.6 ? 'happy' : 'effort' });
     if (t < 3.6) { J.rig.arms[1].sh.rotation.set(-0.9, 0, 0.2); J.rig.arms[1].el.rotation.x = -1.6; J.rig.head.rotation.x = 0.15; }
     if (t < 1.7) {
@@ -1167,12 +1168,12 @@ SCENES.sore_loser_var = (K, cs) => {
       const px = lerp(p0[0], p1[0], f2), py = lerp(p0[1], p1[1], f2);
       A.rig.arms[0].sh.rotation.set(-1.7 - py * 0.35, 0, -0.2 + Math.min(0, px) * 0.4); A.rig.arms[1].sh.rotation.set(-1.7 - py * 0.35, 0, 0.2 + Math.max(0, px) * 0.4);
       for (const a of A.rig.arms) a.el.rotation.x = -0.3;
-      K.cam(fs.p(11, s * 3.6, 1.6), aPos.clone().add(V(0, 1.6, 0)), 38);
+      K.cam(fs.p(2.6, s * 2.4, 1.7), aPos.clone().add(V(0, 1.7, 0)), 40);
       K.ov.caption(t > 0.3 ? 'VAR CHECK!' : null, { yellow: true });
     } else if (t < 4.3) {
       // the booth: over Jeff's shoulder at the replay, then his verdict
-      if (t < 3.2) { const sc = booth.screen.getWorldPosition(V()); K.cam(J.root.localToWorld(V(-0.7, J.r.height + 0.25, -1.1)), sc, 40, 0, { occlude: false }); K.ov.caption('SQUIRREL OFFSIDE?', { yellow: true }); }
-      else { K.cam(booth.g.localToWorld(V(0.9, 1.9, 1.9)), J.root.localToWorld(V(0, J.r.height - 0.4, 0)), 38, 0, { occlude: false }); K.ov.caption(null); }
+      if (t < 3.2) { const sc = booth.screen.getWorldPosition(V()); K.cam(booth.g.localToWorld(V(-0.75, 2.45, -1.05)), sc, 44, 0, { occlude: false }); K.ov.caption('SQUIRREL OFFSIDE?', { yellow: true }); }
+      else { K.cam(booth.g.localToWorld(V(2.3, 1.9, 0.9)), J.root.localToWorld(V(0, J.r.height - 0.5, 0.1)), 38, 0, { occlude: false }); K.ov.caption(null); }
       cue('line', t > 1.9, () => K.say(cs.lines?.[0]));
       cue('stamp', t > 3.5, () => K.ov.big('RESULT STANDS', '#2ec27e'));
     } else {
@@ -1186,7 +1187,7 @@ SCENES.sore_loser_var = (K, cs) => {
       const out = clamp01((kickT - 0.2) / 0.35), back = clamp01((kickT - 0.55) / 0.3);
       const d = 0.8 + out * 3.5 - back * 3.3;
       const cp = aPos.clone().addScaledVector(fwd, d); cp.y = K.C.heightAt(cp.x, cp.z) + Math.sin(Math.PI * out) * 1.2 + Math.sin(Math.PI * back) * 0.6;
-      cone.position.copy(cp); cone.rotation.set(out * 6 - back * 4, 0, 0);
+      cone.position.copy(cp); cone.rotation.set((out - back) * 6.3, 0, 0);
       boink.visible = kickT > 0.82 && kickT < 1.3; if (boink.visible) { boink.position.copy(aPos).add(V(0, 1.2, 0)).addScaledVector(fwd, 0.6); popScale(boink, kickT, 0.82); }
       K.cam(aPos.clone().addScaledVector(fwd, 5.5).add(V(fs.rx * s * 2.5, 1.5, fs.rz * s * 2.5)), aPos.clone().add(V(0, 1.0, 0)).addScaledVector(fwd, 1), 40);
       K.ov.caption(kickT > 0.9 ? 'FAIR ENOUGH.' : null);

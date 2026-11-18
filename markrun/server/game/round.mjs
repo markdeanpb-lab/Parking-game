@@ -1,7 +1,7 @@
 // MARKRUN game module: createRound / settleRound (+ iteration-2 helpers), see docs/CONTRACT.md.
 import { makeRng } from './rng.mjs';
 import { loadData } from './data.mjs';
-import { getModel, predict, winProbs, beatProb, oddsFromProb, MODEL_DEFAULTS } from './model.mjs';
+import { getModel, predict, winProbs, beatProb, oddsFromProb, bookProbs, MODEL_DEFAULTS } from './model.mjs';
 import { selectField, usageWeights } from './select.mjs';
 import { candidatesFor, assignClues, styleClues, CATEGORY_LABEL } from './clues.mjs';
 import { makeCharacters, introLine, roundTitle } from './characters.mjs';
@@ -14,6 +14,12 @@ import { chooseTheme, themeInfo, bandOf, THEMES, themeAnnouncement } from './the
 import { chooseHotTips } from './hottips.mjs';
 import { joinClue } from './headlines.mjs';
 import { makeProps, setLapStats, inPlayMarket as ipm, betRevealOrder as bro, sessionSuperlatives as ss } from './markets.mjs';
+
+// Cutscene planner (server/game/cutscenes.mjs, separate owner): loaded dynamically and feature-detected, so the game
+// still runs if the module is missing or broken. Hosts that create a round immediately after import can `await gameReady()`.
+let CUTSCENES = null;
+const cutscenesLoading = import('./cutscenes.mjs').then((m) => { CUTSCENES = m; }, () => { CUTSCENES = false; });
+export function gameReady() { return cutscenesLoading; }
 
 export const CURRENCY = { name: 'Parkpounds', singular: 'Parkpound', short: 'pp', symbol: 'ℙ' };
 export { COMMENTATORS };
@@ -37,6 +43,7 @@ export const DEFAULT_SETTINGS = {
   margin: MODEL_DEFAULTS.margin,
   supScale: MODEL_DEFAULTS.supScale,
   supBottomX: MODEL_DEFAULTS.supBottomX,
+  longshotFloor: MODEL_DEFAULTS.longshotFloor,
   formHoldsBonus: 3,     // selection curation: prefer fields where the form guide broadly holds (iteration 4: decisive clues do the rest)
   formGapBonus: 2,       // selection: prefer fields with clear public form differences (no outcomes)
   publicPricedBonus: 0.9,// clue assignment: prefer public clues the bookie can price
@@ -162,7 +169,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const preMus = perfs.map((p, i) => predict(model, p.date, assigned[ids[i]].map(({ slot, clue }) => ({ features: clue.features, weight: slot === 0 ? 1 : S.privateWeight }))));
   const marketProb = Object.fromEntries(winProbs(preMus, S.sigma).map((q, i) => [ids[i], q]));
   const avoid = Object.fromEntries(pids.map((pid) => [pid, new Set(ids.filter((id) => clues[id].private[pid]?.decisive))]));
-  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, avoid, favourBias: S.tipFavourBias ?? 6, rivalBias: S.tipRivalBias ?? 2, decisiveDamp: S.tipDecisiveDamp ?? 0.6, positiveShare: S.tipPositiveShare ?? 0.6 });
+  const tips = chooseHotTips(plan.runners, { events: plan.events }, R.shuffle(pids), counts, R, { marketProb, avoid, favourBias: S.tipFavourBias ?? 6, rivalBias: S.tipRivalBias ?? 2, decisiveDamp: S.tipDecisiveDamp ?? 0.45, positiveShare: S.tipPositiveShare ?? 0.6 });
   for (const [pid, list] of Object.entries(tips)) {
     for (const t of list) {
       const old = clues[t.runnerId].private[pid];
@@ -178,7 +185,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   // The Funfair Stakes mixes very different mornings: the bookie (who knows the theme) prices it with extra uncertainty.
   const sigma = S.sigma * (theme.sigmaX ?? 1); // themes the bookie knows are unpredictable get wider prices
   const probs = winProbs(mus, sigma);
-  const odds = probs.map((p) => oddsFromProb(p, S.margin));
+  const odds = bookProbs(probs, S.longshotFloor).map((p) => oddsFromProb(p, S.margin));
 
   // 6. characters
   const chars = makeCharacters(perfs.length, R, mem);
@@ -213,6 +220,21 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
 
   // 8. commentary
   plan.commentary = raceCommentary({ plan, runners, clues: Object.fromEntries(ids.map((id) => [id, { public: clues[id].public, private: Object.values(clues[id].private) }])), wildcardId, rng: R, mem });
+
+  // 8b. cutscenes (TV only, at race start): chosen from real data triggers by cutscenes.mjs. Freeze/replay pause the clock;
+  //     nothing here changes a time. Defensive: if the planner is missing or throws, the race simply has no cutscenes.
+  const csSeed = R.int(2 ** 31); // always drawn, so the rest of the round is identical with or without the planner
+  if (S.cutscenes !== false && typeof CUTSCENES?.planCutscenes === 'function') {
+    try {
+      const csRunners = plan.runners.map((pr) => {
+        const i = ids.indexOf(pr.id), rr = runners[i];
+        return { id: pr.id, progress: pr.progress, diversions: pr.diversions ?? null, officialS: pr.officialS, facts: perfs[i].facts, features: perfs[i].features,
+          nickname: rr.nickname, shortName: rr.shortName, personality: rr.personality };
+      });
+      const cs = CUTSCENES.planCutscenes({ racePlan: plan, runners: csRunners, theme, rng: makeRng(csSeed), sessionMemory: mem, roundNumber });
+      if (Array.isArray(cs)) plan.cutscenes = cs;
+    } catch (e) { plan.cutscenes = []; mem.cutsceneErrors = (mem.cutsceneErrors || 0) + 1; void e; }
+  }
   const thInfo = themeInfo(theme, R, perfs);
 
   const pub = {

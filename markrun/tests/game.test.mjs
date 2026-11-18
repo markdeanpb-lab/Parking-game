@@ -3,7 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { historyDb } from '../server/db.mjs';
-import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives, provisionalNet, personaliseCommentary, coldOpenLines, lockLine, stampLine, rematchLine, awardLines } from '../server/game/round.mjs';
+import { createRound, settleRound, betReactionLines, normalizeSettings, inPlayMarket, betRevealOrder, sessionSuperlatives, provisionalNet, personaliseCommentary, coldOpenLines, lockLine, stampLine, rematchLine, awardLines,
+  newsDeskScript, themeAnnouncement, gameReady } from '../server/game/round.mjs';
+import { superlative } from '../server/game/model.mjs';
+import { THEMES, themeVisual } from '../server/game/themes.mjs';
 import { tipIsTrue, finishSteer, TIP_TYPES } from '../server/game/hottips.mjs';
 import { skeleton } from '../server/game/clues.mjs';
 import { isPBDay } from '../server/game/select.mjs';
@@ -14,6 +17,7 @@ import { loadData } from '../server/game/data.mjs';
 import { countWords } from '../server/game/text.mjs';
 
 const hist = historyDb();
+await gameReady(); // the optional cutscene planner is loaded dynamically
 const P2 = [{ id: 'p1', name: 'Alice' }, { id: 'p2', name: 'Bob' }];
 const freshSess = () => new DatabaseSync(':memory:');
 let sid = 0;
@@ -33,9 +37,18 @@ test('round matches the contract shape', () => {
     assert.ok(x.publicClue.id && x.publicClue.text && x.publicClue.category);
     assert.ok(x.odds.win > 1 && typeof x.odds.display === 'string');
   }
-  assert.ok(r.public.matchups.length >= 1 && r.public.matchups.length <= 2);
-  for (const m of r.public.matchups) { assert.notEqual(m.a, m.b); assert.ok(m.odds.a > 1 && m.odds.b > 1); }
+  assert.equal(r.public.matchups.length, 1, 'exactly one head-to-head');
+  for (const m of r.public.matchups) {
+    assert.notEqual(m.a, m.b); assert.ok(m.odds.a > 1 && m.odds.b > 1);
+    assert.equal(m.clueA, r.public.runners.find((x) => x.id === m.a).publicClue.headline);
+    assert.equal(m.clueB, r.public.runners.find((x) => x.id === m.b).publicClue.headline);
+  }
   assert.ok(r.public.rules.minStake > 0 && r.public.rules.maxBetsPerPlayer > 0);
+  assert.equal(r.public.rules.budget, 500);
+  // ranks: 1 = favourite .. 5 = outsider, consistent with the prices
+  assert.deepEqual([...r.public.runners].map((x) => x.rank).sort(), [1, 2, 3, 4, 5]);
+  const byRank = [...r.public.runners].sort((a, b) => a.rank - b.rank);
+  for (let i = 1; i < 5; i++) assert.ok(byRank[i].odds.win >= byRank[i - 1].odds.win, 'rank follows the odds');
   const plan = r.racePlan;
   assert.equal(plan.runners.length, 5);
   for (const pr of plan.runners) { assert.equal(pr.progress.length, 201); assert.equal(pr.progress[200], pr.officialS); }
@@ -115,11 +128,12 @@ test('no leaks in 2000 generated rounds (clues, names, intros, odds, matchups)',
           if (c.text !== `${c.headline}${/[.!?:"]$/.test(c.headline) ? '' : '.'} ${c.kicker}`) problems.push(`text mismatch: ${c.text}`);
         }
       }
-      // props: only plausible ones
+      // props: the funfair side bet exists only in The Funfair Stakes
       for (const pr of r.public.props || []) {
-        if (pr.id === 'funfair' && !(r.hidden.divOpen || r.public.theme.key === 'funfair')) problems.push('funfair prop offered when no funfair runner was possible');
+        if (r.public.theme.key !== 'funfair') problems.push('side bet offered outside The Funfair Stakes');
         if (pr.id !== 'funfair') problems.push(`unknown prop ${pr.id}`);
       }
+      if (r.public.matchups.length !== 1) problems.push(`matchups: ${r.public.matchups.length}`);
       // the betting-phase commentary must be clean too
       problems.push(...betReactionLines(r, { p1: [{ type: 'win', runnerId: 'r1', stake: 300 }], p2: [] }, P2).flatMap((l) => checkText(l.text, ctx)));
       problems.push(...betRevealOrder(r, { p1: [{ type: 'win', runnerId: 'r2', stake: 300 }, { type: 'prop', propId: 'funfair', pick: 'yes', stake: 10 }], p2: [{ type: 'h2h', matchupId: 'm1', pick: r.public.matchups[0].a, stake: 20 }] }, { p1: 1000, p2: 1000 }, P2)
@@ -159,13 +173,18 @@ test('settlement: payout maths, bankrolls, h2h, contract shape', () => {
     p1: [{ type: 'win', runnerId: win.id, stake: 100 }, { type: 'h2h', matchupId: m.id, pick: better, stake: 50 }],
     p2: [{ type: 'win', runnerId: lose.id, stake: 200 }, { type: 'h2h', matchupId: m.id, pick: better === m.a ? m.b : m.a, stake: 30 }],
   };
-  const res = settleRound(r, bets, { p1: 1000, p2: 1000 });
+  // scores = cumulative banked profit BEFORE this round (can be negative); the budget is separate
+  const res = settleRound(r, bets, { p1: 120, p2: -40 });
   const h2hOdds = better === m.a ? m.odds.a : m.odds.b;
   const ret1 = Math.round(100 * win.odds.win) + Math.round(50 * h2hOdds);
-  assert.equal(res.payouts.p1.bankroll, 1000 - 150 + ret1);
   assert.equal(res.payouts.p1.net, ret1 - 150);
+  assert.equal(res.payouts.p1.score, 120 + ret1 - 150);
+  assert.equal(res.payouts.p1.budget, 500);
+  assert.equal(res.payouts.p1.unspent, 350);
   assert.deepEqual(res.payouts.p1.bets.map((b) => b.won), [true, true]);
-  assert.equal(res.payouts.p2.bankroll, 1000 - 230);
+  assert.equal(res.payouts.p2.net, -230);
+  assert.equal(res.payouts.p2.score, -270, 'score can go negative: no bankruptcy, no bailout');
+  assert.deepEqual(res.scores, { p1: 120 + ret1 - 150, p2: -270 });
   assert.deepEqual(res.payouts.p2.bets.map((b) => b.returned), [0, 0]);
   assert.equal(res.roundId, r.id);
   assert.deepEqual(res.finishOrder.map((f) => f.runnerId), order);
@@ -179,7 +198,10 @@ test('settlement: payout maths, bankrolls, h2h, contract shape', () => {
   assert.ok(res.commentary.length >= 1 && res.commentary.every((c) => c.text && ['jeff', 'pam'].includes(c.speaker)));
   // no bets at all
   const res0 = settleRound(r, {}, { p1: 500, p2: 700 });
-  assert.equal(res0.payouts.p1.bankroll, 500); assert.equal(res0.payouts.p2.bankroll, 700);
+  assert.equal(res0.payouts.p1.score, 500); assert.equal(res0.payouts.p2.score, 700);
+  assert.equal(res0.payouts.p1.net, 0);
+  const res1 = settleRound(r, {}); // no scores at all: everyone starts from 0
+  assert.equal(res1.payouts.p1.score, 0);
 });
 
 test('dead heat for first splits the win payout; h2h tie is a push', () => {
@@ -210,7 +232,7 @@ test('commentary: spaced out, short, never repeated within a session', () => {
     const r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: 'comm' }, rng: 500 + k });
     const c = r.racePlan.commentary;
     for (let i = 1; i < c.length; i++) assert.ok(c[i].broadcastS - c[i - 1].broadcastS >= 9, `gap ${c[i].broadcastS - c[i - 1].broadcastS}`);
-    assert.ok(c.length >= 7 && c.length <= 16, `lines per race ${c.length}`);
+    assert.ok(c.length >= 7 && c.length <= 12, `lines per race ${c.length}`);
     for (const l of c) assert.ok(!/Here we go! Here we go|They'll be fine\. Probably/.test(l.text), l.text);
     for (const l of [...c, ...r.public.introLines]) {
       assert.ok(countWords(l.text) <= 22, `too long: ${l.text}`);
@@ -235,7 +257,10 @@ test('session variety: no performance reused within an 8-round session; usage is
 
 test('settings defaults', () => {
   const s = normalizeSettings({});
-  assert.equal(s.startingBankroll, 1000); assert.equal(s.rounds, 8); assert.equal(s.drinks, false);
+  assert.equal(s.roundBudget, 500); assert.equal(s.rounds, 8); assert.equal(s.drinks, false);
+  assert.equal(normalizeSettings({ budget: 300 }).roundBudget, 300, 'the host may pass `budget`');
+  assert.equal(normalizeSettings({ roundBudget: 1000 }).roundBudget, 1000);
+  assert.ok(!('startingBankroll' in s));
 });
 
 test('hot tips: one per player (two for the non-runner), always true, never priced', () => {
@@ -273,7 +298,10 @@ test('no clue wording repeated within a round; styles are mixed', () => {
     for (const c of texts) tot[c.style] = (tot[c.style] || 0) + 1;
   }
   const n = tot.hedge + tot.fact + tot.tipster;
-  for (const k of ['hedge', 'fact', 'tipster']) assert.ok(tot[k] / n > 0.22 && tot[k] / n < 0.45, `${k} share ${tot[k] / n}`);
+  // hedged "...or ...?" clues are occasional (about 10%); plain facts lead; Jeff/Pam tipsters about a third
+  assert.ok(tot.hedge / n >= 0.03 && tot.hedge / n <= 0.16, `hedge share ${tot.hedge / n}`);
+  assert.ok(tot.fact / n >= 0.4 && tot.fact / n <= 0.7, `fact share ${tot.fact / n}`);
+  assert.ok(tot.tipster / n >= 0.2 && tot.tipster / n <= 0.45, `tipster share ${tot.tipster / n}`);
 });
 
 test('themes, bands and PB caps', () => {

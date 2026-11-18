@@ -69,7 +69,7 @@ export function runnerPortrait(runner, { size = 120, idSuffix = '' } = {}) {
   const headR = { compact: 31, stocky: 30, lanky: 28, tall: 29 }[build] ?? 30;
   // big hats / hair need headroom: shift the figure down a little
   const tall = ['bobble', 'bucket'].includes(L.hat) || ['afro', 'mohawk', 'spiky', 'bun', 'quiff'].includes(L.hair);
-  const cx = 60, cy = 50 - neck / 2 + (tall ? 7 : 2);
+  const cx = 60, cy = 48 - neck / 2 + (tall ? 4 : 0);
   const lane = runner?.lane ?? '';
   const clipId = `pc${h.toString(36)}${idSuffix}`;
   const parts = [];
@@ -82,15 +82,15 @@ export function runnerPortrait(runner, { size = 120, idSuffix = '' } = {}) {
   parts.push(`<path d="M0 ${92} L120 ${70} L120 120 L0 120Z" fill="${shade(c1, 0.4)}" opacity=".7"/>`);
   const sy = cy + headR + neck - 4;
   // cape behind the shoulders (signature prop)
-  if (L.prop === 'cape') parts.push(P(`M${cx - shoulders + 6} ${sy + 4} Q${cx - shoulders - 16} ${sy + 40} ${cx - shoulders - 10} 124 L${cx + shoulders + 10} 124 Q${cx + shoulders + 16} ${sy + 40} ${cx + shoulders - 6} ${sy + 4}Z`, c2));
+  if (L.prop === 'cape') parts.push(P(`M${cx - 20} ${sy - 2} Q${cx - shoulders - 26} ${sy + 18} ${cx - shoulders - 22} 124 L${cx + shoulders + 22} 124 Q${cx + shoulders + 26} ${sy + 18} ${cx + 20} ${sy - 2}Z`, c2));
   // shoulders / vest
   parts.push(P(`M${cx - shoulders} 124 Q${cx - shoulders} ${sy + 6} ${cx - 14} ${sy} L${cx + 14} ${sy} Q${cx + shoulders} ${sy + 6} ${cx + shoulders} 124Z`, c1));
   // side trim stripes (as on the 3D kit)
   parts.push(`<path d="M${cx - shoulders + 7} 124 Q${cx - shoulders + 8} ${sy + 16} ${cx - shoulders + 14} ${sy + 8}" fill="none" stroke="${c2}" stroke-width="5"/><path d="M${cx + shoulders - 7} 124 Q${cx + shoulders - 8} ${sy + 16} ${cx + shoulders - 14} ${sy + 8}" fill="none" stroke="${c2}" stroke-width="5"/>`);
   // race bib (as on the 3D kit: white card, lane-colour header, big number)
-  parts.push(`<g transform="rotate(-4 ${cx} ${sy + 24})"><rect x="${cx - 14}" y="${sy + 12}" width="28" height="22" rx="3" fill="#fff" stroke="${INK}" stroke-width="3"/><rect x="${cx - 12.5}" y="${sy + 13.5}" width="25" height="5" fill="${c1}"/>`);
-  parts.push(`<text x="${cx}" y="${sy + 32}" font-family="Lilita One, Arial Black, sans-serif" font-size="14" text-anchor="middle" fill="${INK}">${lane}</text></g>`);
-  if (L.prop === 'cape') parts.push(`<path d="M${cx - 16} ${sy + 1} L${cx - 10} ${sy + 10} M${cx + 16} ${sy + 1} L${cx + 10} ${sy + 10}" stroke="${c2}" stroke-width="5" stroke-linecap="round"/>`);
+  parts.push(`<g transform="rotate(-4 ${cx} ${sy + 18})"><rect x="${cx - 13}" y="${sy + 7}" width="26" height="20" rx="3" fill="#fff" stroke="${INK}" stroke-width="3"/><rect x="${cx - 11.5}" y="${sy + 8.5}" width="23" height="4.5" fill="${c1}"/>`);
+  parts.push(`<text x="${cx}" y="${sy + 25}" font-family="Lilita One, Arial Black, sans-serif" font-size="13" text-anchor="middle" fill="${INK}">${lane}</text></g>`);
+  if (L.prop === 'cape') parts.push(`<circle cx="${cx - 15}" cy="${sy + 3}" r="4" fill="#ffcf3a" stroke="${INK}" stroke-width="2.5"/><circle cx="${cx + 15}" cy="${sy + 3}" r="4" fill="#ffcf3a" stroke="${INK}" stroke-width="2.5"/>`);
   // neck
   parts.push(`<rect x="${cx - 9}" y="${cy + headR - 8}" width="18" height="${neck + 12}" fill="${skin}" stroke="${INK}" stroke-width="${SW}"/>`);
   if (L.accessory === 'medal') {

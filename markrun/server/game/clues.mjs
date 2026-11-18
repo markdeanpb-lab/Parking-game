@@ -472,6 +472,16 @@ const VOICE = { // openers are short so opener + quote fits the 10-word kicker
 // and the hedged "...or ...?" style only occasionally (about 10%): hedging every clue made betting feel like a coin toss.
 // Decisive clues are always plain facts. Never repeats a wording in the round; session cooldown on recent wordings.
 export const STYLE_SHARE = { fact: 0.56, tipster: 0.34, hedge: 0.10 };
+// plain (non-question) punchlines for facts whose own templates are all "...or ...?" hedges
+const FACT_KICK = {
+  training: ['Make of that what you will.', 'The legs remember everything.', 'Numbers don\'t lie. Mostly.', 'The training log has spoken.', 'Read that one twice.', 'Noted, with interest.'],
+  form: ['Form is temporary. Allegedly.', 'The results speak for themselves.', 'Recent history, for what it\'s worth.'],
+  prep: ['Preparation, of a sort.', 'Every routine tells a story.', 'Habits die hard.', 'Professional. In his own way.'],
+  weather: ['Excuses, pre-loaded.', 'The forecast was right, for once.', 'Dress accordingly.'],
+  diary: ['Priorities, clearly.', 'The calendar always matters.', 'Big picture thinking. Possibly.'],
+  cross: ['A man of many sports.', 'Fitness is fitness. Probably.'],
+  other: ['Make of that what you will.', 'File under "interesting".'],
+};
 export function styleClues(assigned, rng, mem, roundNumber, pickOpinion, share = STYLE_SHARE) {
   const counts = { hedge: 0, fact: 0, tipster: 0 };
   const slotCounts = {};
@@ -487,6 +497,11 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion, share =
     for (const v of c.variants || [{ text: c.text, skel: c.skel, style: /\?\s*$/.test(c.text) ? 'hedge' : 'fact' }]) {
       if (usedRound.has(v.skel) || (v.kicker && usedRound.has(`k:${v.kicker}`))) continue;
       opts.push({ ...v, cool: cooling(v.skel) });
+    }
+    if (!opts.some((o) => o.style === 'fact') && c.headline) { // give every clue a plain-fact option, so hedging stays occasional
+      const bank = FACT_KICK[GROUP[c.cat]] || FACT_KICK.other;
+      const kicker = bank.find((k) => !usedRound.has(`k:${k}`));
+      if (kicker) { const text = joinClue(c.headline, kicker); opts.push({ text, kicker, skel: skeleton(text), style: 'fact', cool: cooling(skeleton(text)) }); }
     }
     const tipSkel = `${skeleton(c.factSentence || splitFact(c.text).fact)}|tip`;
     if (GROUP[c.cat] && !c.decisive && !usedRound.has(tipSkel)) opts.push({ style: 'tipster', skel: tipSkel, cool: false });

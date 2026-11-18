@@ -34325,7 +34325,7 @@ function runnerPortrait(runner, { size = 120, idSuffix = "" } = {}) {
   const neck = { tall: 8, lanky: 10, stocky: 2, compact: 4 }[build] ?? 4;
   const headR = { compact: 31, stocky: 30, lanky: 28, tall: 29 }[build] ?? 30;
   const tall = ["bobble", "bucket"].includes(L.hat) || ["afro", "mohawk", "spiky", "bun", "quiff"].includes(L.hair);
-  const cx = 60, cy = 50 - neck / 2 + (tall ? 7 : 2);
+  const cx = 60, cy = 48 - neck / 2 + (tall ? 4 : 0);
   const lane = runner?.lane ?? "";
   const clipId = `pc${h.toString(36)}${idSuffix}`;
   const parts = [];
@@ -34335,12 +34335,12 @@ function runnerPortrait(runner, { size = 120, idSuffix = "" } = {}) {
   parts.push(`<g clip-path="url(#${clipId})">`);
   parts.push(`<path d="M0 ${92} L120 ${70} L120 120 L0 120Z" fill="${shade(c1, 0.4)}" opacity=".7"/>`);
   const sy = cy + headR + neck - 4;
-  if (L.prop === "cape") parts.push(P(`M${cx - shoulders + 6} ${sy + 4} Q${cx - shoulders - 16} ${sy + 40} ${cx - shoulders - 10} 124 L${cx + shoulders + 10} 124 Q${cx + shoulders + 16} ${sy + 40} ${cx + shoulders - 6} ${sy + 4}Z`, c2));
+  if (L.prop === "cape") parts.push(P(`M${cx - 20} ${sy - 2} Q${cx - shoulders - 26} ${sy + 18} ${cx - shoulders - 22} 124 L${cx + shoulders + 22} 124 Q${cx + shoulders + 26} ${sy + 18} ${cx + 20} ${sy - 2}Z`, c2));
   parts.push(P(`M${cx - shoulders} 124 Q${cx - shoulders} ${sy + 6} ${cx - 14} ${sy} L${cx + 14} ${sy} Q${cx + shoulders} ${sy + 6} ${cx + shoulders} 124Z`, c1));
   parts.push(`<path d="M${cx - shoulders + 7} 124 Q${cx - shoulders + 8} ${sy + 16} ${cx - shoulders + 14} ${sy + 8}" fill="none" stroke="${c2}" stroke-width="5"/><path d="M${cx + shoulders - 7} 124 Q${cx + shoulders - 8} ${sy + 16} ${cx + shoulders - 14} ${sy + 8}" fill="none" stroke="${c2}" stroke-width="5"/>`);
-  parts.push(`<g transform="rotate(-4 ${cx} ${sy + 24})"><rect x="${cx - 14}" y="${sy + 12}" width="28" height="22" rx="3" fill="#fff" stroke="${INK}" stroke-width="3"/><rect x="${cx - 12.5}" y="${sy + 13.5}" width="25" height="5" fill="${c1}"/>`);
-  parts.push(`<text x="${cx}" y="${sy + 32}" font-family="Lilita One, Arial Black, sans-serif" font-size="14" text-anchor="middle" fill="${INK}">${lane}</text></g>`);
-  if (L.prop === "cape") parts.push(`<path d="M${cx - 16} ${sy + 1} L${cx - 10} ${sy + 10} M${cx + 16} ${sy + 1} L${cx + 10} ${sy + 10}" stroke="${c2}" stroke-width="5" stroke-linecap="round"/>`);
+  parts.push(`<g transform="rotate(-4 ${cx} ${sy + 18})"><rect x="${cx - 13}" y="${sy + 7}" width="26" height="20" rx="3" fill="#fff" stroke="${INK}" stroke-width="3"/><rect x="${cx - 11.5}" y="${sy + 8.5}" width="23" height="4.5" fill="${c1}"/>`);
+  parts.push(`<text x="${cx}" y="${sy + 25}" font-family="Lilita One, Arial Black, sans-serif" font-size="13" text-anchor="middle" fill="${INK}">${lane}</text></g>`);
+  if (L.prop === "cape") parts.push(`<circle cx="${cx - 15}" cy="${sy + 3}" r="4" fill="#ffcf3a" stroke="${INK}" stroke-width="2.5"/><circle cx="${cx + 15}" cy="${sy + 3}" r="4" fill="#ffcf3a" stroke="${INK}" stroke-width="2.5"/>`);
   parts.push(`<rect x="${cx - 9}" y="${cy + headR - 8}" width="18" height="${neck + 12}" fill="${skin}" stroke="${INK}" stroke-width="${SW}"/>`);
   if (L.accessory === "medal") {
     parts.push(`<path d="M${cx - 12} ${sy} L${cx} ${sy + 14} L${cx + 12} ${sy}" fill="none" stroke="#2e9bff" stroke-width="5"/>`);
@@ -35889,6 +35889,13 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
     }
     lastI = e.broadcastS;
   }
+  const divWin = plan.runners.flatMap((r) => (r.diversions || []).map((d) => ({ id: r.id, a: raceToBroadcast(tm, timeAtDistance(r.progress, d.fromM)), b: raceToBroadcast(tm, timeAtDistance(r.progress, d.toM)) })));
+  if (funfair) for (const s of out) {
+    if (s.type !== "headon" || s.start) continue;
+    const ids = s.ids || leadGroupAt(sim, (s.a + s.b) / 2);
+    const hit = divWin.find((w) => ids.includes(w.id) && w.a < s.b && w.b > s.a);
+    if (hit) Object.assign(s, { type: "side", fair: true, ids: [hit.id] });
+  }
   for (const s of out) {
     s.rate = meanRate(Math.max(0, s.a), Math.max(0.5, s.b));
     s.ids = s.ids || null;
@@ -35907,7 +35914,7 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
         s.fov = MathUtils.clamp(Math.max(fovFor(s.dist), fitFov), 5, 34);
         s.side = chooseSide(s, ids);
       } else {
-        let want = MathUtils.clamp(18 + 1.25 * s.rate, 20, 40);
+        let want = s.start ? 30 : MathUtils.clamp(18 + 1.25 * s.rate, 20, 40);
         let gap = aheadGap(s, ids);
         if (gap < 16 && !s.start) {
           const st = sim.stateAt(Math.max(0, (s.a + s.b) / 2));
@@ -35921,7 +35928,7 @@ function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
           }
         }
         s.dist = Math.max(12, Math.min(want, gap - 6));
-        s.fov = MathUtils.clamp(fovFor(s.dist, TARGET_FRAC + 0.1 * Math.min(1, spread / 15)), 4, 30);
+        s.fov = MathUtils.clamp(fovFor(s.dist, TARGET_FRAC - 0.02), 4, 30);
         s.lat = chooseLat(s, s.ids || ids);
       }
     }
@@ -36503,6 +36510,10 @@ function createHud(container, { runners, backedBy = {}, players = [], course, pa
     setBackedBy(bb0);
   }
   setBackedBy(backedBy);
+  document.fonts?.ready?.then(() => {
+    for (const id in tags) tags[id].w = 0;
+  }).catch(() => {
+  });
   function tagSize(id) {
     const t = tags[id];
     if (!t.w) {
@@ -38684,7 +38695,26 @@ function arrowTexture(bag, colour) {
   });
 }
 function noteSprites(I, n = 4) {
-  const tex = bubbleTexture(I.bag, "\u266A", { bg: "rgba(0,0,0,0)", fg: "#ff3d8b", w: 128, h: 128, size: 110, tail: false });
+  const tex = I.bag.tex(128, 128, (g) => {
+    g.clearRect(0, 0, 128, 128);
+    g.fillStyle = "#ff3d8b";
+    g.strokeStyle = "#1a1420";
+    g.lineWidth = 7;
+    g.lineJoin = "round";
+    g.beginPath();
+    g.ellipse(44, 96, 22, 16, -0.4, 0, 7);
+    g.fill();
+    g.stroke();
+    g.fillRect(60, 22, 10, 74);
+    g.strokeRect(60, 22, 10, 74);
+    g.beginPath();
+    g.moveTo(70, 22);
+    g.quadraticCurveTo(108, 38, 100, 72);
+    g.quadraticCurveTo(96, 50, 70, 46);
+    g.closePath();
+    g.fill();
+    g.stroke();
+  });
   return Array.from({ length: n }, () => sprite(I.bag, tex, 0.7, 1));
 }
 function divOf(K, cs) {
@@ -40168,10 +40198,10 @@ SCENES.ice_cream_van = (K, cs) => {
     if (t > 1.4 && t < 2.7) A.rig.head.rotation.y = s * 0.4;
     cue("line", t > 1.45, () => K.say(cs.lines?.[0]));
     if (t < 1.4) {
-      K.cam(f.p(-1, -s * 9, 2.2), f.p(-2, s * 2.5, 1.6), 46);
-      K.ov.caption(t > 0.4 ? "\u266A DING-A-LING \u266A" : null, { yellow: true });
+      K.cam(f.p(-9.5, -s * 3.2, 3.1), f.p(-1.5, s * 1.8, 1.3), 46);
+      K.ov.caption(t > 0.4 ? "DING-A-LING!" : null, { yellow: true });
     } else if (t < 2.7) {
-      K.cam(A.root.position.clone().addScaledVector(V(f.tx, 0, f.tz), 2.8).addScaledVector(V(f.rx, 0, f.rz), -s * 0.9).add(V(0, 1.9, 0)), A.root.position.clone().add(V(0, 1.9, 0)), 34);
+      K.cam(A.root.position.clone().addScaledVector(V(f.tx, 0, f.tz), 3.4).addScaledVector(V(f.rx, 0, f.rz), -s * 1.2).add(V(0, 2, 0)), A.root.position.clone().add(V(0, 2.05, 0)), 36);
       K.ov.caption("THE VAN!", { yellow: true });
     } else {
       K.cam(f.p(run * 6.2 - 7.5, -s * 1.8, 2.3), f.p(run * 6.2 + 3, s * 1.6, 1.6), 44);
@@ -40234,10 +40264,10 @@ function finishFrame(K, raceS, w = 960, h = 540, side = 1, extra = null) {
   const fin = K.world.anchors.finish;
   const bF = raceToBroadcast(K.plan.timeMap, raceS);
   const st = K.sim.stateAt(bF);
-  const cam = new PerspectiveCamera(30, w / h, 0.3, 2e3);
+  const cam = new PerspectiveCamera(30, w / h, 0.3, 9e3);
   const line = V(fin.x, fin.y, fin.z);
-  cam.position.copy(line).add(V(fin.rx * side * 9.5, 1.7, fin.rz * side * 9.5)).addScaledVector(V(fin.tx, 0, fin.tz), -0.2);
-  cam.lookAt(line.clone().add(V(0, 1, 0)).addScaledVector(V(fin.tx, 0, fin.tz), -0.8));
+  cam.position.copy(line).add(V(fin.rx * side * 9.5, 3.3, fin.rz * side * 9.5)).addScaledVector(V(fin.tx, 0, fin.tz), -0.2);
+  cam.lookAt(line.clone().add(V(0, 0.9, 0)).addScaledVector(V(fin.tx, 0, fin.tz), -0.8));
   return renderToCanvas(K, cam, w, h, () => {
     const saved = [];
     for (const id of K.ids) {
@@ -40298,7 +40328,7 @@ SCENES.photographer = (K, cs) => {
   root.add(click);
   click.visible = false;
   const goose = makeGoose(I.bag, { scale: 1.4 });
-  const gooseCam = new PerspectiveCamera(34, 16 / 9, 0.1, 500);
+  const gooseCam = new PerspectiveCamera(34, 16 / 9, 0.1, 9e3);
   const gp = V(fin.x, fin.y, fin.z).addScaledVector(V(fin.rx, 0, fin.rz), s * 1.2);
   goose.root.position.copy(gp);
   goose.root.rotation.y = Math.atan2(-fin.rx * s, -fin.rz * s);
@@ -40318,7 +40348,7 @@ SCENES.photographer = (K, cs) => {
   lab.lineWidth = 8;
   lab.strokeStyle = "#1a1420";
   lab.fillStyle = "#ffd23f";
-  const t2 = `${(a?.shortName || a?.nickname || "HIM").toUpperCase()} BY ${cs.params.marginS ?? "?"}s`;
+  const t2 = `${(a?.shortName || a?.nickname || "HIM").toUpperCase()} BY ${Number(cs.params.marginS ?? 0).toFixed(1)} s`;
   lab.strokeText(t2, print2.width / 2, 60);
   lab.fillText(t2, print2.width / 2, 60);
   let p1 = null, p2 = null;
@@ -40327,8 +40357,8 @@ SCENES.photographer = (K, cs) => {
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
     const walk = smooth3(0, 1.1, t);
-    const pPos = fs.p(2, s * lerp2(9, 4.6, walk), 0);
-    place2(P, pPos, Math.atan2(-fs.rx * s, -fs.rz * s) - 0.25 * s);
+    const pPos = fs.p(3.6, s * lerp2(8, PATH_W / 2 - 0.7, walk), 0);
+    place2(P, pPos, Math.atan2(-fs.rx * s, -fs.rz * s) - 0.5 * s);
     drive(P, dt, t < 1.1 ? "jog" : "idle", null, { speed: 2, rate: 1, expr: "normal" });
     for (const arm of P.rig.arms) {
       arm.sh.rotation.set(-1.5, 0, 0);
@@ -40354,7 +40384,7 @@ SCENES.photographer = (K, cs) => {
       p2.show();
     });
     K.ov.caption(t < 1.4 ? "SAY CHEESE\u2026" : null, { yellow: true });
-    K.cam(fs.p(-4.5, s * 1.8, 1.7), P.root.position.clone().add(V(0, 1.5, 0)).addScaledVector(V(fs.tx, 0, fs.tz), 1), 40);
+    K.cam(fs.p(10.5, -s * 0.8, 1.8), P.root.position.clone().add(V(0, 1.45, 0)).addScaledVector(V(fs.tx, 0, fs.tz), -0.8), 36);
   };
   const d0 = I.dispose;
   I.dispose = () => {
@@ -40483,7 +40513,7 @@ SCENES.sore_loser_var = (K, cs) => {
   const aPos = fs.p(7, s * 0.5, 0);
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
-    const jp = booth.g.localToWorld(V(0, 0.05, -0.55));
+    const jp = booth.g.localToWorld(V(0, 0.05, -0.25));
     place2(J, jp, booth.g.rotation.y);
     drive(J, dt, t > 3.6 && t < 4.3 ? "pose" : "idle", "point", { expr: t > 3.6 ? "happy" : "effort" });
     if (t < 3.6) {
@@ -40502,15 +40532,15 @@ SCENES.sore_loser_var = (K, cs) => {
       A.rig.arms[0].sh.rotation.set(-1.7 - py2 * 0.35, 0, -0.2 + Math.min(0, px2) * 0.4);
       A.rig.arms[1].sh.rotation.set(-1.7 - py2 * 0.35, 0, 0.2 + Math.max(0, px2) * 0.4);
       for (const a of A.rig.arms) a.el.rotation.x = -0.3;
-      K.cam(fs.p(11, s * 3.6, 1.6), aPos.clone().add(V(0, 1.6, 0)), 38);
+      K.cam(fs.p(2.6, s * 2.4, 1.7), aPos.clone().add(V(0, 1.7, 0)), 40);
       K.ov.caption(t > 0.3 ? "VAR CHECK!" : null, { yellow: true });
     } else if (t < 4.3) {
       if (t < 3.2) {
         const sc = booth.screen.getWorldPosition(V());
-        K.cam(J.root.localToWorld(V(-0.7, J.r.height + 0.25, -1.1)), sc, 40, 0, { occlude: false });
+        K.cam(booth.g.localToWorld(V(-0.75, 2.45, -1.05)), sc, 44, 0, { occlude: false });
         K.ov.caption("SQUIRREL OFFSIDE?", { yellow: true });
       } else {
-        K.cam(booth.g.localToWorld(V(0.9, 1.9, 1.9)), J.root.localToWorld(V(0, J.r.height - 0.4, 0)), 38, 0, { occlude: false });
+        K.cam(booth.g.localToWorld(V(2.3, 1.9, 0.9)), J.root.localToWorld(V(0, J.r.height - 0.5, 0.1)), 38, 0, { occlude: false });
         K.ov.caption(null);
       }
       cue("line", t > 1.9, () => K.say(cs.lines?.[0]));
@@ -40530,7 +40560,7 @@ SCENES.sore_loser_var = (K, cs) => {
       const cp = aPos.clone().addScaledVector(fwd, d);
       cp.y = K.C.heightAt(cp.x, cp.z) + Math.sin(Math.PI * out) * 1.2 + Math.sin(Math.PI * back) * 0.6;
       cone.position.copy(cp);
-      cone.rotation.set(out * 6 - back * 4, 0, 0);
+      cone.rotation.set((out - back) * 6.3, 0, 0);
       boink.visible = kickT > 0.82 && kickT < 1.3;
       if (boink.visible) {
         boink.position.copy(aPos).add(V(0, 1.2, 0)).addScaledVector(fwd, 0.6);
@@ -40928,7 +40958,10 @@ function createRaceView(container, opts = {}) {
   const crowd = { update: (...a) => {
     crowds.forEach((c) => c.update(...a));
     fairCrowd?.update(...a);
-  }, setMask: (fn) => crowds.forEach((c) => c.setMask(fn)), dispose: () => {
+  }, setMask: (fn) => {
+    crowds.forEach((c) => c.setMask(fn));
+    fairCrowd?.setMask(fn);
+  }, dispose: () => {
     crowds.forEach((c) => c.dispose());
     fairCrowd?.dispose();
   } };
@@ -41734,6 +41767,7 @@ function createRaceView(container, opts = {}) {
       st = b >= 0 ? sim.stateAt(b) : null;
       if (replay) st = sim.stateAt(replayB());
       const occ = !freeze && marketT == null && TRACK_SHOTS.has(director.shot?.type);
+      if (!freeze) world.anchors.finishArch.visible = !(director.shot?.type === "placecam" && !replay);
       world.setOcclusionCorridor(occ ? camera.position : null, occ ? director.cam.look : null);
       const stype = director.shot?.type;
       const kind = freeze > 0 ? `photo${photoSide()}` : replay ? "" : stype === "placecam" ? `place${director.shot.fside || 0}` : TRACK_SHOTS.has(stype) ? "corridor" : "";
@@ -42266,13 +42300,15 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
       const setLines = sig === "hook_a_duck" ? lap === 1 ? [{ speaker: "pam", text: "He's won a goose. Of course he has." }] : [{ speaker: "jeff", text: "He's only gone and traded UP!" }] : lap === 1 ? variant === "launch" ? [{ speaker: "jeff", text: "He's been LAUNCHED back onto the course!" }] : [{ speaker: "pam", text: "Parkrunner. Fair." }] : [{ speaker: "jeff", text: "DING DING DING! Somebody fetch that bell!" }];
       const setKind = sig;
       const setDur = sig === "hook_a_duck" ? lap === 1 ? DUR.hook_a_duck : DUR.hook_a_duck2 : lap === 1 ? DUR.test_strength : DUR.test_strength2;
-      const setB = B(id, mid);
-      let setPiece = mk(setKind, id, "freeze", setB, { group: g, durationS: setDur, params: { ...tag, stage: "fair" }, lines: setLines, score: 10 });
+      const signB = B(id, d.fromM - 50), droneB = Math.max(B(id, d.fromM + 25), signB + (DUR.funfair_sign + 0.3) * rate);
+      const setB = Math.max(B(id, mid), lap === 1 ? droneB + (DUR.funfair_drone + 0.3) * rate : B(id, mid));
+      const mSet = Math.max(d.fromM + 40, Math.min(d.toM - 40, distanceAt(byId[id].progress, broadcastToRace(tm, setB))));
+      let setPiece = mk(setKind, id, "freeze", setB, { group: g, durationS: setDur, params: { ...tag, atM: Math.round(mSet), stage: "fair" }, lines: setLines, score: 10 });
       const rejoinLine = v === "even" ? { speaker: "pam", text: "And he's lost... no time at all. Suspicious." } : v === "slow" ? { speaker: "jeff", text: `That cost him ${Math.max(1, Math.round(d.costS))} seconds!` } : { speaker: "pam", text: "He came out quicker than he went in. I want a steward's enquiry." };
-      const rejoin = mk("funfair_rejoin", id, "inset", B(id, d.toM - 22), { group: g, params: { ...tag, pip: false }, lines: [rejoinLine] });
+      const rejoin = mk("funfair_rejoin", id, "inset", Math.min(slowTo - DUR.funfair_rejoin * rate, Math.max(B(id, d.toM - 22), setB + 0.6 * rate)), { group: g, params: { ...tag, pip: false }, lines: [rejoinLine] });
       if (lap === 1) {
-        pkg.push(sl, mk("funfair_sign", id, "inset", B(id, d.fromM - 50), { group: g, params: { ...tag, pip: false }, lines: [{ speaker: "jeff", text: "Hang on, hang on, there's a DIVERSION!" }] }));
-        pkg.push(mk("funfair_drone", id, "inset", B(id, d.fromM + 25), { group: g, params: { ...tag, pip: false }, lines: [] }));
+        pkg.push(sl, mk("funfair_sign", id, "inset", signB, { group: g, params: { ...tag, pip: false }, lines: [{ speaker: "jeff", text: "Hang on, hang on, there's a DIVERSION!" }] }));
+        pkg.push(mk("funfair_drone", id, "inset", droneB, { group: g, params: { ...tag, pip: false }, lines: [] }));
       } else pkg.push(sl);
       pkg.push(setPiece, rejoin);
       const truthAll = `${name(id)}'s real GPS trace left the usual course at ${km(d.fromM)} and bulged up to ${d.maxOffM} m round the fairground before rejoining at ${km(d.toM)}${laps.length > 1 ? " (he did it on both laps)" : ""}. Through that detour he ran ${v === "even" ? "within 3% of" : `${pct(d.ratio)}% ${v === "slow" ? "slower than" : "quicker than"}`} his average pace. The ${sig === "hook_a_duck" ? "hook-a-duck" : "strongman"} bit is a dramatisation.`;

@@ -115,10 +115,13 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     const fo = { exclude: ex, preferBacked: true };
     const len = b4700 - bSlow;
     if (len >= 8) { const n = Math.max(1, Math.round(len / 11)); for (let i = 0; i < n; i++) { const a = bSlow + (len * i) / n, e = bSlow + (len * (i + 1)) / n, subj = pickSubject(a, e, fo); out.push({ type: pairType(subj, out.at(-1)?.type, meanRate(a, e)), a, b: e, ids: subj.ids, subject: subj.kind, gap: subj.gap }); } }
-    const a = Math.max(bSlow, out.at(-1).b), subj = pickSubject(a, bFin, fo);
-    const last = { type: 'headon', a, b: bFin, ids: subj.ids, subject: subj.kind, gap: subj.gap };
-    if (out.at(-1).type === 'headon' && out.at(-1).a >= bSlow && String(out.at(-1).ids) === String(last.ids)) out.at(-1).b = bFin;
-    else out.push(last);
+    const a0 = Math.max(bSlow, out.at(-1).b), n2 = Math.max(1, Math.round((bFin - a0) / 11));
+    for (let i = 0; i < n2; i++) {
+      const a = a0 + ((bFin - a0) * i) / n2, e = a0 + ((bFin - a0) * (i + 1)) / n2, subj = pickSubject(a, e, fo);
+      const last = { type: i < n2 - 1 ? pairType(subj, out.at(-1)?.type, meanRate(a, e)) : 'headon', a, b: e, ids: subj.ids, subject: subj.kind, gap: subj.gap };
+      if (out.at(-1).type === last.type && out.at(-1).a >= bSlow && String(out.at(-1).ids) === String(last.ids) && e - out.at(-1).a <= 14) out.at(-1).b = e;
+      else out.push(last);
+    }
   }
   if (out.at(-1).b - out.at(-1).a < 6 && out.length > 4) { const l = out.pop(); out.at(-1).b = l.b; }
   // the finish camera covers the winner's crossing; the place camera takes over after the winner's replay
@@ -156,6 +159,15 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     lastI = e.broadcastS;
   }
 
+  // a runner on a funfair detour is filmed side-on from the course side (a head-on camera would sit among the rides)
+  const divWin = plan.runners.flatMap((r) => (r.diversions || []).map((d) => ({ id: r.id, a: raceToBroadcast(tm, timeAtDistance(r.progress, d.fromM)), b: raceToBroadcast(tm, timeAtDistance(r.progress, d.toM)) })));
+  if (funfair) for (const s of out) {
+    if (s.type !== 'headon' || s.start) continue;
+    const ids = s.ids || leadGroupAt(sim, (s.a + s.b) / 2);
+    const hit = divWin.find((w) => ids.includes(w.id) && w.a < s.b && w.b > s.a);
+    if (hit) Object.assign(s, { type: 'side', fair: true, ids: [hit.id] });
+  }
+
   // per-shot constants (rate, side, distances, FOV) so nothing pumps inside a shot
   for (const s of out) {
     s.rate = meanRate(Math.max(0, s.a), Math.max(0.5, s.b));
@@ -173,7 +185,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
       } else {
         // camera on the course ahead of the group's centre; FOV for ~42% at the centre distance. Nobody may stand
         // between the camera and its subject: a runner close ahead joins the shot, a further one caps the distance.
-        let want = THREE.MathUtils.clamp(18 + 1.25 * s.rate, 20, 40);
+        let want = s.start ? 30 : THREE.MathUtils.clamp(18 + 1.25 * s.rate, 20, 40);
         let gap = aheadGap(s, ids);
         if (gap < 16 && !s.start) {
           const st = sim.stateAt(Math.max(0, (s.a + s.b) / 2)); const front = Math.max(...ids.map((id) => st.byId[id].m));
@@ -182,7 +194,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
         }
         // s.dist = camera to the FRONT runner (who is framed at ~42-52%; a chaser further back stays >= ~28%)
         s.dist = Math.max(12, Math.min(want, gap - 6));
-        s.fov = THREE.MathUtils.clamp(fovFor(s.dist, TARGET_FRAC + 0.1 * Math.min(1, spread / 15)), 4, 30);
+        s.fov = THREE.MathUtils.clamp(fovFor(s.dist, TARGET_FRAC - 0.02), 4, 30);
         s.lat = chooseLat(s, s.ids || ids);
       }
     }

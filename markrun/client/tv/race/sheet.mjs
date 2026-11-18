@@ -1,6 +1,6 @@
 // Contact-sheet harness for the race broadcast (headless Chromium + SwiftShader).
 //   node client/tv/race/sheet.mjs <fixture|-> <name> [--theme=winter] [--backed=r2,r4] [--race] [--finish] [--intro] [--hud]
-// --race   16 frames spread over the whole broadcast (pre-roll -> finish), 4x4 sheet
+// --race   16 frames spread over the whole broadcast (pre-roll -> finish), 4x4 sheet (--few: 6 frames, 3x2)
 // --finish the finish set-piece played in real time from ~10 s out (approach, line, slow-mo, photo, replay, stamp)
 // --intro  title flyover + two runner close-ups + group
 // --hud    one full-size 1920x1080 mid-race frame
@@ -51,9 +51,12 @@ function sheet(files, labels, outFile, cols = 4) {
 if (flag('race')) {
   const { dur, pre, fin } = await page.evaluate(() => ({ dur: window.view.durationS, pre: window.view.preRollS, fin: window.view._debug.sim.firstFinishB }));
   const times = [];
-  times.push(-6, 1.5);
-  const a = 8, b = fin - 14; for (let i = 0; i < 11; i++) times.push(a + ((b - a) * i) / 10);
-  times.push(fin - 6, fin - 1.5, fin + 4);
+  if (flag('few')) times.push(1.5, 30, 55, 85, fin - 6, fin + 4); // --few: 6 frames (theme variants)
+  else {
+    times.push(-6, 1.5);
+    const a = 8, b = fin - 14; for (let i = 0; i < 11; i++) times.push(a + ((b - a) * i) / 10);
+    times.push(fin - 6, fin - 1.5, fin + 4);
+  }
   const files = [], labels = [];
   for (const [i, t] of times.entries()) {
     await page.evaluate((t) => window.view._debug.seek(t, 2.5), t);
@@ -61,7 +64,7 @@ if (flag('race')) {
     const L = await label(); files.push(f); labels.push(`${t.toFixed(1)}s ${L.shot} h=${Math.round(L.frac * 100)}%`);
     console.log(f, labels.at(-1));
   }
-  sheet(files, labels, `${name}-sheet.jpg`);
+  sheet(files, labels, `${name}-sheet.jpg`, flag('few') ? 3 : 4);
   void dur; void pre;
 }
 if (flag('finish')) {
@@ -89,7 +92,8 @@ if (flag('intro')) {
 }
 if (flag('hud')) {
   const t = Number(val('hud')) || 60;
-  await page.evaluate((t) => window.view._debug.seek(t, 2.5), t);
+  // play the last 1.5 s for real (breath puffs, particles, emotes are live), then grab
+  await page.evaluate((t) => { const d = window.view._debug; d.seek(t - 1.5, 2.5); d.unpause(); for (let i = 0; i < 45; i++) d.step(1 / 30, false); d.render(); }, t);
   await snap(`${name}-hud.png`);
   console.log('hud', JSON.stringify(await label()));
 }

@@ -209,6 +209,7 @@ export function createHud(container, { runners, backedBy = {}, players = [], cou
   function setPlayers(list) { playersList = list || []; setBackedBy(bb0); }
   setBackedBy(backedBy);
   // tag sizes (for the overlap test in index.js), measured lazily
+  document.fonts?.ready?.then(() => { for (const id in tags) tags[id].w = 0; }).catch(() => {});
   function tagSize(id) { const t = tags[id]; if (!t.w) { t.w = t.el.offsetWidth || 160; t.h = t.el.offsetHeight || 36; } return [t.w, t.h]; }
 
   // ---------- PiP course map ----------

@@ -31,7 +31,8 @@ export const ODDS_FEATURES = ['vol28', 'vol7', 'long14', 'hard', 'rpw', 'form'];
 // supScale: fields in play are curated (form broadly holds), so a field superlative bites harder than on random synthetic
 // fields; a single constant factor, calibrated with tools/simulate.mjs, never this round's result. margin: bookie's edge.
 // supBottomX: "bottom" superlatives (quietest month, fewest runs, worst form) are even more telling than "top" ones.
-export const MODEL_DEFAULTS = { lambda: 50, sigma: 17, privateWeight: 0.95, supScale: 2.4, supBottomX: 2, margin: 0.045 };
+// longshotFloor: like any bookie, the house never offers silly prices: every runner is priced at no less than this probability.
+export const MODEL_DEFAULTS = { lambda: 50, sigma: 16, privateWeight: 0.95, supScale: 2.4, supBottomX: 1.4, margin: 0.055, longshotFloor: 0.025 };
 
 // Field superlatives (the DECISIVE clues): "busiest month in this field", "fewest runs here"... A superlative only counts
 // with a clear margin over the next runner. The house prices each one by its measured average effect (seconds vs the
@@ -197,6 +198,12 @@ export function winProbs(mus, sigma) {
   return p.map((x) => x / tot);
 }
 export function beatProb(muA, muB, sigma) { return Phi((muB - muA) / (sigma * SQ2)); }
+// Bookie's book from fair probabilities: a floor under the longest shots, renormalised (constant shading, never result-aware).
+export function bookProbs(probs, floor = MODEL_DEFAULTS.longshotFloor) {
+  const q = probs.map((x) => Math.max(x, floor || 0));
+  const t = q.reduce((a, b) => a + b, 0);
+  return q.map((x) => x / t);
+}
 
 // British fractional odds ladder (num/den). Decimal = num/den + 1 exactly.
 export const LADDER = [[1, 5], [2, 9], [1, 4], [2, 7], [1, 3], [4, 11], [2, 5], [4, 9], [1, 2], [8, 15], [4, 7], [8, 13], [4, 6], [8, 11], [4, 5], [5, 6], [10, 11],

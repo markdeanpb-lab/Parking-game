@@ -459,5 +459,5 @@ export function createRunner(info, opts = {}) {
   }
 
   function dispose() { for (const d of disposables) d.dispose?.(); pop.material.dispose(); }
-  return { id: info.id, info, root, update, set, setPop, setExpr, setProp, dispose, height: topY, hipH, get state() { return state; }, get variant() { return variant; } };
+  return { id: info.id, info, root, update, set, setPop, setExpr, setProp, dispose, height: topY, hipH, get popping() { return pop.visible; }, get state() { return state; }, get variant() { return variant; } };
 }

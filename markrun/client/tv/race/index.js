@@ -37,6 +37,16 @@
 // Timing uses real elapsed wall time (sub-stepped <= 0.1 s, at most 2 s catch-up per frame), so low fps never means
 //   slow motion. speed (opts.speed or setSpeed) scales the clock, e.g. 10 for fast e2e runs.
 // HUD: DOM overlay inside `container`; the bottom 15% is left clear for the shell's subtitles.
+// Iteration 4 (3D broadcast pass):
+// - opts.players / setPlayers(players): [{ name, avatar: { emoji, colour } }] (the shell's player list). backedBy may hold
+//   names or { name, avatar } objects; backers then show as their avatars on the position tower, the floating name
+//   tags, the PiP map and the ground rings. Without avatars the view falls back to coloured initials.
+// - Framing: runners at ~40-45% of the frame height in the tracking shots (director.js); no mid-race drone, a
+//   picture-in-picture course map instead; floating name + position tags (never stacked, hidden in close-ups).
+// - Finish: head-on camera that parks beyond the line, full-colour photo finish with a verdict, a place camera for
+//   the battle behind the winner (on runaways > 8 s, the finale follows the backed battle for the places).
+// - Themes: round.public.theme.visual = { season, weather, time } (fallback: theme.key) drives sky, light, fog, grade,
+//   particles, puddles, breath and crowd outfits (weather.js). Runner looks come from shared/portrait.js resolveLook().
 import * as THREE from 'three';
 import { buildCourse, PATH_W } from './course.js';
 import { buildWorld, mulberry } from './world.js';
@@ -100,7 +110,7 @@ export function createRaceView(container, opts = {}) {
   const byZone = new Map(); for (const m of crowdMembers) { const k = m.zone ?? 'x'; if (!byZone.has(k)) byZone.set(k, []); byZone.get(k).push(m); }
   const crowds = [...byZone.values()].map((list) => buildCrowd(scene, list));
   const weather = buildWeather({ scene, world, hemi, sun, sunDir, C, visual });
-  const crowd = { update: (...a) => { crowds.forEach((c) => c.update(...a)); fairCrowd?.update(...a); }, setMask: (fn) => crowds.forEach((c) => c.setMask(fn)), dispose: () => { crowds.forEach((c) => c.dispose()); fairCrowd?.dispose(); } };
+  const crowd = { update: (...a) => { crowds.forEach((c) => c.update(...a)); fairCrowd?.update(...a); }, setMask: (fn) => { crowds.forEach((c) => c.setMask(fn)); fairCrowd?.setMask(fn); }, dispose: () => { crowds.forEach((c) => c.dispose()); fairCrowd?.dispose(); } };
 
   // ---------- runners ----------
   const runners = {};
@@ -242,7 +252,7 @@ export function createRaceView(container, opts = {}) {
     const track = mode === 'race' && TRACK_SHOTS.has(director?.shot?.type);
     for (const id of ids) {
       const r = runners[id];
-      proj.set(r.root.position.x, r.root.position.y + r.height + 0.5, r.root.position.z);
+      proj.set(r.root.position.x, r.root.position.y + r.height + (r.popping ? 1.4 : 0.5), r.root.position.z); // above any emote bubble
       const dist = proj.distanceTo(camera.position);
       proj.project(camera);
       const pxTall = (r.height / Math.max(0.1, dist)) * focal;
@@ -635,6 +645,8 @@ export function createRaceView(container, opts = {}) {
       if (replay) st = sim.stateAt(replayB());
       // cut away trees between a tracking camera and its subject
       const occ = !freeze && marketT == null && TRACK_SHOTS.has(director.shot?.type);
+      // the side-on place camera looks across the line: the arch's near leg would fill its foreground
+      if (!freeze) world.anchors.finishArch.visible = !(director.shot?.type === 'placecam' && !replay);
       world.setOcclusionCorridor(occ ? camera.position : null, occ ? director.cam.look : null);
       // keep spectators out of the sightline: the camera->subject corridor of tracking shots, and the near side of
       // the line for the side-on place / photo cameras

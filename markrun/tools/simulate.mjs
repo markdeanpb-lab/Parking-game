@@ -14,7 +14,7 @@ import { bandOf } from '../server/game/themes.mjs';
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, x, i, arr) => (x.startsWith('--') ? [...a, [x.slice(2), arr[i + 1]?.startsWith('--') || arr[i + 1] == null ? true : arr[i + 1]]] : a), []));
 const SESSIONS = Number(args.sessions ?? 150), ROUNDS = Number(args.rounds ?? 8), SEED = Number(args.seed ?? 1);
 const settings = { drinks: true, rounds: ROUNDS };
-const num = { sigma: 'sigma', lambda: 'lambda', pw: 'privateWeight', wild: 'wildcardRate', gap: 'formGapBonus', band: 'bandS', holds: 'formHoldsBonus', pub: 'publicPricedBonus', ff: 'funfairRate', alt: 'alternatives', slack: 'altSlack', bias: 'tipFavourBias', pos: 'tipPositiveShare', rival: 'tipRivalBias', damp: 'tipDecisiveDamp' };
+const num = { ss: 'supScale', sb: 'supBottomX', floor: 'longshotFloor', margin: 'margin', pdr: 'privateDecisiveRate', sigma: 'sigma', lambda: 'lambda', pw: 'privateWeight', wild: 'wildcardRate', gap: 'formGapBonus', band: 'bandS', holds: 'formHoldsBonus', pub: 'publicPricedBonus', ff: 'funfairRate', alt: 'alternatives', slack: 'altSlack', bias: 'tipFavourBias', pos: 'tipPositiveShare', rival: 'tipRivalBias', damp: 'tipDecisiveDamp' };
 for (const [k, v] of Object.entries(num)) if (args[k] != null) settings[v] = Number(args[k]);
 if (args.features) settings.modelFeatures = String(args.features).split(',');
 if (args.runner) settings.runnerPlayerId = 'p2';

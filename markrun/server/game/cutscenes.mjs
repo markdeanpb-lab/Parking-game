@@ -185,15 +185,18 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
         : (lap === 1 ? (variant === 'launch' ? [{ speaker: 'jeff', text: 'He\'s been LAUNCHED back onto the course!' }] : [{ speaker: 'pam', text: 'Parkrunner. Fair.' }]) : [{ speaker: 'jeff', text: 'DING DING DING! Somebody fetch that bell!' }]);
       const setKind = sig;
       const setDur = sig === 'hook_a_duck' ? (lap === 1 ? DUR.hook_a_duck : DUR.hook_a_duck2) : (lap === 1 ? DUR.test_strength : DUR.test_strength2);
-      const setB = B(id, mid);
-      let setPiece = mk(setKind, id, 'freeze', setB, { group: g, durationS: setDur, params: { ...tag, stage: 'fair' }, lines: setLines, score: 10 });
+      // beats are laid out in WALL time inside the slow-mo window so no two camera beats overlap
+      const signB = B(id, d.fromM - 50), droneB = Math.max(B(id, d.fromM + 25), signB + (DUR.funfair_sign + 0.3) * rate);
+      const setB = Math.max(B(id, mid), (lap === 1 ? droneB + (DUR.funfair_drone + 0.3) * rate : B(id, mid)));
+      const mSet = Math.max(d.fromM + 40, Math.min(d.toM - 40, distanceAt(byId[id].progress, broadcastToRace(tm, setB))));
+      let setPiece = mk(setKind, id, 'freeze', setB, { group: g, durationS: setDur, params: { ...tag, atM: Math.round(mSet), stage: 'fair' }, lines: setLines, score: 10 });
       const rejoinLine = v === 'even' ? { speaker: 'pam', text: 'And he\'s lost... no time at all. Suspicious.' }
         : v === 'slow' ? { speaker: 'jeff', text: `That cost him ${Math.max(1, Math.round(d.costS))} seconds!` }
           : { speaker: 'pam', text: 'He came out quicker than he went in. I want a steward\'s enquiry.' };
-      const rejoin = mk('funfair_rejoin', id, 'inset', B(id, d.toM - 22), { group: g, params: { ...tag, pip: false }, lines: [rejoinLine] });
+      const rejoin = mk('funfair_rejoin', id, 'inset', Math.min(slowTo - DUR.funfair_rejoin * rate, Math.max(B(id, d.toM - 22), setB + 0.6 * rate)), { group: g, params: { ...tag, pip: false }, lines: [rejoinLine] });
       if (lap === 1) {
-        pkg.push(sl, mk('funfair_sign', id, 'inset', B(id, d.fromM - 50), { group: g, params: { ...tag, pip: false }, lines: [{ speaker: 'jeff', text: 'Hang on, hang on, there\'s a DIVERSION!' }] }));
-        pkg.push(mk('funfair_drone', id, 'inset', B(id, d.fromM + 25), { group: g, params: { ...tag, pip: false }, lines: [] }));
+        pkg.push(sl, mk('funfair_sign', id, 'inset', signB, { group: g, params: { ...tag, pip: false }, lines: [{ speaker: 'jeff', text: 'Hang on, hang on, there\'s a DIVERSION!' }] }));
+        pkg.push(mk('funfair_drone', id, 'inset', droneB, { group: g, params: { ...tag, pip: false }, lines: [] }));
       } else pkg.push(sl);
       pkg.push(setPiece, rejoin);
       const truthAll = `${name(id)}'s real GPS trace left the usual course at ${km(d.fromM)} and bulged up to ${d.maxOffM} m round the fairground before rejoining at ${km(d.toM)}${laps.length > 1 ? ' (he did it on both laps)' : ''}. Through that detour he ran ${v === 'even' ? 'within 3% of' : `${pct(d.ratio)}% ${v === 'slow' ? 'slower than' : 'quicker than'}`} his average pace. The ${sig === 'hook_a_duck' ? 'hook-a-duck' : 'strongman'} bit is a dramatisation.`;
