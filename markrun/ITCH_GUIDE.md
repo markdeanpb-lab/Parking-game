@@ -1,6 +1,6 @@
 # Putting MARKRUN on itch.io (private) — step by step
 
-You only need `markrun-itch.zip`: `release/markrun-itch.zip` in this repository, about 0.7 MB. There's nothing to install.
+You only need `markrun-itch.zip`: `release/markrun-itch.zip` in this repository, about 3.2 MB (it includes the music). There's nothing to install.
 
 ## 1. Create the project (on a computer, about 5 minutes)
 1. Sign in at **itch.io**, open the account menu (top right), choose **Upload new project**.
@@ -14,7 +14,8 @@ You only need `markrun-itch.zip`: `release/markrun-itch.zip` in this repository,
    - Tick **Mobile friendly**, and set orientation to **Portrait**.
    - Tick **Fullscreen button**.
    - Tick **Automatically start on page load**.
-   - Leave **Click to launch in fullscreen**, **Enable scrollbars** and **SharedArrayBuffer support** **off**.
+   - Leave **Click to launch in fullscreen** and **Enable scrollbars** **off**.
+   - Tick **SharedArrayBuffer support**: this lets the premium commentary voices use several CPU cores, so they're ready faster.
 5. **Visibility & access:** keep it as **Draft**. This keeps it private.
 6. Click **Save**. On the project's edit page, itch shows a **Secret URL** for drafts. Copy it. Anyone with this link can play: share it only with your wife.
 
@@ -39,6 +40,7 @@ You only need `markrun-itch.zip`: `release/markrun-itch.zip` in this repository,
 | No voices | Click once on the TV. Subtitles always show. |
 
 ## Good to know
+- **Premium voices:** the first time, the TV downloads the commentary voice model (about 90 MB) in the background. Until it's ready, commentary uses the browser's built-in voice. After that it's cached. You can switch it off in ⚙ Options.
 - It needs the internet. A free public service (PeerJS) introduces the phones to the TV, then they talk directly.
 - Keep the TV tab in the foreground while playing.
 - Your running data is inside the zip (results, pacing, facts; no GPS routes from your other runs). Keep the project as Draft or Restricted.
