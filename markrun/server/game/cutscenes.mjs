@@ -25,7 +25,7 @@ import { makeRng } from './rng.mjs';
 
 export const RULES = {
   maxPausing: 1, maxPauseS: 18, pauseGapS: 20, anyGapS: 6, startQuietS: 8, noGoM: 4700, maxInsets: 3,
-  cooldownRaces: 4, cooldownLiveRaces: 3, marketGapS: 6, battleGapS: 2, battleWindowS: 3.5, scrumM: 1000,
+  cooldownRaces: 4, cooldownLiveRaces: 3, marketGapS: 6, battleGapS: 2, battleWindowS: 3.5, scrumM: 1000, funfairGate: 0.45,
 };
 const HILLS = [[1720, 1960], [4220, 4460]];
 // lap-1 equivalent course zones (approximate metres; lap 2 = m - 2500)
@@ -63,12 +63,12 @@ export const CUTSCENE_KINDS = {
   pb_bell: { cat: 'finish', label: 'The PB Bell', ref: '2/9', story: true },
   wrong_kit_bag: { cat: 'start', label: 'The Wrong Kit Bag', ref: '2/10' },
 };
-export const BENCHED = new Set(['mirror_signal']); // docs/CUTSCENE_IDEAS_2.md section 4
+export const BENCHED = new Set(['mirror_signal', 'before_after']); // docs/CUTSCENE_IDEAS_2.md section 4
 export const PAUSING = new Set(['freeze', 'replay']);
 // default wall durations (s)
 const DUR = { funfair_sign: 2.6, funfair_drone: 5.8, hook_a_duck: 7, hook_a_duck2: 5, test_strength: 6.5, test_strength2: 6, funfair_rejoin: 2.8,
-  goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 5.5, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 6,
-  pointing_standoff: 7, mirror_routine: 5, heart_vs_heart: 5, before_after: 5, incline_button: 5, pb_bell: 4.5, road_to_100: 3.2, breakfast: 4.2, wrong_kit_bag: 5, sub20_wall: 6 };
+  goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 6.0, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 6,
+  pointing_standoff: 7, mirror_routine: 5, heart_vs_heart: 5, before_after: 5, incline_button: 5, pb_bell: 4.5, road_to_100: 2.0, breakfast: 4.2, wrong_kit_bag: 5, sub20_wall: 6 };
 
 // Line banks (3-4 per kind; one line plays per cutscene, never repeated within a night) and visual variants.
 const J = (text) => ({ speaker: 'jeff', text }), P = (text) => ({ speaker: 'pam', text });
@@ -100,7 +100,9 @@ export const LINE_BANKS = {
   before_after: [P('One of them knows how it goes.'), J('That\'s the SAME RACE! He\'s run it and he HASN\'T run it!'), P('Don\'t tell him. He\'ll only worry.')],
   road_to_100: [P('He needs to get to a hundred. He knows.'), J('Stamp it, Maureen! STAMP IT!'), P('Free coffee at a hundred. Probably.')],
   incline_button: [P('Outdoors doesn\'t have a console.'), J('He\'s looking for the INCLINE BUTTON!'), P('That\'s what Thursdays indoors do to a man.')],
-  pb_bell: [J('RING THE BELL! That was a PERSONAL BEST on the day!'), P('Twenty-one of these in the archive. The bell is tired.'), P('That\'s the goose\'s bell now.')],
+  pb_bell_1: [J('RING THE BELL! That was a PERSONAL BEST on the day!'), J('A PB! RING IT, MAUREEN!'), P('Personal best. The bell approves.')],
+  pb_bell_2: [P('Twenty-one of these in the archive. The bell is tired.'), J('Where\'s the ROPE gone?'), P('A cone. Of course.')],
+  pb_bell_3: [P('That\'s the goose\'s bell now.'), J('NOT THE BELL!'), P('Three PBs. One bell. No bell.')],
   wrong_kit_bag: [P('Wrong bag.'), J('He\'s brought the WRONG KIT!'), P('Some of him is still at the gym.')],
 };
 export const VISUAL_VARIANTS = {
@@ -109,7 +111,7 @@ export const VISUAL_VARIANTS = {
   photographer: ['goose', 'thumb'], sore_loser_var: ['squirrel', 'pigeon'], hook_a_duck: ['goose', 'duck'], test_strength: ['jeff', 'pam'],
 };
 // the three gags whose picture is weakest fire less often until a stronger staging lands (rates ~15-20% a race)
-const GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6, breakfast: 0.3, wrong_kit_bag: 0.3, incline_button: 0.5, heart_vs_heart: 0.8, mirror_routine: 0.8, before_after: 0.9, pb_bell: 0.9 };
+const GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6, breakfast: 0.15, wrong_kit_bag: 0.3, incline_button: 0.5, heart_vs_heart: 0.8, mirror_routine: 0.8, before_after: 0.9, pb_bell: 0.9 };
 export const PER_NIGHT_CAP = 2;
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -217,7 +219,9 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
 
   // ---------- 1. funfair package (the fix for "you couldn't even see the funfair") ----------
   const diverters = PR.filter((r) => r.diversions?.length);
-  if (diverters.length && (!capped('funfair_stretch') || ['hook_a_duck', 'test_strength'].includes(force))) {
+  // the fair is rare: a real diversion in the field AND a 45% gate, at most one package a night (~9% of races)
+  const funfairOk = ['hook_a_duck', 'test_strength'].includes(force) || ((cm.night.funfair_stretch || 0) < 1 && R.next() < RULES.funfairGate);
+  if (diverters.length && funfairOk) {
     const cand = [...diverters].sort((a, b) => (rel(b.id) - rel(a.id)) || (Math.abs(S[b.id].divPace[0].ratio - 1) - Math.abs(S[a.id].divPace[0].ratio - 1)));
     for (const r of cand) {
       const pkg = funfairPackage(r);
@@ -228,7 +232,8 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     const id = r.id, st = S[id];
     const sigs = ['hook_a_duck', 'test_strength'];
     const usedSigs = cm.funfairSigs || [];
-    let sig = force && sigs.includes(force) ? force : sigs.find((s) => !usedSigs.includes(s)) || R.pick(sigs);
+    const unused = sigs.filter((x) => !usedSigs.includes(x)), pickFrom = unused.length ? unused : sigs;
+    let sig = force && sigs.includes(force) ? force : pickFrom[Math.floor(R.next() * pickFrom.length)];
     const pkg = [];
     const laps = st.divPace.slice(0, 2);
     for (const [i, d] of laps.entries()) {
@@ -432,7 +437,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   // 5. Half Marathon Before Breakfast (pre): a run logged earlier that same morning
   {
     const wu = PR.map((r) => ({ r, km: Number(fact(r.id, 'warmup_km')?.km ?? 0) })).filter((x) => x.km > 0).sort((a, b) => b.km - a.km)[0];
-    if (wu && !capped('breakfast') && (wu.km >= 8 || gate('breakfast')) || (force === 'breakfast')) {
+    if (wu && !capped('breakfast') && gate('breakfast') || (force === 'breakfast')) { // held low until it is restaged
       const x = wu || { r: order[0], km: 2.1 };
       const big = x.km >= 8;
       C.push(mk('breakfast', x.r.id, 'pre', -8.4, { durationS: big ? 5.4 : 4.1, // before the race title card (-4.2) params: { km: Math.round(x.km * 10) / 10, variant: big ? 'big' : 'standard' }, score: big ? 9 : 4,
@@ -443,7 +448,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   {
     let pair = null;
     for (const a of PR) for (const b of PR) { if (a === b) continue; const up = fact(a.id, 'race_upcoming'), rec = fact(b.id, 'race_recent'); if (up?.name && rec?.name && up.name === rec.name) pair = pair || { a, b, up, rec }; }
-    if (pair && cool('before_after')) {
+    if (pair && ((!BENCHED.has('before_after') && cool('before_after')) || force === 'before_after')) {
       const at = Math.max(22, Math.min(B(pair.a.id, 3000), B(pair.b.id, 3000)));
       C.push(mk('before_after', pair.a.id, 'inset', at, { params: { other: pair.b.id, pip: true }, score: 5.5,
         truth: `One of these runs was ${pair.up.days_after} day${pair.up.days_after === 1 ? '' : 's'} before a ${Math.round(pair.up.km || 0) >= 20 ? 'half marathon' : 'race'}; the other was ${pair.rec.days_before} days after the very same race.` }));
@@ -452,7 +457,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   // 7. Road to 100 (post tag, every race): Maureen stamps the five run numbers on a 100-box loyalty card
   {
     const nums = PR.map((r) => ({ id: r.id, n: Number(fact(r.id, 'finsbury_number')) })).filter((x) => Number.isFinite(x.n) && x.n > 0);
-    if (nums.length) C.push(mk('road_to_100', order[0].id, 'post', postB2 + 0.01, { durationS: 3.2, params: { tag: true, numbers: nums.map((x) => x.n).sort((a, b) => a - b), before: [...(cm.road || [])] }, score: 0,
+    if (nums.length) C.push(mk('road_to_100', order[0].id, 'post', postB2 + 0.01, { durationS: 2.0, params: { tag: true, numbers: nums.map((x) => x.n).sort((a, b) => a - b), before: [...(cm.road || [])] }, score: 0,
       truth: `Tonight's runs were Finsbury runs number ${nums.map((x) => x.n).sort((a, b) => a - b).join(', ')}. He has run it 98 times.` }));
   }
   // 8. Where's the Incline Button? (live): a treadmill session that week and a lap-1 Hill 15%+ slower than average
@@ -525,6 +530,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     let bankKey = c.kind;
     if (c.kind === 'hook_a_duck') bankKey = `hook_a_duck_${c.params.lap === 2 ? 2 : 1}`;
     if (c.kind === 'test_strength') bankKey = `test_strength_${c.params.variant || 'creep'}`;
+    if (c.kind === 'pb_bell') bankKey = `pb_bell_${c.params.ring || 1}`;
     if (c.kind === 'funfair_rejoin') { const r = c.params.ratio ?? 1; bankKey = r <= 0.97 ? 'rejoin_fast' : r >= 1.03 ? 'rejoin_slow' : 'rejoin_even'; }
     if (c.kind === 'road_to_100' && !c.params.numbers.some((n) => n >= 95)) { c.lines = []; continue; } // the card is wordless unless the later runs are in
     if (LINE_BANKS[bankKey] && !c.params.callback) c.lines = [pickLine(LINE_BANKS[bankKey], { n: Math.max(1, Math.round(c.params.costS ?? 0)) })];

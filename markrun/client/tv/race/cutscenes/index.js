@@ -115,6 +115,7 @@ export function createCutscenePlayer(ctx) {
     let wantHide = [];
     for (const e of act) {
       const I = e.inst, c = e.cs;
+      if (e.pausing && e.t < e.dur && I.noSting) { I.update(e.t, dt, b, { gagDur: e.dur, phase: 'tag' }); continue; }
       if (e.pausing && e.t < e.dur) {
         const g = e.t - INTRO, gagDur = e.dur - INTRO - OUTRO;
         paused = c.mode !== 'post';

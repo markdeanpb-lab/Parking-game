@@ -222,7 +222,7 @@ SCENES.funfair_drone = (K, cs) => {
       K.cam(camP, lookAt, 58, 0, { sun: 120 });
       arrow.position.set(st.x, st.y + 4.6 + Math.sin(t0 * 6) * 0.3, st.z); arrow.scale.set(1.6 * 128 / 160, 1.6, 1);
       dots.visible = false; lab.visible = false; dashes.visible = false;
-      K.ov.caption(t0 > 0.3 ? 'MEANWHILE, AT THE FAIR…' : null, { yellow: true });
+      K.ov.caption(t0 > 0.3 ? 'AT THE FAIR…' : null, { yellow: true });
       void rides;
       return;
     }
@@ -563,14 +563,14 @@ SCENES.test_strength = (K, cs) => {
       }
       const tgt = (T.labelY(2) - 0.6) / (T.H - 1.35);
       puckF = t < 1.15 ? 0 : tgt * easeOut((t - 1.15) / 1.6) + (t > 2.75 ? Math.sin((t - 2.75) * 14) * 0.012 * Math.max(0, 1 - (t - 2.75) * 2) : 0);
-      whack.visible = t > 1.15 && t < 1.6; if (whack.visible) { whack.position.copy(strikerW).add(V(0, 3.2, 0)); popScale(whack, t, 1.15); }
+      whack.visible = t > 1.15 && t < 1.6; if (whack.visible) { whack.position.copy(strikerW).add(V(0, 1.9, 0)); popScale(whack, t, 1.15); }
       T.glow.material.opacity = t > 2.75 ? 0.75 + Math.sin(t * 12) * 0.2 : 0; T.glow.position.y = T.labelY(2);
       cue('line', t > 3.1, () => K.say(cs.lines?.[0]));
       if (t < 1.2) { shot(f.p(-6.4, -s2 * 2.0, 2.0), towerPos.clone().add(V(0, 2.2, 0)), 52); K.ov.caption(t > 0.3 ? 'TEST YOUR STRENGTH' : null, { yellow: true }); }
       else if (t < 3.6) {
         const py = wp(T.puck, V());
         shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 3.0).addScaledVector(V(f.tx, 0, f.tz), -1.2).add(V(0, py.y - towerPos.y + 2.6, 0)), py.clone().add(V(0, 0.1, 0)), 46);
-        K.ov.caption(t > 2.8 ? 'PARKRUNNER.' : t > 1.9 ? 'WOBBLY…' : t > 1.3 ? 'FEEBLE…' : null, { yellow: t > 2.8 });
+        K.ov.caption(t > 2.8 ? 'PARKRUNNER.' : t > 2.1 ? 'WOBBLY…' : t > 1.62 ? 'FEEBLE…' : null, { yellow: t > 2.8 });
       } else { shot(f.p(-6, -s2 * 2.2, 2.0), A.root.position.clone().add(V(0, 1.3, 0)), 42); K.ov.caption(null); }
     }
     T.puck.position.set(0, T.puckY(puckF), 0.14);
@@ -910,7 +910,7 @@ SCENES.cannonball = (K, cs) => {
   const puffs = makePuffs(I.bag, 10, '#ffffff'); root.add(puffs.root);
   const boom = sprite(I.bag, bubbleTexture(I.bag, cata ? 'TWANG!' : 'BOOM!', { burst: true, w: 512, h: 300, size: 140, bg: '#ffd23f' }), 1.5, 512 / 300); root.add(boom); boom.visible = false;
   const fwd = V(st0.tx, 0, st0.tz), right = V(st0.rx, 0, st0.rz);
-  const ELEV = 0.42;
+  const ELEV = 0.42, LAUNCH = 0.85;
   let placed = false, slot = null, side = 1, land = null, muzzle = null, dir = null;
   const cue = cues();
   I.update = (t, dt, b) => {
@@ -919,13 +919,13 @@ SCENES.cannonball = (K, cs) => {
       const p = slot.clone().addScaledVector(fwd, -4.6); p.y = K.C.heightAt(p.x, p.z) + 0.05;
       C0.g.position.copy(p); C0.g.rotation.set(0, Math.atan2(fwd.x, fwd.z), 0);
       side = openSide(K.world, st0, 9);
-      const s1 = K.sim.stateAt(1.1).byId[cs.who]; land = V(s1.x, s1.y, s1.z);
+      const s1 = K.sim.stateAt(LAUNCH + 1.1).byId[cs.who]; land = V(s1.x, s1.y, s1.z);
       if (!cata) C0.barrel.rotation.x = -ELEV;
     }
     if (!slot) return;
-    const bb = b;
-    I.camera = bb > -2.0 && bb < 2.1;
-    I.hide = bb < 1.1 ? [cs.who] : 'none'; // the real runner appears where he lands
+    const bb = b - LAUNCH; // a slow fuse: it fires once the HUD's GO! has cleared
+    I.camera = b > -2.0 && bb < 1.6;
+    I.hide = bb < 1.1 ? [cs.who] : 'none'; // the real runner appears exactly where he really is when the copy lands
     C0.g.updateMatrixWorld(true);
     if (cata) {
       const sw = bb < 0 ? 0 : Math.min(1, bb / 0.18);
@@ -961,13 +961,15 @@ SCENES.cannonball = (K, cs) => {
     cue('flash', bb > 0, () => K.ov.flash(0.5));
     cue('line', bb > 0.35, () => K.say(cs.lines?.[0]));
     // captions avoid the countdown numbers (centre) and GO! (until ~0.8 s)
-    K.ov.caption(bb < -0.25 ? 'LOADED…' : bb > 0.85 && bb < 2.0 ? 'HUMAN CANNONBALL!' : null, { yellow: bb > 0 });
+    K.ov.caption(b < -0.25 ? 'LOADED…' : bb < 0 && b > 0.75 ? 'FUSE…' : bb > 0.2 && bb < 1.5 ? 'HUMAN CANNONBALL!' : null, { yellow: bb > 0 });
     if (I.camera) {
       // side-on, wide: the cannon at left, his arc across the frame
       // loaded: close on the cannon and his face; then follow him up and over
       const cpos = C0.g.position;
-      if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 5.5).addScaledVector(fwd, 2.4).add(V(0, 2.6, 0)), muzzle.clone().addScaledVector(fwd, -1.0).add(V(0, -0.6, 0)), 44);
-      else { const target = A.root.visible ? A.root.position.clone() : land.clone(); K.cam(cpos.clone().addScaledVector(right, side * 11).addScaledVector(fwd, 2.5 + flyU * 5).add(V(0, 3.4, 0)), target.add(V(0, 1.2, 0)), 50); }
+      // the HUD's 3-2-1-GO! sits mid-screen: the cannon and his flight are framed in the lower-left third, clear of it
+      if (b < 0) K.cam(cpos.clone().addScaledVector(right, side * 6.5).addScaledVector(fwd, 1.0).add(V(0, 2.4, 0)), muzzle.clone().addScaledVector(fwd, 3.2).add(V(0, 1.6, 0)), 46); // 3-2-1 sits mid-screen; the cannon sits low-left
+      else if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 5.5).addScaledVector(fwd, 2.4).add(V(0, 2.4, 0)), muzzle.clone().add(V(0, 0.2, 0)), 44); // fizzing fuse, close on his face
+      else { const target = A.root.visible ? A.root.position.clone() : land.clone(); K.cam(cpos.clone().addScaledVector(right, side * 11).addScaledVector(fwd, 2.5 + flyU * 5).add(V(0, 3.0, 0)), target.add(V(0, 1.2, 0)), 52); }
     }
   };
   return I;
@@ -980,7 +982,7 @@ SCENES.raincloud = (K, cs) => {
   const zap = cs.params.variant === 'lightning';
   const root = I.bag.group();
   const cloud = makeCloud(I.bag, { scale: 1.15 }); root.add(cloud);
-  const rain = makeRain(I.bag, 80, { w: 1.8, h: 3.0 }); cloud.add(rain.mesh); rain.mesh.position.y = -0.4;
+  const rain = makeRain(I.bag, 90, { w: 1.1, h: 2.6 }); cloud.add(rain.mesh); rain.mesh.position.y = -0.4; // a narrow column: on him alone
   const umb = makeUmbrella(I.bag); umb.visible = false; root.add(umb);
   // a tiny cartoon lightning bolt (variant)
   const bolt = new THREE.Mesh(I.bag.add(new THREE.ExtrudeGeometry((() => { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(0.35, 0.9); sh.lineTo(0.12, 0.9); sh.lineTo(0.42, 1.8); sh.lineTo(-0.05, 0.7); sh.lineTo(0.16, 0.7); sh.lineTo(-0.2, 0); return sh; })(), { depth: 0.08, bevelEnabled: false })), I.bag.basic('#ffe23f'));
@@ -993,12 +995,12 @@ SCENES.raincloud = (K, cs) => {
     const st = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
     const right = V(-st.tz, 0, st.tx), fwd = V(st.tx, 0, st.tz);
     // sidestep left (0.9-1.3 s), then right (1.8-2.3 s): lateral, visual only
-    const lat = (smooth(0.8, 1.2, t) - smooth(1.7, 2.2, t)) * -1.1 + (smooth(1.7, 2.2, t) - smooth(3.1, 3.5, t)) * 1.1;
+    const lat = (smooth(0.8, 1.2, t) - smooth(1.7, 2.2, t)) * -0.7 + (smooth(1.7, 2.2, t) - smooth(3.1, 3.5, t)) * 0.7;
     r.root.position.addScaledVector(right, lat);
-    const head = r.root.position.clone().add(V(0, r.height + 1.45, 0));
-    if (!init) { cloudPos.copy(head); init = true; }
-    cloudPos.lerp(head, Math.min(1, dt * (t > 0.8 && t < 2.6 ? 3.0 : 8)));
-    cloud.position.copy(cloudPos);
+    // the cloud rides directly over his head; it only lags his sidesteps (lateral), never the running
+    if (!init) { cloudPos.set(lat, 0, 0); init = true; }
+    cloudPos.x += (lat - cloudPos.x) * Math.min(1, dt * 4.5);
+    cloud.position.copy(r.root.position).addScaledVector(right, cloudPos.x - lat).add(V(0, r.height + 1.05, 0));
     const tilt = zap ? 0 : smooth(3.0, 3.5, t) * 1.15;
     cloud.rotation.set(0, Math.atan2(st.tx, st.tz), -tilt);
     if (tilt > 0.05) cloud.position.addScaledVector(right, -tilt * 1.6).add(V(0, -tilt * 0.9, 0));

@@ -37816,7 +37816,7 @@ var CSS2 = `
 .mrc-banner b{display:inline-block;font-weight:400;font-size:calc(var(--u)*4.6);padding:calc(var(--u)*.25) calc(var(--u)*2.2);background:var(--bg,#ff3d8b);border:calc(var(--u)*.45) solid var(--ink);
   border-radius:calc(var(--u)*1.2);transform:skewX(var(--sk));box-shadow:0 calc(var(--u)*.7) 0 var(--ink);-webkit-text-stroke:calc(var(--u)*.35) var(--ink);paint-order:stroke fill}
 .mrc-banner b span{display:inline-block;transform:skewX(var(--usk))}
-.mrc-cap{position:absolute;left:50%;bottom:23%;transform:translate(-50%,40%) scale(.85);opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);white-space:nowrap;
+.mrc-cap{position:absolute;left:50%;bottom:23%;transform:translate(-50%,40%) scale(.85);opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);width:max-content;max-width:86%;text-align:center;line-height:1.05;
   font-size:calc(var(--u)*3.6);color:#fff;-webkit-text-stroke:calc(var(--u)*.42) var(--ink);paint-order:stroke fill;text-shadow:0 calc(var(--u)*.5) 0 rgba(0,0,0,.35)}
 .mrc-cap.on{opacity:1;transform:translate(-50%,0) scale(1)}
 .mrc-cap.y{color:#ffd23f}
@@ -38033,7 +38033,7 @@ function createOverlay(container, hudRoot) {
   if (!document.getElementById("mrc-style2")) {
     const s2 = document.createElement("style");
     s2.id = "mrc-style2";
-    s2.textContent = ".mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner,.mrc-cut .mr-title{opacity:0!important}body.mrc-active #subs{bottom:14px!important}body.mrc-active #subs .sub:not(:last-child){display:none}body.mrc-active #subs .sub{font-size:48px;padding:12px 34px 14px 18px;border-width:5px;background:rgba(20,24,60,.94);text-shadow:0 3px 0 #000}body.mrc-active #subs .sub .who{font-size:30px}";
+    s2.textContent = ".mrc-paused .mr-tower,.mrc-paused .mr-top,.mrc-paused .mr-map{filter:grayscale(1) brightness(.9);opacity:.8;transition:filter .2s,opacity .2s}.mrc-paused .mr-tags{opacity:0}.mrc-cut .mr-close,.mrc-cut .mr-banner,.mrc-cut .mr-title{opacity:0!important}body.mrc-active #subs{bottom:14px!important}body.mrc-active #subs .sub:not(:last-child){display:none}body.mrc-active #subs .sub{font-size:44px;padding:12px 34px 14px 18px;border-width:5px;background:rgba(20,24,60,.94);text-shadow:0 3px 0 #000;white-space:normal;max-width:1400px;text-align:center}body.mrc-active #subs .sub .who{font-size:30px}";
     document.head.appendChild(s2);
   }
   void flashT;
@@ -38988,7 +38988,7 @@ SCENES.funfair_drone = (K, cs) => {
       dots.visible = false;
       lab.visible = false;
       dashes.visible = false;
-      K.ov.caption(t0 > 0.3 ? "MEANWHILE, AT THE FAIR\u2026" : null, { yellow: true });
+      K.ov.caption(t0 > 0.3 ? "AT THE FAIR\u2026" : null, { yellow: true });
       void rides;
       return;
     }
@@ -39543,7 +39543,7 @@ SCENES.test_strength = (K, cs) => {
       puckF = t < 1.15 ? 0 : tgt * easeOut((t - 1.15) / 1.6) + (t > 2.75 ? Math.sin((t - 2.75) * 14) * 0.012 * Math.max(0, 1 - (t - 2.75) * 2) : 0);
       whack.visible = t > 1.15 && t < 1.6;
       if (whack.visible) {
-        whack.position.copy(strikerW).add(V(0, 3.2, 0));
+        whack.position.copy(strikerW).add(V(0, 1.9, 0));
         popScale(whack, t, 1.15);
       }
       T.glow.material.opacity = t > 2.75 ? 0.75 + Math.sin(t * 12) * 0.2 : 0;
@@ -39555,7 +39555,7 @@ SCENES.test_strength = (K, cs) => {
       } else if (t < 3.6) {
         const py2 = wp(T.puck, V());
         shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 3).addScaledVector(V(f.tx, 0, f.tz), -1.2).add(V(0, py2.y - towerPos.y + 2.6, 0)), py2.clone().add(V(0, 0.1, 0)), 46);
-        K.ov.caption(t > 2.8 ? "PARKRUNNER." : t > 1.9 ? "WOBBLY\u2026" : t > 1.3 ? "FEEBLE\u2026" : null, { yellow: t > 2.8 });
+        K.ov.caption(t > 2.8 ? "PARKRUNNER." : t > 2.1 ? "WOBBLY\u2026" : t > 1.62 ? "FEEBLE\u2026" : null, { yellow: t > 2.8 });
       } else {
         shot(f.p(-6, -s2 * 2.2, 2), A.root.position.clone().add(V(0, 1.3, 0)), 42);
         K.ov.caption(null);
@@ -40089,7 +40089,7 @@ SCENES.cannonball = (K, cs) => {
   root.add(boom);
   boom.visible = false;
   const fwd = V(st0.tx, 0, st0.tz), right = V(st0.rx, 0, st0.rz);
-  const ELEV = 0.42;
+  const ELEV = 0.42, LAUNCH = 0.85;
   let placed = false, slot = null, side = 1, land = null, muzzle = null, dir = null;
   const cue = cues();
   I.update = (t, dt, b) => {
@@ -40101,13 +40101,13 @@ SCENES.cannonball = (K, cs) => {
       C0.g.position.copy(p);
       C0.g.rotation.set(0, Math.atan2(fwd.x, fwd.z), 0);
       side = openSide(K.world, st0, 9);
-      const s1 = K.sim.stateAt(1.1).byId[cs.who];
+      const s1 = K.sim.stateAt(LAUNCH + 1.1).byId[cs.who];
       land = V(s1.x, s1.y, s1.z);
       if (!cata) C0.barrel.rotation.x = -ELEV;
     }
     if (!slot) return;
-    const bb = b;
-    I.camera = bb > -2 && bb < 2.1;
+    const bb = b - LAUNCH;
+    I.camera = b > -2 && bb < 1.6;
     I.hide = bb < 1.1 ? [cs.who] : "none";
     C0.g.updateMatrixWorld(true);
     if (cata) {
@@ -40159,13 +40159,14 @@ SCENES.cannonball = (K, cs) => {
     }
     cue("flash", bb > 0, () => K.ov.flash(0.5));
     cue("line", bb > 0.35, () => K.say(cs.lines?.[0]));
-    K.ov.caption(bb < -0.25 ? "LOADED\u2026" : bb > 0.85 && bb < 2 ? "HUMAN CANNONBALL!" : null, { yellow: bb > 0 });
+    K.ov.caption(b < -0.25 ? "LOADED\u2026" : bb < 0 && b > 0.75 ? "FUSE\u2026" : bb > 0.2 && bb < 1.5 ? "HUMAN CANNONBALL!" : null, { yellow: bb > 0 });
     if (I.camera) {
       const cpos = C0.g.position;
-      if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 5.5).addScaledVector(fwd, 2.4).add(V(0, 2.6, 0)), muzzle.clone().addScaledVector(fwd, -1).add(V(0, -0.6, 0)), 44);
+      if (b < 0) K.cam(cpos.clone().addScaledVector(right, side * 6.5).addScaledVector(fwd, 1).add(V(0, 2.4, 0)), muzzle.clone().addScaledVector(fwd, 3.2).add(V(0, 1.6, 0)), 46);
+      else if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 5.5).addScaledVector(fwd, 2.4).add(V(0, 2.4, 0)), muzzle.clone().add(V(0, 0.2, 0)), 44);
       else {
         const target = A.root.visible ? A.root.position.clone() : land.clone();
-        K.cam(cpos.clone().addScaledVector(right, side * 11).addScaledVector(fwd, 2.5 + flyU * 5).add(V(0, 3.4, 0)), target.add(V(0, 1.2, 0)), 50);
+        K.cam(cpos.clone().addScaledVector(right, side * 11).addScaledVector(fwd, 2.5 + flyU * 5).add(V(0, 3, 0)), target.add(V(0, 1.2, 0)), 52);
       }
     }
   };
@@ -40178,7 +40179,7 @@ SCENES.raincloud = (K, cs) => {
   const root = I.bag.group();
   const cloud = makeCloud(I.bag, { scale: 1.15 });
   root.add(cloud);
-  const rain = makeRain(I.bag, 80, { w: 1.8, h: 3 });
+  const rain = makeRain(I.bag, 90, { w: 1.1, h: 2.6 });
   cloud.add(rain.mesh);
   rain.mesh.position.y = -0.4;
   const umb = makeUmbrella(I.bag);
@@ -40207,15 +40208,14 @@ SCENES.raincloud = (K, cs) => {
     if (!r) return;
     const st = K.sim.stateAt(Math.max(0, b)).byId[cs.who];
     const right = V(-st.tz, 0, st.tx), fwd = V(st.tx, 0, st.tz);
-    const lat = (smooth3(0.8, 1.2, t) - smooth3(1.7, 2.2, t)) * -1.1 + (smooth3(1.7, 2.2, t) - smooth3(3.1, 3.5, t)) * 1.1;
+    const lat = (smooth3(0.8, 1.2, t) - smooth3(1.7, 2.2, t)) * -0.7 + (smooth3(1.7, 2.2, t) - smooth3(3.1, 3.5, t)) * 0.7;
     r.root.position.addScaledVector(right, lat);
-    const head = r.root.position.clone().add(V(0, r.height + 1.45, 0));
     if (!init) {
-      cloudPos.copy(head);
+      cloudPos.set(lat, 0, 0);
       init = true;
     }
-    cloudPos.lerp(head, Math.min(1, dt * (t > 0.8 && t < 2.6 ? 3 : 8)));
-    cloud.position.copy(cloudPos);
+    cloudPos.x += (lat - cloudPos.x) * Math.min(1, dt * 4.5);
+    cloud.position.copy(r.root.position).addScaledVector(right, cloudPos.x - lat).add(V(0, r.height + 1.05, 0));
     const tilt = zap ? 0 : smooth3(3, 3.5, t) * 1.15;
     cloud.rotation.set(0, Math.atan2(st.tx, st.tz), -tilt);
     if (tilt > 0.05) cloud.position.addScaledVector(right, -tilt * 1.6).add(V(0, -tilt * 0.9, 0));
@@ -40886,6 +40886,9 @@ SCENES.pointing_standoff = (K, cs) => {
   const s = openSide(K.world, fs, 8);
   const root = I.bag.group();
   const A = actor(K, I, K.pub(cs.who)), Bq = actor(K, I, K.pub(cs.params.other));
+  for (const X of [A, Bq]) X.rig.torso.children.filter((c) => c.type === "Group").slice(3).forEach((g) => {
+    g.visible = false;
+  });
   const M = actor(K, I, CAST.maureen, { vest: "#d8ff1f" });
   const goose = makeGoose(I.bag, { scale: 1.5, bellHat: !!cs.params.gooseBell });
   root.add(goose.root);
@@ -41071,34 +41074,27 @@ SCENES.heart_vs_heart = (K, cs) => {
   const el = document.createElement("div");
   el.className = "mrc-hh";
   const heart = "M50 88 C10 60 0 40 12 22 C24 6 44 10 50 26 C56 10 76 6 88 22 C100 40 90 60 50 88 Z";
+  const half = (p, bpm, word, calm) => `<div class="${calm ? "calm" : ""}"><svg viewBox="-10 -10 120 110"><g class="hb"><path d="${heart}" fill="${calm ? "#ff9fbe" : "#ff2d55"}" stroke="#14183c" stroke-width="6"/></g>${calm ? '<text x="78" y="12" font-size="30" fill="#fff" font-family="Lilita One,sans-serif">z z</text>' : '<g fill="#e9eef5"><circle cx="8" cy="0" r="8"/><circle cx="96" cy="-4" r="9"/></g>'}</svg>
+    <b class="n">${bpm}</b><b class="w">${word}</b><i style="color:${p?.colour?.primary || "#fff"}">${nm(p)}</i></div>`;
   el.innerHTML = `<style>
-    .mrc-hh{position:absolute;display:flex;gap:0;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);overflow:hidden;box-shadow:0 calc(var(--u)*.7) 0 #14183c;opacity:0;transform:scale(.6);transform-origin:100% 0;transition:opacity .2s,transform .25s cubic-bezier(.2,.8,.2,1)}
-    .mrc-hh.on{opacity:1;transform:none}.mrc-hh>div{flex:1;position:relative;background:#1d2350;display:flex;flex-direction:column;align-items:center;justify-content:center}
-    .mrc-hh>div+div{background:#24305f;border-left:calc(var(--u)*.3) dashed #fff}
-    .mrc-hh svg{width:78%;height:auto;overflow:visible}.mrc-hh b{font-weight:400;font-size:calc(var(--u)*2.4);-webkit-text-stroke:calc(var(--u)*.25) #14183c;paint-order:stroke fill}
-    .mrc-hh i{font-style:normal;font-size:calc(var(--u)*1.7);opacity:.95}
+    .mrc-hh{position:absolute;display:flex;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);overflow:hidden;box-shadow:0 calc(var(--u)*.7) 0 #14183c;opacity:0;transform:scale(.6);transform-origin:100% 0;transition:opacity .2s,transform .25s cubic-bezier(.2,.8,.2,1)}
+    .mrc-hh.on{opacity:1;transform:none}.mrc-hh>div{flex:1;min-width:0;background:#1d2350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(var(--u)*.4)}
+    .mrc-hh>div+div{background:#2b3a72;border-left:calc(var(--u)*.3) solid #fff}
+    .mrc-hh svg{width:44%;height:auto;overflow:visible}
+    .mrc-hh b{font-weight:400;line-height:1;-webkit-text-stroke:calc(var(--u)*.3) #14183c;paint-order:stroke fill;color:#ffd23f}
+    .mrc-hh .n{font-size:calc(var(--u)*5.2)}.mrc-hh .w{font-size:calc(var(--u)*2.2);color:#fff}
+    .mrc-hh i{font-style:normal;font-size:calc(var(--u)*1.35);margin-top:calc(var(--u)*.3);font-family:Nunito,sans-serif;font-weight:900;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
     .mrc-hh .hb{transform-origin:50% 55%;animation:mrchb .28s infinite}@keyframes mrchb{0%,100%{transform:scale(1)}40%{transform:scale(1.28)}}
-    .mrc-hh .calm .hb{animation:mrchb2 1.6s infinite}@keyframes mrchb2{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-    .mrc-hh .lean{transition:transform .4s}.mrc-hh.knock .lean{transform:translateX(26%) rotate(12deg)}
-  </style>
-  <div><svg viewBox="-20 -25 140 140"><g class="lean"><g class="hb"><path d="${heart}" fill="#ff2d55" stroke="#14183c" stroke-width="5"/><path d="M28 30 q8-10 14 0" stroke="#fff" stroke-width="5" fill="none"/></g>
-    <g fill="#e9eef5" opacity=".9"><circle cx="18" cy="-4" r="8"/><circle cx="84" cy="-10" r="10"/><circle cx="60" cy="-18" r="7"/></g><circle cx="100" cy="6" r="9" fill="#ffd23f" stroke="#14183c" stroke-width="4"/></g></svg>
-    <b style="color:${a?.colour?.primary || "#ffd23f"}">${nm(a)}</b><i>his watch: ${cs.params.hr} bpm</i></div>
-  <div class="calm"><svg viewBox="-20 -25 140 140"><path d="M-6 98 L28 64 L84 64 L104 98" stroke="#7a4a2a" stroke-width="7" fill="none"/><path d="M24 64 L50 30 L96 30" stroke="#ff8a1f" stroke-width="7" fill="none"/>
-    <g class="hb"><path d="${heart}" fill="#ff8fb0" stroke="#14183c" stroke-width="5" transform="translate(6 -4) scale(.82)"/></g>
-    <rect class="pg" x="40" y="44" width="46" height="34" fill="#fff" stroke="#14183c" stroke-width="4"/><path d="M48 54 h30 M48 62 h30 M48 70 h20" stroke="#9aa0a8" stroke-width="3"/>
-    <rect x="-8" y="60" width="16" height="18" rx="3" fill="#fff" stroke="#14183c" stroke-width="4"/></svg>
-    <b style="color:${o?.colour?.primary || "#57c7ff"}">${nm(o)}</b><i>his watch: ${cs.params.hr2} bpm</i></div>`;
+    .mrc-hh .calm .hb{animation:mrchb2 1.8s infinite}@keyframes mrchb2{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+  </style>${half(a, cs.params.hr, "THUMPING", false)}${half(o, cs.params.hr2, "ASLEEP", true)}`;
   K.ov.root.appendChild(el);
   const cue = cues();
   I.update = (t) => {
     const rc = K.ov.pipRect();
-    const w = rc.w * 0.86, h = rc.h * 1.15;
-    Object.assign(el.style, { left: `${rc.x + rc.w - w}px`, top: `${rc.y}px`, width: `${w}px`, height: `${h}px` });
+    Object.assign(el.style, { left: `${rc.x}px`, top: `${rc.y}px`, width: `${rc.w}px`, height: `${rc.h}px` });
     el.classList.toggle("on", t > 0.05 && t < cs.durationS - 0.25);
-    el.classList.toggle("knock", t > 3.4 && t < 4.4);
     cue("line", t > 0.4, () => K.say(cs.lines?.[0]));
-    K.ov.caption(t > 0.3 ? t > 3.4 ? "HOW?" : "SAME PACE." : null, { yellow: t > 3.4 });
+    K.ov.caption(t > 0.3 ? "SAME PACE." : null);
   };
   const d0 = I.dispose;
   I.dispose = () => {
@@ -41266,30 +41262,28 @@ SCENES.before_after = (K, cs) => {
   return I;
 };
 SCENES.road_to_100 = (K, cs) => {
-  const I = base(K, { camera: false, hide: "none", postBanner: "ROAD TO 100" });
+  const I = base(K, { camera: false, hide: "none", noSting: true, stamp: false });
   const nums = cs.params.numbers || [], before = new Set(cs.params.before || []);
   const el = document.createElement("div");
   el.className = "mrc-r100";
   let cells = "";
-  for (let n = 1; n <= 100; n++) cells += `<span data-n="${n}" class="${before.has(n) ? "old" : ""} ${n > 98 ? "todo" : ""}">${n}</span>`;
-  const special = nums.includes(95) ? '<em class="sp">MOVING DAY</em>' : nums.some((n) => n >= 96 && n <= 98) ? '<em class="sp">VISITOR</em>' : "";
+  for (let n = 1; n <= 100; n++) cells += `<span data-n="${n}" class="${before.has(n) ? "old" : ""} ${n > 98 ? "todo" : ""}"></span>`;
   el.innerHTML = `<style>
-    .mrc-r100{position:absolute;right:calc(var(--u)*2.4);top:calc(var(--u)*17.5);width:calc(var(--u)*34);padding:calc(var(--u)*1) calc(var(--u)*1.2);background:#fff6df;color:#14183c;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);box-shadow:0 calc(var(--u)*.7) 0 #14183c;transform:translateX(130%) rotate(4deg);transition:transform .35s cubic-bezier(.2,.8,.2,1)}
-    .mrc-r100.on{transform:rotate(-2deg)}
-    .mrc-r100 h3{margin:0 0 calc(var(--u)*.5);font-weight:400;font-size:calc(var(--u)*2.2);display:flex;justify-content:space-between}
-    .mrc-r100 .g{display:grid;grid-template-columns:repeat(10,1fr);gap:calc(var(--u)*.25)}
-    .mrc-r100 span{aspect-ratio:1;border:2px solid #c9b88f;border-radius:50%;font:800 calc(var(--u)*.75) Nunito,sans-serif;display:flex;align-items:center;justify-content:center;color:#b8a77e}
-    .mrc-r100 span.old{background:#cfd4dc;color:#fff;border-color:#9aa0a8}
-    .mrc-r100 span.new{background:#e8333f;color:#fff;border-color:#a8151f;transform:scale(1.35) rotate(-10deg);transition:transform .2s cubic-bezier(.3,1.6,.5,1)}
-    .mrc-r100 span.todo{border-style:dashed;border-color:#e8333f;color:#e8333f}
-    .mrc-r100 .sp{position:absolute;right:calc(var(--u)*1);bottom:calc(var(--u)*-1.2);font-style:normal;font-size:calc(var(--u)*1.7);color:#e8333f;border:calc(var(--u)*.3) solid #e8333f;padding:0 calc(var(--u)*.6);background:#fff;transform:rotate(-8deg)}
-  </style><h3><span>ROAD TO 100</span><span>${nums.length} STAMPS</span></h3><div class="g">${cells}</div>${special}`;
+    .mrc-r100{position:absolute;right:calc(var(--u)*2.4);top:calc(var(--u)*17.5);width:calc(var(--u)*13);padding:calc(var(--u)*.6);background:#fff6df;border:calc(var(--u)*.35) solid #14183c;border-radius:calc(var(--u)*.8);box-shadow:0 calc(var(--u)*.45) 0 #14183c;transform:translateX(130%) rotate(4deg);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+    .mrc-r100.on{transform:rotate(-3deg)}
+    .mrc-r100 .g{display:grid;grid-template-columns:repeat(10,1fr);gap:calc(var(--u)*.16)}
+    .mrc-r100 span{aspect-ratio:1;border:1.5px solid #c9b88f;border-radius:50%}
+    .mrc-r100 span.old{background:#9aa0a8;border-color:#9aa0a8}
+    .mrc-r100 span.new{background:#e8333f;border-color:#a8151f;animation:mrcst .35s cubic-bezier(.3,1.6,.5,1) both}
+    @keyframes mrcst{0%{transform:scale(2.6) rotate(-25deg);opacity:0}100%{transform:scale(1.15) rotate(-10deg);opacity:1}}
+    .mrc-r100 span.todo{border:2px dashed #e8333f}
+  </style><div class="g">${cells}</div>`;
   K.ov.root.appendChild(el);
   const cue = cues();
   I.update = (t) => {
     el.classList.toggle("on", t > 0.05 && t < cs.durationS - 0.2);
-    nums.forEach((n, i) => cue(`s${n}`, t > 0.5 + i * 0.32, () => el.querySelector(`[data-n="${n}"]`)?.classList.add("new")));
-    cue("line", t > 0.6, () => K.say(cs.lines?.[0]));
+    nums.forEach((n, i) => cue(`s${n}`, t > 0.35 + i * 0.18, () => el.querySelector(`[data-n="${n}"]`)?.classList.add("new")));
+    cue("line", t > 0.4, () => K.say(cs.lines?.[0]));
   };
   const d0 = I.dispose;
   I.dispose = () => {
@@ -41440,8 +41434,8 @@ SCENES.pb_bell = (K, cs) => {
     bellG.position.copy(bellHome).add(V(0, -fall * 2.6, 0)).addScaledVector(V(fs.tx, 0, fs.tz), fall > 0.99 ? (t - 1.6) * 6 : 0);
     bellG.rotation.set(fall * 2.5 + (fall > 0.99 ? (t - 1.6) * 8 : 0), 0, swing);
     goose.root.visible = ring === 3 && t > 2.4;
-    goose.root.position.copy(fs.p(2.5, s * 2.5, 0));
-    goose.root.rotation.y = Math.atan2(-fs.rx * s, -fs.rz * s);
+    goose.root.position.copy(fs.p(6.2, s * (PATH_W / 2 - 1.4), 0));
+    goose.root.rotation.y = Math.atan2(fs.rx * s, fs.rz * s);
     goose.pose({ t, waddle: 0.5 });
     ding.visible = ring === 1 && t > 0.8 && t < 1.8 || ring === 2 && t > 1.3 && t < 2.2;
     if (ding.visible) {
@@ -41536,7 +41530,7 @@ SCENES.wrong_kit_bag = (K, cs) => {
     I.camera = bb > -2.8 && bb < 1.6;
     if (I.camera) {
       const ap = r.root.position;
-      K.cam(ap.clone().addScaledVector(V(st0.tx, 0, st0.tz), 4.8).addScaledVector(V(st0.rx, 0, st0.rz), s * 2.2).add(V(0, 1.9, 0)), ap.clone().add(V(0, 1.5, 0)), 46);
+      K.cam(ap.clone().addScaledVector(V(st0.tx, 0, st0.tz), 5.6).addScaledVector(V(st0.rx, 0, st0.rz), s * 1.4).add(V(0, 2, 0)), ap.clone().add(V(0, 2.75, 0)).addScaledVector(V(st0.rx, 0, st0.rz), s * 0.4), 52);
     }
   };
   const tagged = [];
@@ -41732,6 +41726,10 @@ function createCutscenePlayer(ctx) {
     let wantHide = [];
     for (const e of act) {
       const I = e.inst, c = e.cs;
+      if (e.pausing && e.t < e.dur && I.noSting) {
+        I.update(e.t, dt, b, { gagDur: e.dur, phase: "tag" });
+        continue;
+      }
       if (e.pausing && e.t < e.dur) {
         const g = e.t - INTRO, gagDur = e.dur - INTRO - OUTRO;
         paused = c.mode !== "post";
@@ -43092,7 +43090,8 @@ var RULES = {
   marketGapS: 6,
   battleGapS: 2,
   battleWindowS: 3.5,
-  scrumM: 1e3
+  scrumM: 1e3,
+  funfairGate: 0.45
 };
 var HILLS = [[1720, 1960], [4220, 4460]];
 var ZONES = { start: [0, 600], avenue: [800, 1310], hill: [1720, 1960], lake: [1980, 2320] };
@@ -43131,7 +43130,7 @@ var CUTSCENE_KINDS = {
   pb_bell: { cat: "finish", label: "The PB Bell", ref: "2/9", story: true },
   wrong_kit_bag: { cat: "start", label: "The Wrong Kit Bag", ref: "2/10" }
 };
-var BENCHED = /* @__PURE__ */ new Set(["mirror_signal"]);
+var BENCHED = /* @__PURE__ */ new Set(["mirror_signal", "before_after"]);
 var PAUSING = /* @__PURE__ */ new Set(["freeze", "replay"]);
 var DUR = {
   funfair_sign: 2.6,
@@ -43145,7 +43144,7 @@ var DUR = {
   treadmill_hill: 6,
   everest: 7,
   spaghetti_legs: 5,
-  cannonball: 5.5,
+  cannonball: 6,
   raincloud: 5,
   mirror_signal: 4,
   ice_cream_van: 5,
@@ -43157,7 +43156,7 @@ var DUR = {
   before_after: 5,
   incline_button: 5,
   pb_bell: 4.5,
-  road_to_100: 3.2,
+  road_to_100: 2,
   breakfast: 4.2,
   wrong_kit_bag: 5,
   sub20_wall: 6
@@ -43192,7 +43191,9 @@ var LINE_BANKS = {
   before_after: [P("One of them knows how it goes."), J("That's the SAME RACE! He's run it and he HASN'T run it!"), P("Don't tell him. He'll only worry.")],
   road_to_100: [P("He needs to get to a hundred. He knows."), J("Stamp it, Maureen! STAMP IT!"), P("Free coffee at a hundred. Probably.")],
   incline_button: [P("Outdoors doesn't have a console."), J("He's looking for the INCLINE BUTTON!"), P("That's what Thursdays indoors do to a man.")],
-  pb_bell: [J("RING THE BELL! That was a PERSONAL BEST on the day!"), P("Twenty-one of these in the archive. The bell is tired."), P("That's the goose's bell now.")],
+  pb_bell_1: [J("RING THE BELL! That was a PERSONAL BEST on the day!"), J("A PB! RING IT, MAUREEN!"), P("Personal best. The bell approves.")],
+  pb_bell_2: [P("Twenty-one of these in the archive. The bell is tired."), J("Where's the ROPE gone?"), P("A cone. Of course.")],
+  pb_bell_3: [P("That's the goose's bell now."), J("NOT THE BELL!"), P("Three PBs. One bell. No bell.")],
   wrong_kit_bag: [P("Wrong bag."), J("He's brought the WRONG KIT!"), P("Some of him is still at the gym.")]
 };
 var VISUAL_VARIANTS = {
@@ -43209,7 +43210,7 @@ var VISUAL_VARIANTS = {
   hook_a_duck: ["goose", "duck"],
   test_strength: ["jeff", "pam"]
 };
-var GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6, breakfast: 0.3, wrong_kit_bag: 0.3, incline_button: 0.5, heart_vs_heart: 0.8, mirror_routine: 0.8, before_after: 0.9, pb_bell: 0.9 };
+var GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6, breakfast: 0.15, wrong_kit_bag: 0.3, incline_button: 0.5, heart_vs_heart: 0.8, mirror_routine: 0.8, before_after: 0.9, pb_bell: 0.9 };
 var PER_NIGHT_CAP = 2;
 var r1 = (x) => Math.round(x * 10) / 10;
 var r2 = (x) => Math.round(x * 100) / 100;
@@ -43337,7 +43338,8 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   }
   const mk = (kind, who, mode, atBroadcastS, extra = {}) => ({ id: "", kind, who, mode, atBroadcastS: r2(atBroadcastS), durationS: extra.durationS ?? DUR[kind], params: extra.params || {}, lines: extra.lines || [], truth: extra.truth || "", ...extra.group ? { group: extra.group } : {}, _score: extra.score ?? 0 });
   const diverters = PR.filter((r) => r.diversions?.length);
-  if (diverters.length && (!capped("funfair_stretch") || ["hook_a_duck", "test_strength"].includes(force))) {
+  const funfairOk = ["hook_a_duck", "test_strength"].includes(force) || (cm.night.funfair_stretch || 0) < 1 && R.next() < RULES.funfairGate;
+  if (diverters.length && funfairOk) {
     const cand = [...diverters].sort((a, b) => rel(b.id) - rel(a.id) || Math.abs(S[b.id].divPace[0].ratio - 1) - Math.abs(S[a.id].divPace[0].ratio - 1));
     for (const r of cand) {
       const pkg = funfairPackage(r);
@@ -43351,7 +43353,8 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     const id = r.id, st = S[id];
     const sigs = ["hook_a_duck", "test_strength"];
     const usedSigs = cm.funfairSigs || [];
-    let sig = force && sigs.includes(force) ? force : sigs.find((s) => !usedSigs.includes(s)) || R.pick(sigs);
+    const unused = sigs.filter((x) => !usedSigs.includes(x)), pickFrom = unused.length ? unused : sigs;
+    let sig = force && sigs.includes(force) ? force : pickFrom[Math.floor(R.next() * pickFrom.length)];
     const pkg = [];
     const laps = st.divPace.slice(0, 2);
     for (const [i, d] of laps.entries()) {
@@ -43594,7 +43597,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   }
   {
     const wu = PR.map((r) => ({ r, km: Number(fact(r.id, "warmup_km")?.km ?? 0) })).filter((x) => x.km > 0).sort((a, b) => b.km - a.km)[0];
-    if (wu && !capped("breakfast") && (wu.km >= 8 || gate("breakfast")) || force === "breakfast") {
+    if (wu && !capped("breakfast") && gate("breakfast") || force === "breakfast") {
       const x = wu || { r: order[0], km: 2.1 };
       const big = x.km >= 8;
       C.push(mk("breakfast", x.r.id, "pre", -8.4, {
@@ -43611,7 +43614,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
       const up = fact(a.id, "race_upcoming"), rec = fact(b.id, "race_recent");
       if (up?.name && rec?.name && up.name === rec.name) pair = pair || { a, b, up, rec };
     }
-    if (pair && cool("before_after")) {
+    if (pair && (!BENCHED.has("before_after") && cool("before_after") || force === "before_after")) {
       const at = Math.max(22, Math.min(B(pair.a.id, 3e3), B(pair.b.id, 3e3)));
       C.push(mk("before_after", pair.a.id, "inset", at, {
         params: { other: pair.b.id, pip: true },
@@ -43623,7 +43626,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
   {
     const nums = PR.map((r) => ({ id: r.id, n: Number(fact(r.id, "finsbury_number")) })).filter((x) => Number.isFinite(x.n) && x.n > 0);
     if (nums.length) C.push(mk("road_to_100", order[0].id, "post", postB2 + 0.01, {
-      durationS: 3.2,
+      durationS: 2,
       params: { tag: true, numbers: nums.map((x) => x.n).sort((a, b) => a - b), before: [...cm.road || []] },
       score: 0,
       truth: `Tonight's runs were Finsbury runs number ${nums.map((x) => x.n).sort((a, b) => a - b).join(", ")}. He has run it 98 times.`
@@ -43705,6 +43708,7 @@ function planCutscenes({ racePlan, runners = [], theme = null, rng, sessionMemor
     let bankKey = c.kind;
     if (c.kind === "hook_a_duck") bankKey = `hook_a_duck_${c.params.lap === 2 ? 2 : 1}`;
     if (c.kind === "test_strength") bankKey = `test_strength_${c.params.variant || "creep"}`;
+    if (c.kind === "pb_bell") bankKey = `pb_bell_${c.params.ring || 1}`;
     if (c.kind === "funfair_rejoin") {
       const r = c.params.ratio ?? 1;
       bankKey = r <= 0.97 ? "rejoin_fast" : r >= 1.03 ? "rejoin_slow" : "rejoin_even";

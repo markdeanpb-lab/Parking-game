@@ -25,6 +25,7 @@ SCENES.pointing_standoff = (K, cs) => {
   const fs = fin(K); const s = openSide(K.world, fs, 8);
   const root = I.bag.group();
   const A = actor(K, I, K.pub(cs.who)), Bq = actor(K, I, K.pub(cs.params.other));
+  for (const X of [A, Bq]) X.rig.torso.children.filter((c) => c.type === 'Group').slice(3).forEach((g) => { g.visible = false; }); // capes read as a wedge mid-point
   const M = actor(K, I, CAST.maureen, { vest: '#d8ff1f' });
   const goose = makeGoose(I.bag, { scale: 1.5, bellHat: !!cs.params.gooseBell }); root.add(goose.root);
   const halves = [0, 1].map((k) => { const h = I.bag.M(new THREE.CylinderGeometry(0.22, 0.22, 0.05, 16, 1, false, k * Math.PI, Math.PI).rotateX(Math.PI / 2), '#ffd23f', 2.5); root.add(h); return h; });
@@ -153,32 +154,26 @@ SCENES.heart_vs_heart = (K, cs) => {
   const el = document.createElement('div');
   el.className = 'mrc-hh';
   const heart = 'M50 88 C10 60 0 40 12 22 C24 6 44 10 50 26 C56 10 76 6 88 22 C100 40 90 60 50 88 Z';
+  const half = (p, bpm, word, calm) => `<div class="${calm ? 'calm' : ''}"><svg viewBox="-10 -10 120 110"><g class="hb"><path d="${heart}" fill="${calm ? '#ff9fbe' : '#ff2d55'}" stroke="#14183c" stroke-width="6"/></g>${calm ? '<text x="78" y="12" font-size="30" fill="#fff" font-family="Lilita One,sans-serif">z z</text>' : '<g fill="#e9eef5"><circle cx="8" cy="0" r="8"/><circle cx="96" cy="-4" r="9"/></g>'}</svg>
+    <b class="n">${bpm}</b><b class="w">${word}</b><i style="color:${p?.colour?.primary || '#fff'}">${nm(p)}</i></div>`;
   el.innerHTML = `<style>
-    .mrc-hh{position:absolute;display:flex;gap:0;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);overflow:hidden;box-shadow:0 calc(var(--u)*.7) 0 #14183c;opacity:0;transform:scale(.6);transform-origin:100% 0;transition:opacity .2s,transform .25s cubic-bezier(.2,.8,.2,1)}
-    .mrc-hh.on{opacity:1;transform:none}.mrc-hh>div{flex:1;position:relative;background:#1d2350;display:flex;flex-direction:column;align-items:center;justify-content:center}
-    .mrc-hh>div+div{background:#24305f;border-left:calc(var(--u)*.3) dashed #fff}
-    .mrc-hh svg{width:78%;height:auto;overflow:visible}.mrc-hh b{font-weight:400;font-size:calc(var(--u)*2.4);-webkit-text-stroke:calc(var(--u)*.25) #14183c;paint-order:stroke fill}
-    .mrc-hh i{font-style:normal;font-size:calc(var(--u)*1.7);opacity:.95}
+    .mrc-hh{position:absolute;display:flex;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);overflow:hidden;box-shadow:0 calc(var(--u)*.7) 0 #14183c;opacity:0;transform:scale(.6);transform-origin:100% 0;transition:opacity .2s,transform .25s cubic-bezier(.2,.8,.2,1)}
+    .mrc-hh.on{opacity:1;transform:none}.mrc-hh>div{flex:1;min-width:0;background:#1d2350;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(var(--u)*.4)}
+    .mrc-hh>div+div{background:#2b3a72;border-left:calc(var(--u)*.3) solid #fff}
+    .mrc-hh svg{width:44%;height:auto;overflow:visible}
+    .mrc-hh b{font-weight:400;line-height:1;-webkit-text-stroke:calc(var(--u)*.3) #14183c;paint-order:stroke fill;color:#ffd23f}
+    .mrc-hh .n{font-size:calc(var(--u)*5.2)}.mrc-hh .w{font-size:calc(var(--u)*2.2);color:#fff}
+    .mrc-hh i{font-style:normal;font-size:calc(var(--u)*1.35);margin-top:calc(var(--u)*.3);font-family:Nunito,sans-serif;font-weight:900;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
     .mrc-hh .hb{transform-origin:50% 55%;animation:mrchb .28s infinite}@keyframes mrchb{0%,100%{transform:scale(1)}40%{transform:scale(1.28)}}
-    .mrc-hh .calm .hb{animation:mrchb2 1.6s infinite}@keyframes mrchb2{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-    .mrc-hh .lean{transition:transform .4s}.mrc-hh.knock .lean{transform:translateX(26%) rotate(12deg)}
-  </style>
-  <div><svg viewBox="-20 -25 140 140"><g class="lean"><g class="hb"><path d="${heart}" fill="#ff2d55" stroke="#14183c" stroke-width="5"/><path d="M28 30 q8-10 14 0" stroke="#fff" stroke-width="5" fill="none"/></g>
-    <g fill="#e9eef5" opacity=".9"><circle cx="18" cy="-4" r="8"/><circle cx="84" cy="-10" r="10"/><circle cx="60" cy="-18" r="7"/></g><circle cx="100" cy="6" r="9" fill="#ffd23f" stroke="#14183c" stroke-width="4"/></g></svg>
-    <b style="color:${a?.colour?.primary || '#ffd23f'}">${nm(a)}</b><i>his watch: ${cs.params.hr} bpm</i></div>
-  <div class="calm"><svg viewBox="-20 -25 140 140"><path d="M-6 98 L28 64 L84 64 L104 98" stroke="#7a4a2a" stroke-width="7" fill="none"/><path d="M24 64 L50 30 L96 30" stroke="#ff8a1f" stroke-width="7" fill="none"/>
-    <g class="hb"><path d="${heart}" fill="#ff8fb0" stroke="#14183c" stroke-width="5" transform="translate(6 -4) scale(.82)"/></g>
-    <rect class="pg" x="40" y="44" width="46" height="34" fill="#fff" stroke="#14183c" stroke-width="4"/><path d="M48 54 h30 M48 62 h30 M48 70 h20" stroke="#9aa0a8" stroke-width="3"/>
-    <rect x="-8" y="60" width="16" height="18" rx="3" fill="#fff" stroke="#14183c" stroke-width="4"/></svg>
-    <b style="color:${o?.colour?.primary || '#57c7ff'}">${nm(o)}</b><i>his watch: ${cs.params.hr2} bpm</i></div>`;
+    .mrc-hh .calm .hb{animation:mrchb2 1.8s infinite}@keyframes mrchb2{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+  </style>${half(a, cs.params.hr, 'THUMPING', false)}${half(o, cs.params.hr2, 'ASLEEP', true)}`;
   K.ov.root.appendChild(el);
   const cue = cues();
   I.update = (t) => {
-    const rc = K.ov.pipRect(); const w = rc.w * 0.86, h = rc.h * 1.15; Object.assign(el.style, { left: `${rc.x + rc.w - w}px`, top: `${rc.y}px`, width: `${w}px`, height: `${h}px` });
+    const rc = K.ov.pipRect(); Object.assign(el.style, { left: `${rc.x}px`, top: `${rc.y}px`, width: `${rc.w}px`, height: `${rc.h}px` });
     el.classList.toggle('on', t > 0.05 && t < cs.durationS - 0.25);
-    el.classList.toggle('knock', t > 3.4 && t < 4.4);
     cue('line', t > 0.4, () => K.say(cs.lines?.[0]));
-    K.ov.caption(t > 0.3 ? (t > 3.4 ? 'HOW?' : 'SAME PACE.') : null, { yellow: t > 3.4 });
+    K.ov.caption(t > 0.3 ? 'SAME PACE.' : null);
   };
   const d0 = I.dispose; I.dispose = () => { el.remove(); d0(); };
   return I;
@@ -279,30 +274,28 @@ SCENES.before_after = (K, cs) => {
 
 // ---------- 7. Road to 100 (post tag): Maureen's loyalty card ----------
 SCENES.road_to_100 = (K, cs) => {
-  const I = base(K, { camera: false, hide: 'none', postBanner: 'ROAD TO 100' });
+  const I = base(K, { camera: false, hide: 'none', noSting: true, stamp: false });
   const nums = cs.params.numbers || [], before = new Set(cs.params.before || []);
   const el = document.createElement('div');
   el.className = 'mrc-r100';
   let cells = '';
-  for (let n = 1; n <= 100; n++) cells += `<span data-n="${n}" class="${before.has(n) ? 'old' : ''} ${n > 98 ? 'todo' : ''}">${n}</span>`;
-  const special = nums.includes(95) ? '<em class="sp">MOVING DAY</em>' : nums.some((n) => n >= 96 && n <= 98) ? '<em class="sp">VISITOR</em>' : '';
+  for (let n = 1; n <= 100; n++) cells += `<span data-n="${n}" class="${before.has(n) ? 'old' : ''} ${n > 98 ? 'todo' : ''}"></span>`;
   el.innerHTML = `<style>
-    .mrc-r100{position:absolute;right:calc(var(--u)*2.4);top:calc(var(--u)*17.5);width:calc(var(--u)*34);padding:calc(var(--u)*1) calc(var(--u)*1.2);background:#fff6df;color:#14183c;border:calc(var(--u)*.5) solid #14183c;border-radius:calc(var(--u)*1);box-shadow:0 calc(var(--u)*.7) 0 #14183c;transform:translateX(130%) rotate(4deg);transition:transform .35s cubic-bezier(.2,.8,.2,1)}
-    .mrc-r100.on{transform:rotate(-2deg)}
-    .mrc-r100 h3{margin:0 0 calc(var(--u)*.5);font-weight:400;font-size:calc(var(--u)*2.2);display:flex;justify-content:space-between}
-    .mrc-r100 .g{display:grid;grid-template-columns:repeat(10,1fr);gap:calc(var(--u)*.25)}
-    .mrc-r100 span{aspect-ratio:1;border:2px solid #c9b88f;border-radius:50%;font:800 calc(var(--u)*.75) Nunito,sans-serif;display:flex;align-items:center;justify-content:center;color:#b8a77e}
-    .mrc-r100 span.old{background:#cfd4dc;color:#fff;border-color:#9aa0a8}
-    .mrc-r100 span.new{background:#e8333f;color:#fff;border-color:#a8151f;transform:scale(1.35) rotate(-10deg);transition:transform .2s cubic-bezier(.3,1.6,.5,1)}
-    .mrc-r100 span.todo{border-style:dashed;border-color:#e8333f;color:#e8333f}
-    .mrc-r100 .sp{position:absolute;right:calc(var(--u)*1);bottom:calc(var(--u)*-1.2);font-style:normal;font-size:calc(var(--u)*1.7);color:#e8333f;border:calc(var(--u)*.3) solid #e8333f;padding:0 calc(var(--u)*.6);background:#fff;transform:rotate(-8deg)}
-  </style><h3><span>ROAD TO 100</span><span>${nums.length} STAMPS</span></h3><div class="g">${cells}</div>${special}`;
+    .mrc-r100{position:absolute;right:calc(var(--u)*2.4);top:calc(var(--u)*17.5);width:calc(var(--u)*13);padding:calc(var(--u)*.6);background:#fff6df;border:calc(var(--u)*.35) solid #14183c;border-radius:calc(var(--u)*.8);box-shadow:0 calc(var(--u)*.45) 0 #14183c;transform:translateX(130%) rotate(4deg);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+    .mrc-r100.on{transform:rotate(-3deg)}
+    .mrc-r100 .g{display:grid;grid-template-columns:repeat(10,1fr);gap:calc(var(--u)*.16)}
+    .mrc-r100 span{aspect-ratio:1;border:1.5px solid #c9b88f;border-radius:50%}
+    .mrc-r100 span.old{background:#9aa0a8;border-color:#9aa0a8}
+    .mrc-r100 span.new{background:#e8333f;border-color:#a8151f;animation:mrcst .35s cubic-bezier(.3,1.6,.5,1) both}
+    @keyframes mrcst{0%{transform:scale(2.6) rotate(-25deg);opacity:0}100%{transform:scale(1.15) rotate(-10deg);opacity:1}}
+    .mrc-r100 span.todo{border:2px dashed #e8333f}
+  </style><div class="g">${cells}</div>`;
   K.ov.root.appendChild(el);
   const cue = cues();
   I.update = (t) => {
     el.classList.toggle('on', t > 0.05 && t < cs.durationS - 0.2);
-    nums.forEach((n, i) => cue(`s${n}`, t > 0.5 + i * 0.32, () => el.querySelector(`[data-n="${n}"]`)?.classList.add('new')));
-    cue('line', t > 0.6, () => K.say(cs.lines?.[0]));
+    nums.forEach((n, i) => cue(`s${n}`, t > 0.35 + i * 0.18, () => el.querySelector(`[data-n="${n}"]`)?.classList.add('new')));
+    cue('line', t > 0.4, () => K.say(cs.lines?.[0])); // only at milestones (the planner gives no line otherwise)
   };
   const d0 = I.dispose; I.dispose = () => { el.remove(); d0(); };
   return I;
@@ -380,7 +373,7 @@ SCENES.pb_bell = (K, cs) => {
     else { fall = smooth(1.0, 1.6, t); M.rig.arms[1].sh.rotation.set(-2.4, 0, 0); }
     bellG.position.copy(bellHome).add(V(0, -fall * 2.6, 0)).addScaledVector(V(fs.tx, 0, fs.tz), fall > 0.99 ? (t - 1.6) * 6 : 0);
     bellG.rotation.set(fall * 2.5 + (fall > 0.99 ? (t - 1.6) * 8 : 0), 0, swing);
-    goose.root.visible = ring === 3 && t > 2.4; goose.root.position.copy(fs.p(2.5, s * 2.5, 0)); goose.root.rotation.y = Math.atan2(-fs.rx * s, -fs.rz * s); goose.pose({ t, waddle: 0.5 });
+    goose.root.visible = ring === 3 && t > 2.4; goose.root.position.copy(fs.p(6.2, s * (PATH_W / 2 - 1.4), 0)); goose.root.rotation.y = Math.atan2(fs.rx * s, fs.rz * s); goose.pose({ t, waddle: 0.5 });
     ding.visible = (ring === 1 && t > 0.8 && t < 1.8) || (ring === 2 && t > 1.3 && t < 2.2); if (ding.visible) { ding.position.copy(bellHome).add(V(0, 0.8, 0)); popScale(ding, t, ring === 2 ? 1.3 : 0.8); }
     cue('line', t > 0.9, () => K.say(cs.lines?.[0]));
     K.ov.caption(ring === 1 ? (t > 0.8 ? 'PB BELL!' : null) : ring === 2 ? (t < 0.9 ? 'PB BELL…' : 'WITH A CONE.') : (t < 2.4 ? 'OH NO.' : "THE GOOSE'S BELL NOW"), { yellow: ring !== 3 || t > 2.4 });
@@ -431,7 +424,9 @@ SCENES.wrong_kit_bag = (K, cs) => {
     cue('line', bb > -2.2, () => K.say(cs.lines?.[0]));
     K.ov.caption(bb < 1.1 ? { swim: 'WRONG BAG: SWIMMING', weights: 'WRONG BAG: WEIGHTS', yoga: 'WRONG BAG: YOGA', ski: 'WRONG BAG: SKIS' }[v] : null, { yellow: true });
     I.camera = bb > -2.8 && bb < 1.6;
-    if (I.camera) { const ap = r.root.position; K.cam(ap.clone().addScaledVector(V(st0.tx, 0, st0.tz), 4.8).addScaledVector(V(st0.rx, 0, st0.rz), s * 2.2).add(V(0, 1.9, 0)), ap.clone().add(V(0, 1.5, 0)), 46); }
+    // framed in the right third (the HUD's 3-2-1-GO! is mid-screen)
+    // he sits in the lower third (the HUD's 3-2-1-GO! is mid-screen, upper half)
+    if (I.camera) { const ap = r.root.position; K.cam(ap.clone().addScaledVector(V(st0.tx, 0, st0.tz), 5.6).addScaledVector(V(st0.rx, 0, st0.rz), s * 1.4).add(V(0, 2.0, 0)), ap.clone().add(V(0, 2.75, 0)).addScaledVector(V(st0.rx, 0, st0.rz), s * 0.4), 52); }
   };
   // tag what we added so it can be hidden / removed
   const tagged = [];

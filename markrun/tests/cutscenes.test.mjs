@@ -136,9 +136,11 @@ test('no weather facts -> no weather gag; no diversion -> no funfair', () => {
 test('the funfair package: sign, slow-mo, drone, set piece at the fair, back on course; lap 1 set-up, lap 2 payoff', () => {
   const withDiv = F.filter((f) => f.plan.runners.some((r) => r.diversions?.length));
   assert.ok(withDiv.length >= 5);
-  let lap2 = 0;
-  for (const { plan, runners } of withDiv) {
-    const cs = planCutscenes({ racePlan: plan, runners, rng: 2 });
+  let lap2 = 0, planned = 0;
+  for (const [k, { plan, runners }] of withDiv.entries()) {
+    const cs = planCutscenes({ racePlan: plan, runners, rng: 2 + k });
+    if (!cs.some((c) => c.group === 'funfair-1')) continue; // the fair is gated to keep it rare
+    planned++;
     const g1 = cs.filter((c) => c.group === 'funfair-1');
     const kinds = g1.map((c) => c.kind);
     for (const k of ['funfair_stretch', 'funfair_sign', 'funfair_drone', 'funfair_rejoin']) assert.ok(kinds.includes(k), `lap 1 has ${k}`);
@@ -158,6 +160,7 @@ test('the funfair package: sign, slow-mo, drone, set piece at the fair, back on 
     if (g2.length) { lap2++; assert.ok(['freeze', 'inset'].includes(g2[0].mode)); assert.notEqual(g2[0].params.variant, set1.params.variant); }
   }
   assert.ok(lap2 >= 1, 'a lap-2 payoff plays');
+  assert.ok(planned >= 1 && planned < withDiv.length, `funfair is gated (${planned} of ${withDiv.length})`);
 });
 
 test('the night: cooldowns via session memory, funfair signature rotates', () => {
@@ -173,8 +176,10 @@ test('the night: cooldowns via session memory, funfair signature rotates', () =>
   // funfair signature: never the same twice in a night
   const fz = F.filter((f) => f.plan.runners.some((r) => r.diversions?.length)).slice(0, 2);
   const m2 = {};
-  const s1 = planCutscenes({ racePlan: fz[0].plan, runners: fz[0].runners, rng: 1, sessionMemory: m2, roundNumber: 3 }).find((c) => c.group === 'funfair-1' && ['hook_a_duck', 'test_strength'].includes(c.kind));
-  const s2 = planCutscenes({ racePlan: fz[1].plan, runners: fz[1].runners, rng: 1, sessionMemory: m2, roundNumber: 4 }).find((c) => c.group === 'funfair-1' && ['hook_a_duck', 'test_strength'].includes(c.kind));
+  const sig = (f, rn) => { for (let seed = 1; seed < 60; seed++) { const before = JSON.stringify(m2); const c = planCutscenes({ racePlan: f.plan, runners: f.runners, rng: seed, sessionMemory: m2, roundNumber: rn }).find((x) => x.group === 'funfair-1' && ['hook_a_duck', 'test_strength'].includes(x.kind)); if (c) return c; Object.assign(m2, JSON.parse(before)); } return null; };
+  const s1 = sig(fz[0], 3);
+  m2.cutscenes.night = {}; // a later night (the package is capped at one a night)
+  const s2 = sig(fz[1], 4);
   assert.ok(s1 && s2 && s1.kind !== s2.kind, 'rotated');
 });
 

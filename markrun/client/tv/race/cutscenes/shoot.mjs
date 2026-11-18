@@ -32,6 +32,8 @@ for (const s of specs) {
   const [id, t] = spec.split('@');
   const t1 = Date.now();
   const r = await page.evaluate(([id, t]) => window.__cuts.at(id, Number(t)), [id, t]);
+  // the sim was stepped faster than real time: settle CSS animations/transitions (e.g. the HUD's 0.8 s GO!) to where they would be
+  await page.evaluate(() => { for (const a of document.getAnimations()) { try { if (a.effect?.getComputedTiming?.().iterations !== Infinity) a.finish(); } catch { /* */ } } });
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${out}${name}.png` });
   console.log(name, `${Date.now() - t1}ms`, JSON.stringify(r));
