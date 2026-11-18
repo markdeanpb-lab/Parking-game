@@ -156,7 +156,9 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   if (raceNo <= 1 || raceNo < (cm.races || 0)) { cm.night = {}; cm.lines = []; cm.variants = {}; }
   cm.night ||= {}; cm.lines ||= []; cm.variants ||= {};
   const capped = (kind) => (cm.night[kind] || 0) >= PER_NIGHT_CAP;
-  const cool = (kind) => force === kind || (freshness(kind) >= 0 && !capped(kind) && (GATE[kind] == null || R.next() < GATE[kind]));
+  const gateRoll = {}; // one roll per kind per race
+  const gate = (kind) => GATE[kind] == null || (gateRoll[kind] ??= R.next()) < GATE[kind];
+  const cool = (kind) => force === kind || (freshness(kind) >= 0 && !capped(kind) && gate(kind));
   const rel = (id) => (backed.has(id) ? 1 : 0);
 
   const out = [];
