@@ -103,3 +103,24 @@ Source: Fable's re-prioritised review ("make the current loop premium; no big ne
   - simulator re-run after the clue changes.
 
 **Deferred:** Saturday Futures, The Marriage Ledger, "I Remember That One", halfway cash-out/double-down, a pre-recorded voice-over, and new prop types.
+
+## Quality & fun pass (Fable full-game review #2; user-approved 2026-11-18)
+- **Game:**
+  - Clues with real signal: weather only when extreme, at least one directional clue per runner, at least one public-vs-private conflict per round.
+  - The clue review shows the 2 clues that mattered.
+  - Longshot repricing to about −5% ROI; fix rusty and funfair theme pricing.
+  - About 12 personal commentary lines per race (`personaliseCommentary` with names, stakes and tipster accountability).
+  - Reveal context: rank among his 98, races nearby, season, and a Real Mark fact.
+  - Theme and hot-tip variety (more positive tips).
+  - Photo-finish and late-lead props removed.
+  - Headline/kicker join punctuation fixed.
+- **UI:**
+  - Winnings shown in money everywhere a stake appears.
+  - A 30-second round-1 explainer, plus HOT TIP and GOSSIP text labels.
+  - Phone: bankroll shown after lock, content moved up, no truncated props, award owners shown.
+  - Results wipe checked.
+  - Bigger TV ribbon and subtitles.
+  - Group intro from round 2.
+  - Personalised commentary wired in; reveal context shown.
+- **3D:** prefer the tightest pair involving a backed runner within the calm-camera rules, a closing-gap bar, and wide framing when the field is spread.
+- **Declined:** the spouse-vs-spouse wager (the user: the game is already "my runner vs your runner"). Still parked: a season/ledger and "Mark, which one is you?".
