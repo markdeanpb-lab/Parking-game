@@ -472,7 +472,7 @@ test('personaliseCommentary: names, stakes, short lines, calm spacing, must-say 
     const r = mk({ rng: 13000 + s2 });
     const fav = [...r.public.runners].sort((a, b) => a.odds.win - b.odds.win);
     const before = r.racePlan.commentary.filter((x) => x.priority === 1).map((x) => x.text);
-    const out = personaliseCommentary(r, { p1: [{ type: 'win', runnerId: fav[0].id, stake: 300 }], p2: [{ type: 'win', runnerId: fav[4].id, stake: 500 }] }, P, r.racePlan);
+    const out = personaliseCommentary(r, { p1: [{ type: 'win', runnerId: fav[0].id, stake: 300 }], p2: [{ type: 'win', runnerId: fav[4].id, stake: 500 }] }, P, r.racePlan, 77 + s2);
     assert.equal(r.racePlan.commentary, out);
     for (const t of before) assert.ok(out.some((x) => x.text === t), 'priority-1 line kept');
     for (let i = 1; i < out.length; i++) assert.ok(out[i].broadcastS - out[i - 1].broadcastS >= 9, 'spacing');

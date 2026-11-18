@@ -4,7 +4,9 @@
   "description": "MARKRUN - a two-player parkrun betting party game built from Mark's real Finsbury parkrun history.",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/index.mjs",
     "build": "node tools/build.mjs",
@@ -14,11 +16,13 @@
     "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.mjs\""
   },
   "dependencies": {
+    "peerjs": "1.5.5",
     "qrcode": "1.5.4",
     "ws": "8.18.0"
   },
   "devDependencies": {
     "esbuild": "0.25.0",
+    "peer": "1.0.2",
     "three": "0.170.0"
   }
 }
