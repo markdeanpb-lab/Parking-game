@@ -534,7 +534,7 @@ SCENES.test_strength = (K, cs) => {
       if (t < 1.2) { shot(f.p(-6.4, -s2 * 2.0, 2.0), towerPos.clone().add(V(0, 2.2, 0)), 52); K.ov.caption(t > 0.3 ? 'TEST YOUR STRENGTH' : null, { yellow: true }); }
       else if (t < 3.6) {
         const py = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 2.6).addScaledVector(V(f.tx, 0, f.tz), 4.6).add(V(0, Math.max(1.6, py.y - towerPos.y - 0.4), 0)), py.clone().add(V(0, 0.2, 0)), 42);
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 6.2).addScaledVector(V(f.tx, 0, f.tz), 1.2).add(V(0, Math.max(4.0, py.y - towerPos.y + 1.0), 0)), py.clone().add(V(0, 0.1, 0)), 40);
         K.ov.caption(t > 2.8 ? 'PARKRUNNER.' : t > 1.9 ? 'WOBBLY…' : t > 1.3 ? 'WEED…' : null, { yellow: t > 2.8 });
       } else { shot(f.p(-6, -s2 * 2.2, 2.0), A.root.position.clone().add(V(0, 1.3, 0)), 42); K.ov.caption(null); }
     }
@@ -710,7 +710,7 @@ SCENES.everest = (K, cs) => {
       }
       const roll = -s * 0.42 * smooth(0, 1.6, t);
       peak.visible = true;
-      if (t < 1.8) { camPos = f0.p(a + 4.5, -s * 4.6, 0.6); camLook = V(f1.x, f1.y + 8, f1.z).lerp(A.root.position.clone().add(V(0, 1.2, 0)), 0.55); K.cam(camPos, camLook, 50, roll); K.ov.caption(t > 0.35 ? 'BASE CAMP' : null, { yellow: true }); }
+      if (t < 1.8) { camPos = f0.p(a - 3.2, -s * 3.0, 0.7); camLook = V(f1.x, f1.y + 8, f1.z).lerp(A.root.position.clone().add(V(0, 1.3, 0)), 0.8); K.cam(camPos, camLook, 50, roll); K.ov.caption(t > 0.35 ? 'BASE CAMP' : null, { yellow: true }); }
       else { camPos = f0.p(a + 3.0, -s * 3.6, 1.5); camLook = f0.p(a + 0.6, s * 0.6, 1.45); K.cam(camPos, camLook, 40, roll * 0.5); K.ov.caption('OXYGEN?', { yellow: false }); }
     } else {
       // the summit: flag planted, arms aloft
@@ -1163,7 +1163,7 @@ SCENES.sore_loser_var = (K, cs) => {
   const aPos = fs.p(7, s * 0.5, 0);
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
-    const jp = booth.g.localToWorld(V(0, 0.05, -0.25)); place(J, jp, booth.g.rotation.y);
+    const jp = booth.g.localToWorld(V(t < 3.2 ? -0.95 : 0, 0.05, -0.25)); place(J, jp, booth.g.rotation.y + (t < 3.2 ? 0.35 : 0));
     drive(J, dt, t > 3.6 && t < 4.3 ? 'pose' : 'idle', 'point', { expr: t > 3.6 ? 'happy' : 'effort' });
     if (t < 3.6) { J.rig.arms[1].sh.rotation.set(-0.9, 0, 0.2); J.rig.arms[1].el.rotation.x = -1.6; J.rig.head.rotation.x = 0.15; }
     if (t < 1.7) {
@@ -1178,7 +1178,7 @@ SCENES.sore_loser_var = (K, cs) => {
       K.ov.caption(t > 0.3 ? 'VAR CHECK!' : null, { yellow: true });
     } else if (t < 4.3) {
       // the booth: over Jeff's shoulder at the replay, then his verdict
-      if (t < 3.2) { const sc = booth.screen.getWorldPosition(V()); K.cam(booth.g.localToWorld(V(-0.75, 2.45, -1.05)), sc, 44, 0, { occlude: false }); K.ov.caption('SQUIRREL OFFSIDE?', { yellow: true }); }
+      if (t < 3.2) { const sc = booth.screen.getWorldPosition(V()); K.cam(booth.g.localToWorld(V(0.95, 2.35, -1.25)), sc, 40, 0, { occlude: false }); K.ov.caption('SQUIRREL OFFSIDE?', { yellow: true }); }
       else { K.cam(booth.g.localToWorld(V(2.3, 1.9, 0.9)), J.root.localToWorld(V(0, J.r.height - 0.5, 0.1)), 38, 0, { occlude: false }); K.ov.caption(null); }
       cue('line', t > 1.9, () => K.say(cs.lines?.[0]));
       cue('stamp', t > 3.5, () => K.ov.big('RESULT STANDS', '#2ec27e'));

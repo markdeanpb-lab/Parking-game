@@ -95,6 +95,10 @@ const gameFrame = async (page) => {
   throw new Error('game iframe not found');
 };
 const shot = async (page, name) => {
+  try { // never capture a screen mid-wipe (the broadcast wipe covers the TV for ~0.1 s at its midpoint)
+    const f = page.frames().find((x) => x.url().startsWith(`http://127.0.0.1:${GAME_PORT}/`));
+    await f?.waitForFunction(() => !document.querySelector('#wipe.go'), null, { timeout: 3000 }).catch(() => {});
+  } catch { /* */ }
   try { await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); log('  shot', name); } catch (e) { log('  shot FAILED', name, e.message.split('\n')[0]); }
 };
 

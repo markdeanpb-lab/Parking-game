@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS = {
   supScale: MODEL_DEFAULTS.supScale,
   supBottomX: MODEL_DEFAULTS.supBottomX,
   longshotFloor: MODEL_DEFAULTS.longshotFloor,
+  longshotShade: MODEL_DEFAULTS.longshotShade,
   formHoldsBonus: 3,     // selection curation: prefer fields where the form guide broadly holds (iteration 4: decisive clues do the rest)
   formGapBonus: 2,       // selection: prefer fields with clear public form differences (no outcomes)
   publicPricedBonus: 0.9,// clue assignment: prefer public clues the bookie can price
@@ -185,7 +186,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   // The Funfair Stakes mixes very different mornings: the bookie (who knows the theme) prices it with extra uncertainty.
   const sigma = S.sigma * (theme.sigmaX ?? 1); // themes the bookie knows are unpredictable get wider prices
   const probs = winProbs(mus, sigma);
-  const odds = bookProbs(probs, S.longshotFloor).map((p) => oddsFromProb(p, S.margin));
+  const odds = bookProbs(probs, S.longshotFloor, S.longshotShade).map((p) => oddsFromProb(p, S.margin));
 
   // 6. characters
   const chars = makeCharacters(perfs.length, R, mem);

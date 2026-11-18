@@ -34076,7 +34076,7 @@ function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
           vUv = uv; vC = aSeed.y; vK = uKind;
           vec3 rel = (p - uCenter) / (uBox * 0.5);
           float edge = 1.0 - smoothstep(0.75, 1.0, max(abs(rel.x), max(abs(rel.y), abs(rel.z))));
-          vA = edge * smoothstep(1.5, 4.0, -mv.z);
+          vA = edge * smoothstep(4.0, 9.0, -mv.z); // long lenses: nothing huge right in front of the glass
         }`
       ),
       fragmentShader: (
@@ -34210,6 +34210,7 @@ function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
     breathe(dt, runners);
   }
   function breathe(dt, runners) {
+    var _a;
     if (P.breath) for (const r of runners) {
       if (!r.root.visible) continue;
       const L = puffFor(r);
@@ -34229,11 +34230,14 @@ function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
           sp.visible = false;
           continue;
         }
-        tmp2.copy(r.root.position).addScaledVector(fwd, 0.45 - a * 0.5);
-        tmp2.y += r.height - 0.55 + a * 0.25;
+        const side = (_a = sp.userData).side ?? (_a.side = L.sprites.indexOf(sp) % 2 ? 1 : -1);
+        tmp2.copy(r.root.position).addScaledVector(fwd, 0.6 + a * 0.2);
+        tmp2.x += fwd.z * side * (0.3 + a * 0.35);
+        tmp2.z -= fwd.x * side * (0.3 + a * 0.35);
+        tmp2.y += r.height - 0.82 + a * 0.3;
         sp.position.copy(tmp2);
-        sp.scale.setScalar(0.22 + a * 0.45);
-        sp.material.opacity = 0.8 * (1 - a / 1.1);
+        sp.scale.setScalar(0.16 + a * 0.38);
+        sp.material.opacity = 0.85 * (1 - a / 1.1);
       }
     }
   }
@@ -39495,7 +39499,7 @@ SCENES.test_strength = (K, cs) => {
         K.ov.caption(t > 0.3 ? "TEST YOUR STRENGTH" : null, { yellow: true });
       } else if (t < 3.6) {
         const py2 = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 2.6).addScaledVector(V(f.tx, 0, f.tz), 4.6).add(V(0, Math.max(1.6, py2.y - towerPos.y - 0.4), 0)), py2.clone().add(V(0, 0.2, 0)), 42);
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 6.2).addScaledVector(V(f.tx, 0, f.tz), 1.2).add(V(0, Math.max(4, py2.y - towerPos.y + 1), 0)), py2.clone().add(V(0, 0.1, 0)), 40);
         K.ov.caption(t > 2.8 ? "PARKRUNNER." : t > 1.9 ? "WOBBLY\u2026" : t > 1.3 ? "WEED\u2026" : null, { yellow: t > 2.8 });
       } else {
         shot(f.p(-6, -s2 * 2.2, 2), A.root.position.clone().add(V(0, 1.3, 0)), 42);
@@ -39775,8 +39779,8 @@ SCENES.everest = (K, cs) => {
       const roll = -s * 0.42 * smooth3(0, 1.6, t);
       peak.visible = true;
       if (t < 1.8) {
-        camPos = f0.p(a + 4.5, -s * 4.6, 0.6);
-        camLook = V(f1.x, f1.y + 8, f1.z).lerp(A.root.position.clone().add(V(0, 1.2, 0)), 0.55);
+        camPos = f0.p(a - 3.2, -s * 3, 0.7);
+        camLook = V(f1.x, f1.y + 8, f1.z).lerp(A.root.position.clone().add(V(0, 1.3, 0)), 0.8);
         K.cam(camPos, camLook, 50, roll);
         K.ov.caption(t > 0.35 ? "BASE CAMP" : null, { yellow: true });
       } else {
@@ -40524,8 +40528,8 @@ SCENES.sore_loser_var = (K, cs) => {
   const aPos = fs.p(7, s * 0.5, 0);
   I.update = (g0, dt, b, { gagDur }) => {
     const t = tscale(g0, gagDur, NOM);
-    const jp = booth.g.localToWorld(V(0, 0.05, -0.25));
-    place2(J, jp, booth.g.rotation.y);
+    const jp = booth.g.localToWorld(V(t < 3.2 ? -0.95 : 0, 0.05, -0.25));
+    place2(J, jp, booth.g.rotation.y + (t < 3.2 ? 0.35 : 0));
     drive(J, dt, t > 3.6 && t < 4.3 ? "pose" : "idle", "point", { expr: t > 3.6 ? "happy" : "effort" });
     if (t < 3.6) {
       J.rig.arms[1].sh.rotation.set(-0.9, 0, 0.2);
@@ -40548,7 +40552,7 @@ SCENES.sore_loser_var = (K, cs) => {
     } else if (t < 4.3) {
       if (t < 3.2) {
         const sc = booth.screen.getWorldPosition(V());
-        K.cam(booth.g.localToWorld(V(-0.75, 2.45, -1.05)), sc, 44, 0, { occlude: false });
+        K.cam(booth.g.localToWorld(V(0.95, 2.35, -1.25)), sc, 40, 0, { occlude: false });
         K.ov.caption("SQUIRREL OFFSIDE?", { yellow: true });
       } else {
         K.cam(booth.g.localToWorld(V(2.3, 1.9, 0.9)), J.root.localToWorld(V(0, J.r.height - 0.5, 0.1)), 38, 0, { occlude: false });
@@ -40626,7 +40630,7 @@ function createCutscenePlayer(ctx) {
   let planRef = null, list = [];
   const persist = { bag: new Bag(ctx.scene), store: /* @__PURE__ */ new Map(), updaters: /* @__PURE__ */ new Map() };
   let curB = -99, liveCam = null;
-  const pipCam = new PerspectiveCamera(40, 16 / 9, 0.3, 4e3);
+  const pipCam = new PerspectiveCamera(40, 16 / 9, 0.3, 9e3);
   function resetPersist() {
     persist.bag.dispose();
     persist.bag = new Bag(ctx.scene);

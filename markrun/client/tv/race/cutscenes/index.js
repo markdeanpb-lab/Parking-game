@@ -27,7 +27,7 @@ export function createCutscenePlayer(ctx) {
   let planRef = null, list = [];
   const persist = { bag: new Bag(ctx.scene), store: new Map(), updaters: new Map() };
   let curB = -99, liveCam = null;
-  const pipCam = new THREE.PerspectiveCamera(40, 16 / 9, 0.3, 4000);
+  const pipCam = new THREE.PerspectiveCamera(40, 16 / 9, 0.3, 9000); // the sky dome is r=5000
 
   function resetPersist() { persist.bag.dispose(); persist.bag = new Bag(ctx.scene); persist.store.clear(); persist.updaters.clear(); }
   function sync() {
