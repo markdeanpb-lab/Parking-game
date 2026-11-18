@@ -24,7 +24,7 @@ function fields(n = 70) {
     while (picks.size < 5) { const p = main[Math.floor(R() * main.length)]; if (Math.abs(p.officialS - base.officialS) < 150) picks.add(p); }
     const perfs = [...picks];
     const plan = buildRacePlan(`T${k}`, perfs.map((p, i) => ({ id: `r${i + 1}`, officialS: p.officialS, progress: p.progress, pacingSource: p.pacingSource, diversions: p.diversions || null })));
-    const runners = perfs.map((p, i) => ({ id: `r${i + 1}`, shortName: `Runner ${i + 1}`, perf: { facts: p.facts, features: p.features } }));
+    const runners = perfs.map((p, i) => ({ id: `r${i + 1}`, shortName: `Runner ${i + 1}`, date: p.date, perf: { facts: p.facts, features: p.features } }));
     out.push({ plan, runners, perfs });
   }
   return out;
@@ -65,7 +65,7 @@ test('pacing: <= 3 pausing, <= 18 s pause, >= 20 s apart, nothing in the last 30
     for (let i = 1; i < pz.length; i++) assert.ok(pz[i].atBroadcastS - pz[i - 1].atBroadcastS >= RULES.pauseGapS, 'pauses >= 20 s apart');
     const lapB = plan.events.find((e) => e.type === 'lap')?.broadcastS;
     for (const c of cs) {
-      if (c.mode === 'pre' || c.mode === 'post') continue;
+      if (c.mode === 'pre' || c.mode === 'post' || c.params.overlay) continue;
       const end = c.mode === 'slowmo' ? c.params.untilBroadcastS : PAUSING.has(c.mode) ? c.atBroadcastS : c.atBroadcastS + c.durationS;
       assert.ok(leaderM(plan, end) < RULES.noGoM, `${c.kind} ends with the leader at ${leaderM(plan, end).toFixed(0)} m`);
       assert.ok(c.atBroadcastS >= RULES.startQuietS, `${c.kind} not in the start scrum`);
@@ -75,7 +75,7 @@ test('pacing: <= 3 pausing, <= 18 s pause, >= 20 s apart, nothing in the last 30
       if (lapB != null) assert.ok(Math.abs(lapB - c.atBroadcastS) >= RULES.marketGapS, 'clear of the halfway market');
     }
     const pre = cs.filter((c) => c.mode === 'pre'), post = cs.filter((c) => c.mode === 'post');
-    assert.ok(pre.length <= 1 && post.length <= 1);
+    assert.ok(pre.length <= 1 && post.filter((c) => !c.params.tag).length <= 1);
     for (const c of post) assert.ok(c.atBroadcastS >= Math.max(...plan.runners.map((r) => raceToBroadcast(plan.timeMap, r.officialS))), 'post plays after the last finisher');
     for (const c of pre) assert.ok(c.atBroadcastS < 0);
   }
@@ -104,12 +104,23 @@ test('triggers come from real data', () => {
         case 'sore_loser_var': { const o = [...plan.runners].sort((a, b) => a.officialS - b.officialS); assert.equal(o[1].id, c.who); assert.ok(o[1].officialS - o[0].officialS < 3); break; }
         case 'hook_a_duck': case 'test_strength': case 'funfair_sign': case 'funfair_drone': case 'funfair_rejoin': case 'funfair_stretch':
           assert.ok(plan.runners.find((r) => r.id === c.who).diversions?.length, 'funfair only for a runner whose real GPS trace diverted'); break;
+        case 'pointing_standoff': assert.equal(Math.round(plan.runners.find((r) => r.id === c.who).officialS), Math.round(plan.runners.find((r) => r.id === c.params.other).officialS)); break;
+        case 'sub20_wall': assert.ok(plan.runners.some((r) => r.officialS <= 1237)); for (const id of c.params.near) { const o = plan.runners.find((r) => r.id === id).officialS; assert.ok(o >= 1200 && o <= 1237); } break;
+        case 'mirror_routine': assert.ok(plan.events.some((e) => e.type === 'overtake' && e.by === c.who && e.on === c.params.on)); assert.ok(new Date(perfs[Number(c.who.slice(1)) - 1].date) - new Date(perfs[Number(c.params.on.slice(1)) - 1].date) >= 3 * 365 * 864e5); break;
+        case 'heart_vs_heart': assert.ok(Math.abs(facts(c.who).hr_mean - facts(c.params.other).hr_mean) >= 25); break;
+        case 'breakfast': assert.ok(facts(c.who).warmup_km.km > 0); break;
+        case 'before_after': assert.equal(facts(c.who).race_upcoming.name, facts(c.params.other).race_recent.name); break;
+        case 'road_to_100': assert.deepEqual([...c.params.numbers].sort((a, b) => a - b), perfs.map((p) => p.facts.finsbury_number).sort((a, b) => a - b)); break;
+        case 'incline_button': assert.ok(facts(c.who).treadmill_7d > 0 && s.hill1 >= 1.15); break;
+        case 'pb_bell': assert.equal(facts(c.who).was_finsbury_pb, true); assert.ok([...plan.runners].sort((a, b) => a.officialS - b.officialS).slice(0, 2).some((r) => r.id === c.who)); break;
+        case 'wrong_kit_bag': { const ct = facts(c.who).cross_training_7d || {}; assert.ok(['Swim', 'WeightTraining', 'Yoga', 'AlpineSki'].some((k) => ct[k])); break; }
         default: assert.fail(`unexpected ${c.kind}`);
       }
     }
     if (!plan.runners.some((r) => r.diversions?.length)) assert.ok(!cs.some((c) => CUTSCENE_KINDS[c.kind].cat === 'funfair'));
   }
-  for (const k of ['cannonball', 'spaghetti_legs', 'treadmill_hill', 'mirror_signal', 'raincloud', 'photographer']) assert.ok(seen.has(k), `${k} fires on real data`);
+  for (const k of ['cannonball', 'spaghetti_legs', 'treadmill_hill', 'raincloud', 'photographer', 'road_to_100', 'breakfast', 'pb_bell', 'sub20_wall']) assert.ok(seen.has(k), `${k} fires on real data`);
+  assert.ok(!seen.has('mirror_signal'), 'Mirror, Signal, Manoeuvre is benched');
   assert.ok(seen.has('hook_a_duck') || seen.has('test_strength'), 'a funfair signature fires');
 });
 
@@ -218,11 +229,38 @@ test('variety across a night: <= 2 of each kind, lines never repeat, visual vari
       for (const kind of new Set(cs.map((c) => c.kind))) count[kind] = (count[kind] || 0) + 1;
       for (const c of cs) {
         for (const l of c.lines) { if (c.params.callback) continue; assert.ok(!lines.has(`${c.kind}|${l.text}`) || c.group, `repeated line ${l.text}`); lines.add(`${c.kind}|${l.text}`); }
-        if (VISUAL_VARIANTS[c.kind] && !c.group) { const v = c.params.variant; assert.ok(VISUAL_VARIANTS[c.kind].includes(v), `${c.kind} variant ${v}`); (vars[c.kind] ||= []).push(v); }
+        if (VISUAL_VARIANTS[c.kind] && !c.group && c.kind !== 'mirror_signal') { const v = c.params.variant; assert.ok(VISUAL_VARIANTS[c.kind].includes(v), `${c.kind} variant ${v}`); (vars[c.kind] ||= []).push(v); }
       }
     }
-    for (const [kind, n] of Object.entries(count)) assert.ok(n <= PER_NIGHT_CAP, `${kind} x${n} in a night`);
+    for (const [kind, n] of Object.entries(count)) assert.ok(n <= (CUTSCENE_KINDS[kind].story ? { sub20_wall: 4, pb_bell: 3, road_to_100: 8 }[kind] : PER_NIGHT_CAP), `${kind} x${n} in a night`);
     for (const [kind, vs] of Object.entries(vars)) if (vs.length === 2) assert.notEqual(vs[0], vs[1], `${kind} variant rotates`);
   }
   for (const [k, bank] of Object.entries(LINE_BANKS)) assert.ok(bank.length >= 3, `${k} has 3+ lines`);
+});
+
+test('batch 2: facts gate the training-life and pair gags (missing fact -> no gag); one pause per race', () => {
+  const strip = (runners) => runners.map((r) => ({ ...r, date: undefined, perf: { facts: {}, features: {} } }));
+  for (const [k, { plan, runners }] of F.slice(0, 40).entries()) {
+    const cs = planCutscenes({ racePlan: plan, runners: strip(runners), rng: 300 + k });
+    for (const kind of ['heart_vs_heart', 'breakfast', 'before_after', 'incline_button', 'pb_bell', 'wrong_kit_bag', 'mirror_routine', 'road_to_100', 'raincloud']) assert.ok(!cs.some((c) => c.kind === kind), `${kind} without its fact`);
+    const full = planCutscenes({ racePlan: plan, runners, rng: 300 + k });
+    assert.ok(full.filter((c) => PAUSING.has(c.mode)).length <= 1, 'at most one pause');
+    for (const c of full) if (['sub20_wall', 'heart_vs_heart', 'mirror_routine', 'before_after', 'incline_button'].includes(c.kind)) assert.ok(!PAUSING.has(c.mode), `${c.kind} never pauses`);
+    for (const c of full) if (c.kind === 'pb_bell' || c.kind === 'road_to_100' || c.kind === 'pointing_standoff') assert.equal(c.mode, 'post');
+  }
+});
+
+test('batch 2: night storylines (wall holes, bell rings, road-to-100 stamps) live in session memory', () => {
+  const mem = {};
+  let rings = 0, walls = 0, stamped = 0;
+  for (let k = 1; k <= 8; k++) {
+    const { plan, runners } = F[(k * 5) % F.length];
+    const cs = planCutscenes({ racePlan: plan, runners, rng: 900 + k, sessionMemory: mem, roundNumber: k });
+    const b = cs.find((c) => c.kind === 'pb_bell'); if (b) { rings++; assert.equal(b.params.ring, rings); }
+    const w = cs.find((c) => c.kind === 'sub20_wall'); if (w) { walls++; }
+    const r = cs.find((c) => c.kind === 'road_to_100'); if (r) { assert.deepEqual(r.params.before, [...new Set(r.params.before)]); stamped++; }
+  }
+  assert.ok(rings <= 3 && walls <= 4);
+  assert.equal(mem.cutscenes.bell, rings); assert.equal(mem.cutscenes.wall.shown, walls);
+  assert.ok(stamped >= 6 && mem.cutscenes.road.length > 0);
 });

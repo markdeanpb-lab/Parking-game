@@ -93,7 +93,7 @@ export const LINE_BANKS = {
   photographer: [P('Hold on. Wrong end of the goose.'), J('Lovely shot, Pam.'), P('Second time lucky.')],
   sore_loser_var: [J('Checking... checking... the result STANDS!'), P('The squirrel was onside, Jeff.'), J('VAR says NO!')],
   pointing_standoff: [P('Same man. Same time. Different Saturday.'), J('It\'s a DEAD HEAT! With HIMSELF!'), P('One of them is copying.')],
-  sub20_wall: [J('It\'s the TWENTY-MINUTE WALL! And he\'s gone STRAIGHT THROUGH IT!'), P('He spent months on the wrong side of that.'), P('There\'s a door, Jeff.')],
+  sub20_wall: [J('It\'s the TWENTY-MINUTE WALL! And he\'s gone STRAIGHT THROUGH IT!'), P('He spent months on the wrong side of that.'), P('There\'s a door, Jeff.'), J('Another HOLE in the wall!')],
   mirror_routine: [P('He\'s just been overtaken by his own future.'), J('It\'s MARK against MARK! And the newer model\'s got more features!'), P('No spoilers, please.')],
   heart_vs_heart: [P('Same pace. One of them is having a lovely time.'), J('Look at that heart GO! And look at that one... reading!'), P('I\'d ask for a refund on the watch.')],
   breakfast: [P('He\'s been for a run already. Before nine.'), J('He thinks he\'s FINISHED! Somebody tell him!'), P('The rest of them have had toast.')],
