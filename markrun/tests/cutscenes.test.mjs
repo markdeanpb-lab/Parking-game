@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { historyDb } from '../server/db.mjs';
 import { loadData } from '../server/game/data.mjs';
 import { buildRacePlan, raceToBroadcast, broadcastToRace, distanceAt, timeAtDistance } from '../server/game/raceplan.mjs';
-import { planCutscenes, runnerStats, RULES, PAUSING, cutsceneTruths, CUTSCENE_KINDS } from '../server/game/cutscenes.mjs';
+import { planCutscenes, runnerStats, RULES, PAUSING, cutsceneTruths, CUTSCENE_KINDS, LINE_BANKS, VISUAL_VARIANTS, PER_NIGHT_CAP } from '../server/game/cutscenes.mjs';
 import { simulateClock, slowRate } from '../client/tv/race/cutscenes/clock.js';
 
 const data = loadData(historyDb());
@@ -97,7 +97,7 @@ test('triggers come from real data', () => {
         case 'goose_toll': assert.ok(s.pace(c.params.m0, c.params.m1) >= 1.12); assert.ok(c.atBroadcastS > B(plan, c.who, c.params.m1), 'replay comes after the real slowdown'); break;
         case 'everest': assert.ok(s.hill1 >= 1.18); break;
         case 'treadmill_hill': assert.ok(s.hill2 - s.hill1 >= 0.04); break;
-        case 'ice_cream_van': assert.ok(s.pace(c.params.m0, c.params.m1) <= 0.89 && facts(c.who).weather.temp_c >= 12); break;
+        case 'ice_cream_van': assert.ok(s.pace(c.params.m0, c.params.m1) <= 0.91 && facts(c.who).weather.temp_c >= 11); break;
         case 'raincloud': { const w = facts(c.who).weather; assert.ok(w.coco === 7 || w.coco === 8 || w.prcp_mm > 0.3); break; }
         case 'mirror_signal': assert.ok(plan.events.some((e) => e.type === 'overtake' && e.by === c.who && e.on === c.params.on)); break;
         case 'photographer': { const g = Math.abs(plan.runners.find((r) => r.id === c.params.other).officialS - plan.runners.find((r) => r.id === c.who).officialS); assert.ok(g <= 1.0 + 1e-9); break; }
@@ -140,7 +140,9 @@ test('the funfair package: sign, slow-mo, drone, set piece at the fair, back on 
     const order = ['funfair_sign', 'funfair_drone', set1.kind, 'funfair_rejoin'].map((k) => g1.find((c) => c.kind === k).atBroadcastS);
     assert.deepEqual([...order].sort((a, b) => a - b), order, 'beats in order');
     const rejoin = g1.find((c) => c.kind === 'funfair_rejoin');
-    assert.match(rejoin.lines[0].text, /no time at all|cost him \d+ seconds|quicker than he went in/);
+    const bankKey = rejoin.params.ratio <= 0.97 ? 'rejoin_fast' : rejoin.params.ratio >= 1.03 ? 'rejoin_slow' : 'rejoin_even';
+    const n = String(Math.max(1, Math.round(rejoin.params.costS)));
+    assert.ok(LINE_BANKS[bankKey].some((l) => l.text.replace('{n}', n) === rejoin.lines[0].text), `data-true rejoin line: ${rejoin.lines[0].text}`);
     const g2 = cs.filter((c) => c.group === 'funfair-2' && c.kind === set1.kind);
     if (g2.length) { lap2++; assert.ok(['freeze', 'inset'].includes(g2[0].mode)); assert.notEqual(g2[0].params.variant, set1.params.variant); }
   }
@@ -204,4 +206,23 @@ test('truth cards for the reveal (no real names, no dates)', () => {
     }
     delete plan.cutscenes;
   }
+});
+
+test('variety across a night: <= 2 of each kind, lines never repeat, visual variants rotate', () => {
+  for (let night = 0; night < 4; night++) {
+    const mem = {};
+    const count = {}, lines = new Set(), vars = {};
+    for (let k = 1; k <= 8; k++) {
+      const { plan, runners } = F[(night * 8 + k) % F.length];
+      const cs = planCutscenes({ racePlan: plan, runners, rng: 100 + night * 10 + k, sessionMemory: mem, roundNumber: k });
+      for (const kind of new Set(cs.map((c) => c.kind))) count[kind] = (count[kind] || 0) + 1;
+      for (const c of cs) {
+        for (const l of c.lines) { if (c.params.callback) continue; assert.ok(!lines.has(`${c.kind}|${l.text}`) || c.group, `repeated line ${l.text}`); lines.add(`${c.kind}|${l.text}`); }
+        if (VISUAL_VARIANTS[c.kind] && !c.group) { const v = c.params.variant; assert.ok(VISUAL_VARIANTS[c.kind].includes(v), `${c.kind} variant ${v}`); (vars[c.kind] ||= []).push(v); }
+      }
+    }
+    for (const [kind, n] of Object.entries(count)) assert.ok(n <= PER_NIGHT_CAP, `${kind} x${n} in a night`);
+    for (const [kind, vs] of Object.entries(vars)) if (vs.length === 2) assert.notEqual(vs[0], vs[1], `${kind} variant rotates`);
+  }
+  for (const [k, bank] of Object.entries(LINE_BANKS)) assert.ok(bank.length >= 3, `${k} has 3+ lines`);
 });

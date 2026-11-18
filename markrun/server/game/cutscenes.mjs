@@ -57,6 +57,37 @@ export const PAUSING = new Set(['freeze', 'replay']);
 const DUR = { funfair_sign: 2.6, funfair_drone: 3.8, hook_a_duck: 7, hook_a_duck2: 5, test_strength: 6.5, test_strength2: 6, funfair_rejoin: 2.8,
   goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 5.5, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 7 };
 
+// Line banks (3-4 per kind; one line plays per cutscene, never repeated within a night) and visual variants.
+const J = (text) => ({ speaker: 'jeff', text }), P = (text) => ({ speaker: 'pam', text });
+export const LINE_BANKS = {
+  funfair_sign: [J('Hang on, hang on, there\'s a DIVERSION!'), P('Ah. The funfair\'s in town.'), J('He\'s going OFF-PISTE!'), P('That is not the course, Jeff.')],
+  hook_a_duck_1: [P('He\'s won a goose. Of course he has.'), J('He\'s HOOKED one! Give that man a prize!'), P('One hook. One duck. One very suspicious goose.')],
+  hook_a_duck_2: [J('He\'s only gone and traded UP!'), P('That\'s not a prize. That\'s a passenger.'), P('Bigger goose. Same pace. Remarkable.')],
+  test_strength_creep: [P('Parkrunner. Fair.'), J('Ooh! So close to LEGEND!'), P('Solid. Unspectacular. Very him.')],
+  test_strength_launch: [J('He\'s been LAUNCHED back onto the course!'), P('Not strictly the route, Jeff.'), J('Is that... allowed?')],
+  test_strength_ding: [J('DING DING DING! Somebody fetch that bell!'), P('That bell\'s in the boating lake now.'), J('RING THE BELL! RING IT!')],
+  rejoin_even: [P('And he\'s lost... no time at all. Suspicious.'), P('Not a second lost. I have questions.'), J('Round the fair and NO time lost!')],
+  rejoin_slow: [J('That cost him {n} seconds!'), P('{n} seconds at the fair. Worth it.'), J('The fair has taken {n} seconds off him!')],
+  rejoin_fast: [P('He came out quicker than he went in. I want a steward\'s enquiry.'), J('QUICKER through the fair?!'), P('Faster round the funfair than on the path. Typical.')],
+  goose_toll: [J('He\'s been TOLLED!'), P('Contactless was down.'), P('One jelly baby. Daylight robbery.'), J('Pay the goose, Mark! PAY THE GOOSE!')],
+  treadmill_hill: [P('Same tree. Same bench. Same goose.'), J('Haven\'t we seen this bit?'), P('The Hill. Now on a loop.')],
+  everest: [P('It\'s about thirteen metres high, Jeff.'), J('BASE CAMP TO MARK! Do you read me?'), P('Thirteen metres. Bring a flask.')],
+  spaghetti_legs: [P('Legs: al dente.'), J('He\'s gone all SPAGHETTI!'), P('Those legs are cooked.')],
+  cannonball: [J('He\'s shot out like a CANNONBALL!'), J('And he is AWAY! Like a CANNONBALL!'), P('Steady on.')],
+  raincloud: [J('It\'s only raining on HIM!'), P('Different Saturday, different weather.'), P('He\'s brought his own weather.')],
+  mirror_signal: [P('Mirror, signal, manoeuvre.'), J('He\'s INDICATING! Who indicates?'), J('Textbook overtake!')],
+  ice_cream_van: [J('He\'s heard the VAN!'), P('Sold out. Every time.'), J('Faster, Mark! It\'s got FLAKES!')],
+  photographer: [P('Hold on. Wrong end of the goose.'), J('Lovely shot, Pam.'), P('Second time lucky.')],
+  sore_loser_var: [J('Checking... checking... the result STANDS!'), P('The squirrel was onside, Jeff.'), J('VAR says NO!')],
+};
+export const VISUAL_VARIANTS = {
+  goose_toll: ['jelly', 'peak'], treadmill_hill: ['goose', 'marshal'], everest: ['flask', 'tent'], spaghetti_legs: ['spaghetti', 'jelly'],
+  cannonball: ['cannon', 'catapult'], raincloud: ['umbrella', 'lightning'], mirror_signal: ['mirror', 'lplate'], ice_cream_van: ['chase', 'reverse'],
+  photographer: ['goose', 'thumb'], sore_loser_var: ['squirrel', 'pigeon'], hook_a_duck: ['goose', 'duck'], test_strength: ['jeff', 'pam'],
+};
+// the three gags whose picture is weakest fire less often until a stronger staging lands (rates ~15-20% a race)
+const GATE = { cannonball: 0.6, mirror_signal: 0.55, treadmill_hill: 0.6 };
+export const PER_NIGHT_CAP = 2;
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
 const pct = (ratio) => Math.round(Math.abs(ratio - 1) * 100);
@@ -122,7 +153,10 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   };
   const LIVE_KINDS = new Set(['cannonball', 'raincloud', 'mirror_signal', 'photographer', 'sore_loser_var']);
   const freshness = (kind) => { const l = cm.last?.[kind]; if (l == null) return 1; const ago = raceNo - l; return ago >= (LIVE_KINDS.has(kind) ? RULES.cooldownLiveRaces : RULES.cooldownRaces) ? 0.6 : -1; };
-  const cool = (kind) => force === kind || freshness(kind) >= 0;
+  if (raceNo <= 1 || raceNo < (cm.races || 0)) { cm.night = {}; cm.lines = []; cm.variants = {}; }
+  cm.night ||= {}; cm.lines ||= []; cm.variants ||= {};
+  const capped = (kind) => (cm.night[kind] || 0) >= PER_NIGHT_CAP;
+  const cool = (kind) => force === kind || (freshness(kind) >= 0 && !capped(kind) && (GATE[kind] == null || R.next() < GATE[kind]));
   const rel = (id) => (backed.has(id) ? 1 : 0);
 
   const out = [];
@@ -272,11 +306,11 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
       score: 4 + d * 25 + rel(r.id) * 2, lines: [{ speaker: 'pam', text: 'Same tree. Same bench. Same goose.' }],
       truth: `${name(r.id)} climbed the Hill ${pct(1 + d)}% slower on lap 2 than on lap 1 (${pct(S[r.id].hill1)}% then ${pct(S[r.id].hill2)}% off his average pace). It only felt like a loop.` }));
   }
-  // B2 Ice-Cream Van Jingle (freeze, then a live chase): his best mid-race 250 m (>= 11% quicker than average, from 600 m) on a 12 C+ morning
+  // B2 Ice-Cream Van Jingle (freeze, then a live chase): his best mid-race 250 m (>= 9% quicker than average, from 600 m) on an 11 C+ morning
   for (const r of PR) {
     const w = S[r.id].bestMid; if (!w || !cool('ice_cream_van')) continue;
     const temp = info[r.id].facts?.weather?.temp_c;
-    if (!((w.ratio <= 0.89 && temp != null && temp >= 12) || isForced('ice_cream_van'))) continue;
+    if (!((w.ratio <= 0.91 && temp != null && temp >= 11) || isForced('ice_cream_van'))) continue;
     C.push(mk('ice_cream_van', r.id, 'freeze', B(r.id, w.m0), { params: { m0: w.m0, m1: w.m1, atM: w.m0, ratio: r2(w.ratio), tempC: temp ?? null, liveTailS: 3 },
       score: 4 + (1 - w.ratio) * 15 + rel(r.id) * 2, lines: [{ speaker: 'jeff', text: 'He\'s heard the VAN!' }],
       truth: `${name(r.id)} really did surge: 250 m at ${pct(w.ratio)}% quicker than his average from ${km(w.m0)}${temp != null ? `, on a ${Math.round(temp)}°C morning` : ''}. There was no van. Sorry.` }));
@@ -322,7 +356,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
 
   // callback: the cannonball who fades gets Pam's line
   const cb = C.find((c) => c.kind === 'cannonball');
-  for (const c of C) if (c.kind === 'spaghetti_legs' && cb && c.who === cb.who) { c.lines = [{ speaker: 'pam', text: 'The cannonball\'s run out of cannon.' }]; c._score += 3; }
+  for (const c of C) if (c.kind === 'spaghetti_legs' && cb && c.who === cb.who) { c.lines = [{ speaker: 'pam', text: 'The cannonball\'s run out of cannon.' }]; c.params.callback = true; c._score += 3; }
 
   // ---------- 3. greedy selection within the budget ----------
   const used = new Set(out.map((c) => CUTSCENE_KINDS[c.kind].cat));
@@ -349,10 +383,36 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
 
   // ---------- 4. finalise + session memory ----------
   out.sort((a, b) => a.atBroadcastS - b.atBroadcastS || (a.mode === 'slowmo' ? -1 : 1));
+  // lines (fresh within the night) + visual variants (rotate per kind)
+  const pickLine = (bank, vars = {}) => {
+    const keys = bank.map((_, i) => i).filter((i) => !cm.lines.includes(`${bank._k}:${i}`));
+    const i = keys.length ? keys[Math.floor(R.next() * keys.length)] : Math.floor(R.next() * bank.length);
+    cm.lines.push(`${bank._k}:${i}`);
+    const l = bank[i]; return { speaker: l.speaker, text: l.text.replace('{n}', vars.n ?? '') };
+  };
+  for (const [k, v] of Object.entries(LINE_BANKS)) Object.defineProperty(v, '_k', { value: k, enumerable: false });
+  const sigVar = {};
+  for (const c of out) {
+    let bankKey = c.kind;
+    if (c.kind === 'hook_a_duck') bankKey = `hook_a_duck_${c.params.lap === 2 ? 2 : 1}`;
+    if (c.kind === 'test_strength') bankKey = `test_strength_${c.params.variant || 'creep'}`;
+    if (c.kind === 'funfair_rejoin') { const r = c.params.ratio ?? 1; bankKey = r <= 0.97 ? 'rejoin_fast' : r >= 1.03 ? 'rejoin_slow' : 'rejoin_even'; }
+    if (LINE_BANKS[bankKey] && !c.params.callback) c.lines = [pickLine(LINE_BANKS[bankKey], { n: Math.max(1, Math.round(c.params.costS ?? 0)) })];
+    const vv = VISUAL_VARIANTS[c.kind];
+    if (vv) {
+      const key = c.kind === 'hook_a_duck' ? 'prize' : c.kind === 'test_strength' ? 'top' : 'variant';
+      if (c.params[key] == null) {
+        if (sigVar[c.kind] == null) { const last = cm.variants[c.kind]; const opts = vv.filter((x) => x !== last); sigVar[c.kind] = (opts.length ? opts : vv)[Math.floor(R.next() * (opts.length || vv.length))]; }
+        c.params[key] = sigVar[c.kind];
+      }
+    }
+  }
   out.forEach((c, i) => { c.id = `cs${i + 1}`; delete c._score; c.lines = (c.lines || []).slice(0, 2); });
   if (mem && !force) {
     cm.races = raceNo;
     for (const c of out) cm.last[c.kind] = raceNo;
+    for (const k of new Set(out.map((c) => c.kind))) cm.night[k] = (cm.night[k] || 0) + 1;
+    for (const [k, v] of Object.entries(sigVar)) cm.variants[k] = v;
     if (cm._sig) { cm.funfairSigs = [...(cm.funfairSigs || []), cm._sig]; }
     if (out.some((c) => c.kind === 'goose_toll')) cm.goose = (cm.goose || 0) + 1;
   }
