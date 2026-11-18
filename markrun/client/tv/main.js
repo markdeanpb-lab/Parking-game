@@ -522,7 +522,8 @@ function presenterSvg(who, size = 360) {
   // the runner portrait without its colour disc, with a suit jacket drawn over the running vest
   const svg = runnerPortrait({ ...P, lane: '' }, { size, idSuffix: `${who}${Math.random().toString(36).slice(2, 5)}` })
     .replace(/<circle cx="60" cy="60" r="56" fill="[^"]+"\/>/, '')
-    .replace(/<path d="M0 92 L120 70 L120 120 L0 120Z"[^>]*\/>/, '');
+    .replace(/<path d="M0 92 L120 70 L120 120 L0 120Z"[^>]*\/>/, '')
+    .replace(/<circle cx="60" cy="60" r="56" fill="none" stroke="[^"]+" stroke-width="[^"]+"\/>/, ''); // no medallion ring on the desk
   const w = P.look.build === 'stocky' ? 50 : 40;
   const sy = P.look.build === 'stocky' ? 77 : 79;
   const ink = '#14183c';

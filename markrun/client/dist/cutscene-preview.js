@@ -38742,7 +38742,7 @@ function fairSetup(K, cs) {
   const s = fairSide(K, cs);
   const fSign = stageAt(K.C, lap1.fromM - 6);
   const g = bag.group();
-  const signTex = bag.tex(512, 512, (c, w, h) => {
+  const signFace = (arrowDir) => bag.tex(512, 512, (c, w, h) => {
     c.clearRect(0, 0, w, h);
     c.save();
     c.translate(w / 2, h / 2);
@@ -38758,7 +38758,7 @@ function fairSetup(K, cs) {
     c.fillStyle = "#1a1420";
     c.save();
     c.translate(w / 2, h / 2 + 62);
-    c.scale(-s, 1);
+    c.scale(arrowDir, 1);
     c.beginPath();
     c.moveTo(-80, -18);
     c.lineTo(20, -18);
@@ -38771,7 +38771,14 @@ function fairSetup(K, cs) {
     c.fill();
     c.restore();
   });
-  const signM = new Mesh(bag.add(new PlaneGeometry(2.6, 2.6)), bag.add(new MeshToonMaterial({ map: signTex, gradientMap: gradientMap(), transparent: true, side: DoubleSide, alphaTest: 0.5 })));
+  const faceMat = (tex) => bag.add(new MeshToonMaterial({ map: tex, gradientMap: gradientMap(), transparent: true, alphaTest: 0.5 }));
+  const pg = bag.add(new PlaneGeometry(2.6, 2.6));
+  const signM = new Group();
+  const fA = new Mesh(pg, faceMat(signFace(-s)));
+  signM.add(fA);
+  const fB = new Mesh(pg, faceMat(signFace(s)));
+  fB.rotation.y = Math.PI;
+  signM.add(fB);
   const sign2 = new Group();
   sign2.add(signM);
   signM.position.y = 2.75;
@@ -38908,7 +38915,7 @@ SCENES.funfair_drone = (K, cs) => {
     const f = (s - d.cum[i]) / Math.max(1e-6, d.cum[i + 1] - d.cum[i]);
     pts.push([d.path[i][0] + (d.path[i + 1][0] - d.path[i][0]) * f, d.path[i][1] + (d.path[i + 1][1] - d.path[i][1]) * f]);
   }
-  const dotGeo = I.bag.add(new CylinderGeometry(1, 1, 0.25, 12));
+  const dotGeo = I.bag.add(new CylinderGeometry(1.5, 1.5, 0.25, 12));
   const dots = new InstancedMesh(dotGeo, I.bag.basic("#ff2d55"), Math.max(1, pts.length));
   dots.frustumCulled = false;
   g.add(dots);
@@ -38928,12 +38935,9 @@ SCENES.funfair_drone = (K, cs) => {
     dashes.setMatrixAt(i, O.matrix);
   }
   dashes.instanceMatrix.needsUpdate = true;
-  const allP = [...pts, ...Array.from({ length: 10 }, (_, i) => {
-    const s = stageAt(C, fromM + (toM - fromM) * i / 9);
-    return [s.x, s.z];
-  })];
+  const allP = pts.length ? pts : [[cs.params.x || 0, cs.params.z || 0]];
   const cx = allP.reduce((a, p) => a + p[0], 0) / allP.length, cz = allP.reduce((a, p) => a + p[1], 0) / allP.length;
-  const ext = Math.max(40, ...allP.map((p) => Math.hypot(p[0] - cx, p[1] - cz)));
+  const ext = Math.max(35, ...allP.map((p) => Math.hypot(p[0] - cx, p[1] - cz)));
   const centre = V(cx, C.heightAt(cx, cz), cz);
   const mid = stageAt(C, ((d?.fromM ?? 400) + (d?.toM ?? 800)) / 2);
   const away = V(-mid.rx * fair.s, 0, -mid.rz * fair.s).normalize();
@@ -38943,7 +38947,7 @@ SCENES.funfair_drone = (K, cs) => {
     const la = (apex[0] - mid.x) * mid.rx + (apex[1] - mid.z) * mid.rz;
     if (Math.abs(l) > Math.abs(la)) apex = p;
   }
-  const lab = sprite(I.bag, bubbleTexture(I.bag, "HIS ROUTE", { bg: "#ff2d55", fg: "#ffffff", w: 512, h: 220, size: 110 }), 16, 512 / 220);
+  const lab = sprite(I.bag, bubbleTexture(I.bag, "HIS ROUTE", { bg: "#ff2d55", fg: "#ffffff", w: 512, h: 220, size: 110 }), 15, 512 / 220);
   lab.position.set(apex[0], C.heightAt(apex[0], apex[1]) + 22, apex[1]);
   g.add(lab);
   const pub = K.pub(cs.who);
@@ -38969,7 +38973,7 @@ SCENES.funfair_drone = (K, cs) => {
     cue("cap", true, () => {
     });
     K.ov.caption(t > 0.4 && t < cs.durationS - 0.1 ? "HIS REAL GPS ROUTE" : null, { yellow: true });
-    const dist2 = ext * 2.25, el = 0.95 + t * 0.02;
+    const dist2 = ext * 1.75 + 30, el = 0.82 + t * 0.02;
     const dir = away.clone().applyAxisAngle(V(0, 1, 0), -0.25 + t * 0.05);
     const pos = centre.clone().addScaledVector(dir, Math.cos(el) * dist2).add(V(0, Math.sin(el) * dist2, 0));
     K.cam(pos, centre.clone().add(V(0, 4, 0)), 44, 0, { occlude: false, sun: Math.min(220, ext * 1.4) });
@@ -39175,13 +39179,13 @@ SCENES.hook_a_duck = (K, cs) => {
       plushSmall.root.position.copy(shelf).lerp(arms, handK);
       plushSmall.root.scale.setScalar(lerp2(0.42, 1.3, handK) / 0.42 * 0.42 / 0.42);
       plushSmall.root.rotation.y = handK > 0.5 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
-      plushSmall.root.scale.setScalar(lerp2(1, 3.1, handK));
+      plushSmall.root.scale.setScalar(lerp2(0.42, 1.25, handK));
       cue("line", t > 4.4, () => K.say(cs.lines?.[0]));
       if (t < 1.4) {
         shot(f.p(-7.5, -s2 * 2.6, 2.6), f.p(0, s2 * 3.2, 1.2), 42);
         K.ov.caption(t > 0.2 ? "HOOK-A-DUCK!" : null, { yellow: true });
       } else if (t < 3.6) {
-        shot(f.p(-1.3, s2 * 0.15, 2.9), pool.clone().add(V(0, 0.2, 0)), 46);
+        shot(f.p(3, s2 * 0.9, 2.3), pool.clone().lerp(markPos, 0.35).add(V(0, 0.5, 0)), 44);
         K.ov.caption(t > 2 && t < 2.9 ? "HANG ON\u2026" : null);
       } else if (t < 5) {
         shot(f.p(4.6, -s2 * 1.6, 2), markPos.clone().lerp(stallPos, 0.35).add(V(0, 1.4, 0)), 42);
@@ -39216,7 +39220,7 @@ SCENES.hook_a_duck = (K, cs) => {
       plushBig.root.visible = big > 0;
       const behind = stall.g.localToWorld(V(0.5, 0.6, -0.2));
       plushBig.root.position.copy(behind).lerp(A.root.localToWorld(V(0, A.r.hipH - 0.3, 1.1)), smooth3(1.6, 2.4, t));
-      plushBig.root.scale.setScalar(lerp2(0.3, 1, big));
+      plushBig.root.scale.setScalar(lerp2(0.3, 1, big) * 2.3);
       plushBig.root.rotation.y = big > 0.6 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
       plushBig.pose({ t });
       cue("line", t > 1.6, () => K.say(cs.lines?.[0]));
@@ -39224,7 +39228,7 @@ SCENES.hook_a_duck = (K, cs) => {
       if (t < 2.4) shot(f.p(-6.2, -s2 * 2.2, 2.4), markPos.clone().lerp(stallPos, 0.45).add(V(0, 1.4, 0)), 44);
       else {
         const ap = A.root.position;
-        shot(ap.clone().add(V(-f.rx * s2 * 7, 2.4, -f.rz * s2 * 7)).addScaledVector(V(f.tx, 0, f.tz), 2.5), ap.clone().add(V(0, 1.6, 0)), 42);
+        shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 5.5).add(V(-f.rx * s2 * 2.5, 2.2, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.6, 0)), 44);
       }
       if (t > 3.5 && !I._carry) {
         I._carry = true;
@@ -39349,7 +39353,7 @@ SCENES.test_strength = (K, cs) => {
     const L = dir.length();
     dir.normalize();
     lakeP.addScaledVector(dir, L * 0.55);
-    lakeCam = lakeP.clone().addScaledVector(dir, 13).add(V(0, 3.2, 0));
+    lakeCam = lakeP.clone().addScaledVector(dir, 7.5).add(V(0, 2.4, 0));
   }
   const splash = makePuffs(I.bag, 9, "#e9f8ff");
   root.add(splash.root);
@@ -39398,6 +39402,7 @@ SCENES.test_strength = (K, cs) => {
         p.y += Math.sin(Math.PI * flyU) * 60 * (1 - flyU * 0.2) - flyU * 2;
         flyBell.position.copy(p);
         flyBell.rotation.set(t * 9, t * 5, 0);
+        flyBell.scale.setScalar(2.6);
       }
       if (t < 1.4) {
         shot(f.p(-5.2, -s2 * 2.4, 2), towerPos.clone().add(V(0, 2.6, 0)), 50);
@@ -39415,8 +39420,8 @@ SCENES.test_strength = (K, cs) => {
         duck.rotation.y = Math.atan2(lakeCam.x - lakeP.x, lakeCam.z - lakeP.z) + Math.sin(u * 3) * 0.3;
         flyBell.visible = u > 0.9;
         flyBell.rotation.set(0, 0, 0);
-        flyBell.position.copy(duck.position).add(V(0, 1.15, 0));
-        flyBell.scale.setScalar(0.85);
+        flyBell.position.copy(duck.position).add(V(0, 1.05, 0));
+        flyBell.scale.setScalar(1.35);
         shot(lakeCam, lakeP.clone().add(V(0, 0.8, 0)), 36);
         K.ov.caption(u > 1.2 ? "NICE HAT." : "SPLOOSH!", { yellow: u > 1.2 });
       }
@@ -39490,7 +39495,7 @@ SCENES.test_strength = (K, cs) => {
         K.ov.caption(t > 0.3 ? "TEST YOUR STRENGTH" : null, { yellow: true });
       } else if (t < 3.6) {
         const py2 = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 5.2).addScaledVector(V(f.tx, 0, f.tz), -1.6).add(V(0, 1.2 + py2.y - towerPos.y - 1.2, 0)), py2.clone().add(V(0, 0.3, 0)), 40);
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 2.6).addScaledVector(V(f.tx, 0, f.tz), 4.6).add(V(0, Math.max(1.6, py2.y - towerPos.y - 0.4), 0)), py2.clone().add(V(0, 0.2, 0)), 42);
         K.ov.caption(t > 2.8 ? "PARKRUNNER." : t > 1.9 ? "WOBBLY\u2026" : t > 1.3 ? "WEED\u2026" : null, { yellow: t > 2.8 });
       } else {
         shot(f.p(-6, -s2 * 2.2, 2), A.root.position.clone().add(V(0, 1.3, 0)), 42);

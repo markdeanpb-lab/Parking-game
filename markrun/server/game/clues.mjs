@@ -365,21 +365,21 @@ const DECISIVE = {
     head: { top: (f) => `Busiest month in this field: ${km(f.km_28d)} km`, bottom: (f) => `Quietest month in this field: ${km(f.km_28d)} km` },
     kick: { top: ['Nobody here has done more homework.', 'The engine room of this lot.', 'More miles than anyone else here.', 'The legs have been to work.'],
       bottom: ['Every rival has done more.', 'Lightest training of the five.', 'The trainers have been resting.', 'Fresh legs. Very fresh. Suspiciously fresh.'] },
-    said: { top: 'had done more training than anyone in the field', bottom: 'had done the least training in the field' }, keys: ['km_28d'] },
+    said: { top: 'had done the most training here', bottom: 'had done the least training here' }, keys: ['km_28d'] },
   field_runs: {
     head: { top: (f) => `Most runs here: ${sum(f.runs_per_week_4w)} in four weeks`, bottom: (f) => `Fewest runs here: ${sum(f.runs_per_week_4w)} in four weeks` },
     kick: { top: ['Out the door more than anyone.', 'A creature of habit. A quick one?', 'Nobody here has turned up more.'],
       bottom: ['Everyone else got out more.', 'The hallway trainers gathered dust.', 'A part-timer among keen beans.'] },
-    said: { top: 'had run more often than anyone in the field', bottom: 'had run less often than anyone in the field' }, keys: ['runs_per_week_4w'] },
+    said: { top: 'had run the most often here', bottom: 'had run the least often here' }, keys: ['runs_per_week_4w'] },
   field_form: {
     head: { top: () => 'Clearly the best recent form here', bottom: () => 'Clearly the worst recent form here' },
     kick: { top: ['The one they all have to catch.', 'Arrives in the form of his life. Lately.', 'Everyone else has been slower lately.'],
       bottom: ['Everyone else has been quicker lately.', 'The form book is not his friend.', 'Lately he has been the slowcoach.'] },
-    said: { top: 'came in with clearly the best form in the field', bottom: 'came in with clearly the worst form in the field' }, keys: ['recent_finsbury_form'] },
+    said: { top: 'came in with the best form here', bottom: 'came in with the worst form here' }, keys: ['recent_finsbury_form'] },
   field_long: {
     head: { bottom: (f) => `Shortest long run here: ${km(f.longest_run_14d?.km ?? 0)} km` },
     kick: { bottom: ['Every rival has gone further lately.', 'No endurance in the bank, then.', 'The others have all gone long.'] },
-    said: { bottom: 'had the shortest long run in the field' }, keys: ['longest_run_14d'] },
+    said: { bottom: 'had the shortest long run here' }, keys: ['longest_run_14d'] },
 };
 for (const [kind, D] of Object.entries(DECISIVE)) {
   G[kind] = ({ p, field, rng }) => {
@@ -510,7 +510,7 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion, share =
     const sc = (slotCounts[x.slot] ||= { hedge: 0, fact: 0, tipster: 0 });
     // deficit scheduling: the style furthest below its target share goes next (plus a little noise and variety)
     const done = counts.hedge + counts.fact + counts.tipster + 1;
-    const score = (o) => (counts[o.style] + 0.5) / done / share[o.style] + 0.35 * sc[o.style] + (o.cool ? 2.5 : 0) + rng.next() * 0.5;
+    const score = (o) => 3 * (counts[o.style] + 0.5) / done / share[o.style] + 0.35 * sc[o.style] + (o.cool ? 0.8 : 0) + rng.next() * 0.5;
     const o = opts.reduce((a, b) => (score(b) < score(a) ? b : a));
     counts[o.style]++; sc[o.style]++;
     usedRound.add(o.skel);

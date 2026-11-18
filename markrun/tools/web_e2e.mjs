@@ -162,6 +162,13 @@ try {
   pass(`Options: Refresh hidden; "${dataTxt.split('·')[0].trim()}"`);
   await tv.click('#tvmodal [data-advanced]');
   await tv.waitForSelector('#tvmodal [data-k="roundsPerGame"]');
+  // the soft 90 s bet timer is the real-play default; a slow headless bot turns it off so it can't auto-lock mid-script
+  for (let i = 0; i < 6; i++) {
+    const t = await tv.$eval('#tvmodal [data-k="betTimer"] .val', (e) => e.textContent.trim());
+    if (t === 'Off') break;
+    await tv.click('#tvmodal [data-k="betTimer"] [data-d="-1"]');
+    await sleep(250);
+  }
   for (let i = 0; i < 12; i++) {
     const cur = await tv.$eval('#tvmodal [data-k="roundsPerGame"] .val', (e) => Number(e.textContent));
     if (cur === ROUNDS) break;

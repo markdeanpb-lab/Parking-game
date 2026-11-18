@@ -154,7 +154,7 @@ export function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
           vUv = uv; vC = aSeed.y; vK = uKind;
           vec3 rel = (p - uCenter) / (uBox * 0.5);
           float edge = 1.0 - smoothstep(0.75, 1.0, max(abs(rel.x), max(abs(rel.y), abs(rel.z))));
-          vA = edge * smoothstep(1.5, 4.0, -mv.z);
+          vA = edge * smoothstep(4.0, 9.0, -mv.z); // long lenses: nothing huge right in front of the glass
         }`,
       fragmentShader: /* glsl */`
         uniform vec3 uC0, uC1, uC2, uC3; uniform float uTime; varying vec2 vUv; varying float vA, vC, vK;
@@ -240,8 +240,12 @@ export function buildWeather({ scene, world, hemi, sun, sunDir, C, visual }) {
       r.root.getWorldDirection(fwd);
       for (const sp of L.sprites) {
         const a = (sp.userData.age += dt); if (a > 1.1) { sp.visible = false; continue; }
-        tmp.copy(r.root.position).addScaledVector(fwd, 0.45 - a * 0.5); tmp.y += r.height - 0.55 + a * 0.25;
-        sp.position.copy(tmp); sp.scale.setScalar(0.22 + a * 0.45); sp.material.opacity = 0.8 * (1 - a / 1.1);
+        // out in front of the mouth, drifting up and away (kept in the runner's frame so it reads at any clock rate)
+        // out of the side of the mouth, drifting up and away (kept in the runner's frame so it reads at any clock rate)
+        const side = (sp.userData.side ??= (L.sprites.indexOf(sp) % 2 ? 1 : -1));
+        tmp.copy(r.root.position).addScaledVector(fwd, 0.6 + a * 0.2); tmp.x += fwd.z * side * (0.3 + a * 0.35); tmp.z -= fwd.x * side * (0.3 + a * 0.35);
+        tmp.y += r.height - 0.82 + a * 0.3;
+        sp.position.copy(tmp); sp.scale.setScalar(0.16 + a * 0.38); sp.material.opacity = 0.85 * (1 - a / 1.1);
       }
     }
   }

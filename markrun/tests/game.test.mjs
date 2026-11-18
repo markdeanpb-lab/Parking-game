@@ -162,8 +162,13 @@ test('odds: fractional display agrees with decimal; ladder snapping; probabiliti
   assert.ok(book > 0.9 && book < 1.1, `near-zero margin book, got ${book}`);
 });
 
-test('settlement: payout maths, bankrolls, h2h, contract shape', () => {
-  const r = mk({ rng: 5 });
+test('settlement: payout maths, scores, h2h, contract shape', () => {
+  let r;
+  for (let seed = 5; ; seed++) { // a round whose head-to-head pair did not dead-heat (that is a push, tested below)
+    r = mk({ rng: seed });
+    const T = (id) => r.hidden.runners.find((x) => x.id === id).officialS;
+    if (T(r.public.matchups[0].a) !== T(r.public.matchups[0].b)) break;
+  }
   const order = r.racePlan.finishOrder;
   const win = r.public.runners.find((x) => x.id === order[0]);
   const lose = r.public.runners.find((x) => x.id === order[4]);
@@ -432,7 +437,7 @@ test('provisional payouts equal the real settlement when orderNow is the final o
       p2: [{ type: 'win', runnerId: order[0], stake: 70, boost: true }, { type: 'special', runnerId: b.id, stake: 20 }, { type: 'win', runnerId: c.id, stake: 10 }],
     };
     const res = settleRound(r, bets, { p1: 1000, p2: 1000 });
-    if (res.deadHeat) continue;
+    if (res.deadHeat || Object.values(res.payouts).some((P) => P.bets.some((b) => b.push))) continue; // ties are invisible mid-race
     const prov = provisionalNet(r.public, bets, order);
     for (const pid of ['p1', 'p2']) assert.equal(prov[pid], res.payouts[pid].net, `${pid} round ${s2}`);
   }
@@ -521,4 +526,96 @@ test('reveal context and the Real Mark fact come only from the data', () => {
   }
   assert.ok(typeof res.realMarkFact === 'string' && res.realMarkFact.length > 10);
   assert.ok(!/\bage\b|years old|born/i.test(res.realMarkFact));
+});
+
+// ---------- iteration 4 ----------
+test('decisive clues: one public field superlative per round (most rounds), always TRUE about this field', () => {
+  let withPub = 0, rounds = 0, total = 0;
+  for (let s2 = 0; s2 < 60; s2++) {
+    const r = mk({ rng: 20000 + s2 });
+    rounds++;
+    const facts = Object.fromEntries(Object.entries(r.hidden.perfs).map(([id, p]) => [id, p.facts]));
+    const field = Object.values(facts);
+    let pub = 0;
+    for (const [id, C] of Object.entries(r.hidden.clues)) {
+      for (const c of [C.public, ...Object.values(C.private)]) {
+        if (!c.decisive) continue;
+        total++;
+        const [, kind, side] = c.features[0].match(/^sup:(field_\w+)_(top|bottom)$/);
+        assert.equal(superlative(kind, facts[id], field), side, `${c.headline} must be true`);
+        assert.equal(c.style, 'fact', 'decisive clues are plain facts');
+        if (c === C.public) pub++;
+      }
+    }
+    assert.ok(pub <= 1, 'at most one public decisive clue');
+    if (pub) withPub++;
+  }
+  assert.ok(withPub / rounds >= 0.85, `public key clue in ${withPub}/${rounds}`);
+  assert.ok(total / rounds >= 1.1 && total / rounds <= 2, `decisive clues per round ${total / rounds}`);
+});
+
+test('side bet only in The Funfair Stakes; themes carry explainer + truthful visual', () => {
+  const seasons = ['winter', 'spring', 'summer', 'autumn'], weathers = ['clear', 'rain', 'wind', 'fog', 'frost', 'sun'];
+  for (let s = 0; s < 4; s++) {
+    const sess = freshSess();
+    for (let k = 1; k <= 8; k++) {
+      const r = createRound({ hist, sess, players: P2, roundNumber: k, settings: { sessionId: `th4${s}`, selectTries: 20, funfairRate: 0.5 }, rng: 31000 + s * 10 + k });
+      const th = r.public.theme;
+      assert.ok(th.label && th.blurb && Array.isArray(th.explainer) && th.explainer.length >= 1 && th.explainer.length <= 3);
+      for (const l of th.explainer) assert.ok(countWords(l) <= 12, l);
+      assert.ok(seasons.includes(th.visual.season) && weathers.includes(th.visual.weather) && th.visual.time === 'morning');
+      assert.deepEqual(th.visual, themeVisual(THEMES[th.key], Object.values(r.hidden.perfs)));
+      if (th.key === 'funfair') assert.equal(r.public.props?.[0]?.id, 'funfair');
+      else assert.equal(r.public.props, undefined);
+      const ann = themeAnnouncement(th);
+      assert.ok(ann.length >= 1 && ann.every((l) => ['jeff', 'pam'].includes(l.speaker) && countWords(l.text) <= 18));
+    }
+  }
+  // band themes use the median run's real season
+  const winter = { key: 'band_mid' };
+  const v = themeVisual(winter, [{ date: '2023-01-07', officialS: 1200, facts: { weather: { temp_c: 0.5, coco: 3 } } }, { date: '2023-07-01', officialS: 1100, facts: {} }, { date: '2023-04-01', officialS: 1300, facts: {} }]);
+  assert.deepEqual(v, { season: 'winter', weather: 'frost', time: 'morning' });
+});
+
+test('news-desk cold open: 6-8 short lines covering the rules', () => {
+  for (let i = 0; i < 50; i++) {
+    for (const st of [{ roundBudget: 500 }, { budget: 300, runnerPlayerId: 'a' }]) {
+      const lines = newsDeskScript([{ id: 'a', name: 'Mark' }, { id: 'b', name: 'Jo' }], st);
+      assert.ok(lines.length >= 6 && lines.length <= 8);
+      for (const l of lines) { assert.ok(['jeff', 'pam'].includes(l.speaker)); assert.ok(countWords(l.text) <= 16, l.text); }
+      const all = lines.map((l) => l.text).join(' ');
+      assert.match(all, new RegExp(String(st.roundBudget ?? st.budget)));
+      assert.match(all, /double/i); assert.match(all, /secret clue/i); assert.match(all, /favourite/i); assert.match(all, /score/i); assert.match(all, /real/i);
+      if (st.runnerPlayerId) assert.match(all, /Jo gets an extra hot tip/);
+      assert.ok(Array.isArray(lines.ticker) && lines.ticker.length);
+    }
+  }
+});
+
+test('personal commentary: money-aware, at most 12 lines a race', () => {
+  const P = [{ id: 'p1', name: 'Mark' }, { id: 'p2', name: 'Jo' }];
+  let money = 0;
+  const sess = freshSess();
+  for (let k = 1; k <= 8; k++) {
+    const r = createRound({ hist, sess, players: P, roundNumber: k, settings: { sessionId: 'pc4', runnerPlayerId: 'p1' }, rng: 32000 + k });
+    const fav = [...r.public.runners].sort((a, b) => a.rank - b.rank);
+    const bets = { p1: [{ type: 'win', runnerId: fav[0].id, stake: 400 }], p2: [{ type: 'win', runnerId: fav[3].id, stake: 500 }] };
+    const out = personaliseCommentary(r, bets, P, r.racePlan, k);
+    assert.ok(out.length <= 12, `lines ${out.length}`);
+    if (out.some((l) => l.personal && /\b\d{2,}\b.*(up|down|backwards|budget|backstroke|lake)|banks/.test(l.text))) money++;
+    settleRound(r, bets, {});
+  }
+  assert.ok(money >= 4, `money lines in ${money}/8 races`);
+});
+
+test('cutscenes: attached to the race plan by the optional planner, deterministic, never on the public payload', () => {
+  const a = mk({ rng: 33001, sessionId: 'csA' }), b = mk({ rng: 33001, sessionId: 'csB' });
+  if (a.racePlan.cutscenes) {
+    assert.ok(Array.isArray(a.racePlan.cutscenes));
+    assert.deepEqual(a.racePlan.cutscenes, b.racePlan.cutscenes);
+  }
+  assert.ok(!JSON.stringify(a.public).includes('cutscenes'));
+  const off = mk({ rng: 33001, sessionId: 'csC', settings: { cutscenes: false } });
+  assert.equal(off.racePlan.cutscenes, undefined);
+  assert.deepEqual(off.public, a.public, 'the planner never changes the round itself');
 });

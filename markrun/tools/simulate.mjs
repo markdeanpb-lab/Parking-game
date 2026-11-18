@@ -5,7 +5,7 @@
 // prop base rates, archetype / theme / style mix, repetition and leaks.
 import { DatabaseSync } from 'node:sqlite';
 import { historyDb } from '../server/db.mjs';
-import { createRound, settleRound, inPlayMarket, betRevealOrder } from '../server/game/round.mjs';
+import { createRound, settleRound, inPlayMarket, betRevealOrder, gameReady } from '../server/game/round.mjs';
 import { makeRng } from '../server/game/rng.mjs';
 import { isPBDay } from '../server/game/select.mjs';
 import { loadData } from '../server/game/data.mjs';
@@ -20,6 +20,7 @@ if (args.features) settings.modelFeatures = String(args.features).split(',');
 if (args.runner) settings.runnerPlayerId = 'p2';
 
 const hist = historyDb();
+await gameReady();
 const data = loadData(hist);
 const players = [{ id: 'p1', name: 'Alice' }, { id: 'p2', name: 'Bob' }];
 const S = {
@@ -142,8 +143,8 @@ for (let s = 0; s < SESSIONS; s++) {
       p1: [{ type: 'win', runnerId: fav.id, stake: 100 }, { type: 'h2h', matchupId: 'm1', pick: P.matchups[0].a, stake: 50 }, ...(pr ? [{ type: 'prop', propId: pr.id, pick: 'no', stake: 20 }] : [])],
       p2: [{ type: 'win', runnerId: R.pick(P.runners).id, stake: 100 }, { type: 'inplay', runnerId: leader, stake: 50, odds: ip.odds[leader].win }],
     };
-    const lines = betRevealOrder(round, bets, { p1: 1000, p2: 1000 }, players);
-    const res = settleRound(round, bets, { p1: 1000, p2: 1000 });
+    const lines = betRevealOrder(round, bets, null, players);
+    const res = settleRound(round, bets, { p1: 0, p2: 0 });
     const fb = res.payouts.p1.bets[0];
     if (fb.won && !res.deadHeat && fb.returned !== Math.round(100 * (1 + P.payoutMultiplier * (fav.odds.win - 1)))) S.multOk = false;
     for (const c of res.clueReview) { S.verdicts[c.verdict] = (S.verdicts[c.verdict] || 0) + 1; if (c.highlight) S.highlights++; }

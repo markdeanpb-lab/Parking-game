@@ -62,7 +62,7 @@ const ND = {
   welcome: ['Good evening. This is MARKRUN, live from a sofa in North London.', 'Good evening, and welcome to MARKRUN. Tonight\'s top story: {all}.',
     'Good evening. You\'re watching MARKRUN. I\'m Jeff Bellows, and this is huge.'],
   real: ['Five of Mark\'s real parkruns each round. Real results, real times. No refunds.', 'Every runner is Mark, on a different Saturday. The times are real. The outfits are not.',
-    'All five runners are Mark, on five different Saturdays. Every time is official. Sadly.'],
+    'All five are the real Mark, on five different Saturdays. Every time is official.'],
   clues: ['Each runner gets one public clue on the telly, and one secret clue on your phone.', 'One clue on the big screen for everyone. One secret clue each, on your phone.'],
   fav: ['The favourite is the bookie\'s likely winner. The outsider is everyone else\'s excuse.', 'Shortest odds means favourite: the likely winner. Likely. This is still parkrun.'],
   budget: ['You each get {budget} parkpounds to bet every round. Any profit is banked to your score.', 'A fresh {budget} to bet each round. Profit is banked. Losses come off your score.'],

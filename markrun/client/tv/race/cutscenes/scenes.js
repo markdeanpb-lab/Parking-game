@@ -77,18 +77,24 @@ function fairSetup(K, cs) {
   const s = fairSide(K, cs);
   const fSign = stageAt(K.C, lap1.fromM - 6);
   const g = bag.group();
-  // big yellow diamond road sign facing oncoming runners
-  const signTex = bag.tex(512, 512, (c, w, h) => {
+  // big yellow diamond road sign facing oncoming runners (two single-sided faces so text never reads mirrored;
+  // the arrow points at the fair from whichever side you look)
+  const signFace = (arrowDir) => bag.tex(512, 512, (c, w, h) => {
     c.clearRect(0, 0, w, h);
     c.save(); c.translate(w / 2, h / 2); c.rotate(Math.PI / 4);
     c.fillStyle = '#1a1420'; roundRect(c, -170, -170, 340, 340, 30); c.fill();
     c.fillStyle = '#ffd23f'; roundRect(c, -152, -152, 304, 304, 22); c.fill();
     c.restore();
     outlinedText(c, 'DIVERSION', w / 2, h / 2 - 30, 76, '#1a1420', '#ffd23f', 0.0001);
-    c.fillStyle = '#1a1420'; c.save(); c.translate(w / 2, h / 2 + 62); c.scale(-s, 1); // arrow points to the fair (runner's view)
+    c.fillStyle = '#1a1420'; c.save(); c.translate(w / 2, h / 2 + 62); c.scale(arrowDir, 1);
     c.beginPath(); c.moveTo(-80, -18); c.lineTo(20, -18); c.lineTo(20, -48); c.lineTo(84, 0); c.lineTo(20, 48); c.lineTo(20, 18); c.lineTo(-80, 18); c.closePath(); c.fill(); c.restore();
   });
-  const signM = new THREE.Mesh(bag.add(new THREE.PlaneGeometry(2.6, 2.6)), bag.add(new THREE.MeshToonMaterial({ map: signTex, gradientMap: gradientMap(), transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 })));
+  const faceMat = (tex) => bag.add(new THREE.MeshToonMaterial({ map: tex, gradientMap: gradientMap(), transparent: true, alphaTest: 0.5 }));
+  const pg = bag.add(new THREE.PlaneGeometry(2.6, 2.6));
+  // runner's view: the fair on his right (s>0) -> arrow right; seen from beyond the sign it is the other way round
+  const signM = new THREE.Group();
+  const fA = new THREE.Mesh(pg, faceMat(signFace(-s))); signM.add(fA);
+  const fB = new THREE.Mesh(pg, faceMat(signFace(s))); fB.rotation.y = Math.PI; signM.add(fB);
   const sign = new THREE.Group(); sign.add(signM); signM.position.y = 2.75;
   const post = bag.M(new THREE.CylinderGeometry(0.07, 0.07, 1.6, 8).translate(0, 0.8, 0), '#e9eef5', 2); sign.add(post);
   const feet = bag.M(new THREE.BoxGeometry(1.0, 0.12, 0.5), '#1a1420', 0); feet.position.y = 0.06; sign.add(feet);
@@ -176,7 +182,7 @@ SCENES.funfair_drone = (K, cs) => {
   const C = K.C;
   const pts = [];
   if (d) for (let s = 0; s <= d.len; s += 3.2) { let i = 0; while (i < d.cum.length - 2 && d.cum[i + 1] < s) i++; const f = (s - d.cum[i]) / Math.max(1e-6, d.cum[i + 1] - d.cum[i]); pts.push([d.path[i][0] + (d.path[i + 1][0] - d.path[i][0]) * f, d.path[i][1] + (d.path[i + 1][1] - d.path[i][1]) * f]); }
-  const dotGeo = I.bag.add(new THREE.CylinderGeometry(1.0, 1.0, 0.25, 12));
+  const dotGeo = I.bag.add(new THREE.CylinderGeometry(1.5, 1.5, 0.25, 12));
   const dots = new THREE.InstancedMesh(dotGeo, I.bag.basic('#ff2d55'), Math.max(1, pts.length)); dots.frustumCulled = false; g.add(dots);
   const O = new THREE.Object3D();
   // the usual course: a bright white dashed centre line
@@ -187,16 +193,16 @@ SCENES.funfair_drone = (K, cs) => {
   for (let i = 0; i < nD; i++) { const s = stageAt(C, fromM + i * 7); O.position.set(s.x, C.heightAt(s.x, s.z) + 0.35, s.z); O.rotation.set(0, s.yaw, 0); O.scale.setScalar(1); O.updateMatrix(); dashes.setMatrixAt(i, O.matrix); }
   dashes.instanceMatrix.needsUpdate = true;
   // frame: centre + extent of the bulge and course
-  const allP = [...pts, ...Array.from({ length: 10 }, (_, i) => { const s = stageAt(C, fromM + ((toM - fromM) * i) / 9); return [s.x, s.z]; })];
+  const allP = pts.length ? pts : [[cs.params.x || 0, cs.params.z || 0]];
   const cx = allP.reduce((a, p) => a + p[0], 0) / allP.length, cz = allP.reduce((a, p) => a + p[1], 0) / allP.length;
-  const ext = Math.max(40, ...allP.map((p) => Math.hypot(p[0] - cx, p[1] - cz)));
+  const ext = Math.max(35, ...allP.map((p) => Math.hypot(p[0] - cx, p[1] - cz)));
   const centre = V(cx, C.heightAt(cx, cz), cz);
   const mid = stageAt(C, ((d?.fromM ?? 400) + (d?.toM ?? 800)) / 2);
   const away = V(-mid.rx * fair.s, 0, -mid.rz * fair.s).normalize(); // camera over the course side, looking across at the fair
   // label over the apex of the bulge
   let apex = pts[Math.floor(pts.length / 2)] || [cx, cz];
   for (const p of pts) { const l = (p[0] - mid.x) * mid.rx + (p[1] - mid.z) * mid.rz; const la = (apex[0] - mid.x) * mid.rx + (apex[1] - mid.z) * mid.rz; if (Math.abs(l) > Math.abs(la)) apex = p; }
-  const lab = sprite(I.bag, bubbleTexture(I.bag, 'HIS ROUTE', { bg: '#ff2d55', fg: '#ffffff', w: 512, h: 220, size: 110 }), 16, 512 / 220);
+  const lab = sprite(I.bag, bubbleTexture(I.bag, 'HIS ROUTE', { bg: '#ff2d55', fg: '#ffffff', w: 512, h: 220, size: 110 }), 15, 512 / 220);
   lab.position.set(apex[0], C.heightAt(apex[0], apex[1]) + 22, apex[1]); g.add(lab);
   const pub = K.pub(cs.who);
   const arrow = sprite(I.bag, arrowTexture(I.bag, pub?.colour?.primary || '#ffd23f'), 9, 128 / 160); g.add(arrow);
@@ -215,7 +221,7 @@ SCENES.funfair_drone = (K, cs) => {
     cue('cap', true, () => {});
     K.ov.caption(t > 0.4 && t < cs.durationS - 0.1 ? 'HIS REAL GPS ROUTE' : null, { yellow: true });
     // high drone, slow drift
-    const dist = ext * 2.25, el = 0.95 + t * 0.02;
+    const dist = ext * 1.75 + 30, el = 0.82 + t * 0.02;
     const dir = away.clone().applyAxisAngle(V(0, 1, 0), -0.25 + t * 0.05);
     const pos = centre.clone().addScaledVector(dir, Math.cos(el) * dist).add(V(0, Math.sin(el) * dist, 0));
     K.cam(pos, centre.clone().add(V(0, 4, 0)), 44, 0, { occlude: false, sun: Math.min(220, ext * 1.4) });
@@ -351,11 +357,11 @@ SCENES.hook_a_duck = (K, cs) => {
       const arms = A.root.localToWorld(V(0, A.r.hipH + 0.1, 0.75));
       plushSmall.root.position.copy(shelf).lerp(arms, handK); plushSmall.root.scale.setScalar(lerp(0.42, 1.3, handK) / 0.42 * 0.42 / 0.42);
       plushSmall.root.rotation.y = handK > 0.5 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
-      plushSmall.root.scale.setScalar(lerp(1, 3.1, handK));
+      plushSmall.root.scale.setScalar(lerp(0.42, 1.25, handK));
       cue('line', t > 4.4, () => K.say(cs.lines?.[0]));
       // cameras
       if (t < 1.4) { shot(f.p(-7.5, -s2 * 2.6, 2.6), f.p(0, s2 * 3.2, 1.2), 42); K.ov.caption(t > 0.2 ? 'HOOK-A-DUCK!' : null, { yellow: true }); }
-      else if (t < 3.6) { shot(f.p(-1.3, s2 * 0.15, 2.9), pool.clone().add(V(0, 0.2, 0)), 46); K.ov.caption(t > 2.0 && t < 2.9 ? 'HANG ON…' : null); }
+      else if (t < 3.6) { shot(f.p(3.0, s2 * 0.9, 2.3), pool.clone().lerp(markPos, 0.35).add(V(0, 0.5, 0)), 44); K.ov.caption(t > 2.0 && t < 2.9 ? 'HANG ON…' : null); }
       else if (t < 5.0) { shot(f.p(4.6, -s2 * 1.6, 2.0), markPos.clone().lerp(stallPos, 0.35).add(V(0, 1.4, 0)), 42); K.ov.caption(t > 4.3 ? 'WINNER!' : null, { yellow: true }); }
       else { const ap = A.root.position; shot(ap.clone().add(V(-f.rx * s2 * 6.5, 2.2, -f.rz * s2 * 6.5)).addScaledVector(V(f.tx, 0, f.tz), 1.5), ap.clone().add(V(0, 1.3, 0)), 40); K.ov.caption(null); }
       if (t > 5.6 && !I._carry) { I._carry = true; carryPlush(K, cs.who, 1.3); }
@@ -377,12 +383,12 @@ SCENES.hook_a_duck = (K, cs) => {
       plushBig.root.visible = big > 0;
       const behind = stall.g.localToWorld(V(0.5, 0.6, -0.2));
       plushBig.root.position.copy(behind).lerp(A.root.localToWorld(V(0, A.r.hipH - 0.3, 1.1)), smooth(1.6, 2.4, t));
-      plushBig.root.scale.setScalar(lerp(0.3, 1, big)); plushBig.root.rotation.y = big > 0.6 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
+      plushBig.root.scale.setScalar(lerp(0.3, 1, big) * 2.3); plushBig.root.rotation.y = big > 0.6 ? A.root.rotation.y + Math.PI : stall.g.rotation.y;
       plushBig.pose({ t });
       cue('line', t > 1.6, () => K.say(cs.lines?.[0]));
       K.ov.caption(t > 1.5 ? 'TRADED UP!' : null, { yellow: true });
       if (t < 2.4) shot(f.p(-6.2, -s2 * 2.2, 2.4), markPos.clone().lerp(stallPos, 0.45).add(V(0, 1.4, 0)), 44);
-      else { const ap = A.root.position; shot(ap.clone().add(V(-f.rx * s2 * 7, 2.4, -f.rz * s2 * 7)).addScaledVector(V(f.tx, 0, f.tz), 2.5), ap.clone().add(V(0, 1.6, 0)), 42); }
+      else { const ap = A.root.position; shot(ap.clone().addScaledVector(V(f.tx, 0, f.tz), 5.5).add(V(-f.rx * s2 * 2.5, 2.2, -f.rz * s2 * 2.5)), ap.clone().add(V(0, 1.6, 0)), 44); }
       if (t > 3.5 && !I._carry) { I._carry = true; carryPlush(K, cs.who, 2.0); }
     }
   };
@@ -449,7 +455,7 @@ SCENES.test_strength = (K, cs) => {
     let best = lake.pts[0]; for (const p of lake.pts) if (Math.hypot(p[0] - towerPos.x, p[1] - towerPos.z) < Math.hypot(best[0] - towerPos.x, best[1] - towerPos.z)) best = p;
     const dir = V(best[0] - cx, 0, best[1] - cz); const L = dir.length(); dir.normalize();
     lakeP.addScaledVector(dir, L * 0.55);
-    lakeCam = lakeP.clone().addScaledVector(dir, 13).add(V(0, 3.2, 0));
+    lakeCam = lakeP.clone().addScaledVector(dir, 7.5).add(V(0, 2.4, 0));
   }
   const splash = makePuffs(I.bag, 9, '#e9f8ff'); root.add(splash.root); splash.root.visible = false;
   const duck = makeDuck(I.bag, 2.2); root.add(duck); duck.visible = false;
@@ -479,7 +485,7 @@ SCENES.test_strength = (K, cs) => {
       if (t >= 1.4 && lakeP) {
         flyBell.visible = flyU < 1 && t < 2.9;
         const p = bellStart.clone().lerp(lakeP, flyU); p.y += Math.sin(Math.PI * flyU) * 60 * (1 - flyU * 0.2) - flyU * 2;
-        flyBell.position.copy(p); flyBell.rotation.set(t * 9, t * 5, 0);
+        flyBell.position.copy(p); flyBell.rotation.set(t * 9, t * 5, 0); flyBell.scale.setScalar(2.6);
       }
       if (t < 1.4) { shot(f.p(-5.2, -s2 * 2.4, 2.0), towerPos.clone().add(V(0, 2.6, 0)), 50); K.ov.caption(t > 0.95 ? 'RUN-UP…' : null); }
       else if (t < 2.9) { shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 6).add(V(0, 1, 0)), flyBell.visible ? flyBell.position : bellStart, 56); K.ov.caption('DING DING DING!', { yellow: true }); }
@@ -487,7 +493,7 @@ SCENES.test_strength = (K, cs) => {
         const u = t - 2.9;
         splash.root.visible = u < 1.2; splash.root.position.copy(lakeP); splash.update(clamp01(u / 1.1), 2.6);
         duck.visible = u > 0.9; duck.position.copy(lakeP).add(V(0, -0.9 + smooth(0.9, 1.4, u) * 0.92, 0)); duck.rotation.y = Math.atan2(lakeCam.x - lakeP.x, lakeCam.z - lakeP.z) + Math.sin(u * 3) * 0.3;
-        flyBell.visible = u > 0.9; flyBell.rotation.set(0, 0, 0); flyBell.position.copy(duck.position).add(V(0, 1.15, 0)); flyBell.scale.setScalar(0.85);
+        flyBell.visible = u > 0.9; flyBell.rotation.set(0, 0, 0); flyBell.position.copy(duck.position).add(V(0, 1.05, 0)); flyBell.scale.setScalar(1.35);
         shot(lakeCam, lakeP.clone().add(V(0, 0.8, 0)), 36);
         K.ov.caption(u > 1.2 ? 'NICE HAT.' : 'SPLOOSH!', { yellow: u > 1.2 });
       }
@@ -528,7 +534,7 @@ SCENES.test_strength = (K, cs) => {
       if (t < 1.2) { shot(f.p(-6.4, -s2 * 2.0, 2.0), towerPos.clone().add(V(0, 2.2, 0)), 52); K.ov.caption(t > 0.3 ? 'TEST YOUR STRENGTH' : null, { yellow: true }); }
       else if (t < 3.6) {
         const py = wp(T.puck, V());
-        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 5.2).addScaledVector(V(f.tx, 0, f.tz), -1.6).add(V(0, 1.2 + py.y - towerPos.y - 1.2, 0)), py.clone().add(V(0, 0.3, 0)), 40);
+        shot(towerPos.clone().addScaledVector(V(-f.rx * s2, 0, -f.rz * s2), 2.6).addScaledVector(V(f.tx, 0, f.tz), 4.6).add(V(0, Math.max(1.6, py.y - towerPos.y - 0.4), 0)), py.clone().add(V(0, 0.2, 0)), 42);
         K.ov.caption(t > 2.8 ? 'PARKRUNNER.' : t > 1.9 ? 'WOBBLY…' : t > 1.3 ? 'WEED…' : null, { yellow: t > 2.8 });
       } else { shot(f.p(-6, -s2 * 2.2, 2.0), A.root.position.clone().add(V(0, 1.3, 0)), 42); K.ov.caption(null); }
     }
