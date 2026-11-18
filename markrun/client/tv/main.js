@@ -445,7 +445,7 @@ function lobbyScreen(st) {
         setRow('Bet timer', 'betTimer', set.betTimer ? `${set.betTimer}s` : 'Off', stepper),
         setRow('Drinking', 'drinkingMode', '', toggle(set.drinkingMode, '🍺 ON')),
         setRow('Voice', 'voice', '', toggle(set.voice, '🎙️ ON')),
-        setRow('Premium voices <small>(downloads ~90 MB once)</small>', 'premiumVoices', '', toggle(set.premiumVoices !== false, '✨ ON')),
+        setRow('Premium voices<small>downloads ~90 MB once</small>', 'premiumVoices', '', toggle(set.premiumVoices !== false, '✨ ON')),
         setRow('Music', 'music', '', toggle(set.music, '🎵 ON')),
         setRow('Volume', 'volume', `${vol * 10}%`, stepper),
       ].join('')}</div>
@@ -1362,7 +1362,7 @@ function resultsScreen(st) {
       ask.textContent = '';
       minis[i].classList.add('done');
       $('.rvm-b', minis[i]).innerHTML = `${ordinalHtml(m.place)}<b class="t">${esc(m.shortBig)}</b><span class="num">${esc(m.time)}</span>`;
-      if (i > 0) { card.classList.add('away'); await sleepT(350, t); }
+      if (i > 0) { card.parentElement.classList.add('away'); await sleepT(350, t); }
     }
     minis.forEach((x) => x.classList.remove('on'));
     // a beat of silence, then the punchline lands (a generic Strava title already shows it big on the card)
@@ -1431,7 +1431,7 @@ function resultsScreen(st) {
       clearInterval(iv);
       const v = markVerdict(e, mark, S.players);
       if (!v) return;
-      card.querySelector('.rvc-back')?.appendChild(el(`<div class="mk-verdict ${v.cls} anim-pop">${v.html}</div>`));
+      card.querySelector('.rvc-top')?.appendChild(el(`<div class="mk-verdict ${v.cls} anim-pop">${v.html}</div>`));
       audio.play(Object.keys(e.bonus || {}).length ? 'kaching' : 'stamp');
       say(v.say, 'jeff', 2);
     }, 150);
@@ -1467,6 +1467,7 @@ function resultsScreen(st) {
 
   async function stagePayouts(s) {
     const t = tok;
+    const res = s.results || st.results; // fresh: "Remember this one?" bonuses land during the reveal
     const drinking = s.settings.drinkingMode;
     root.innerHTML = head('PAY DAY', 'The bookie settles up 💰') + `<div class="payouts">${s.players.map((p) => {
       const pay = res.payouts?.[p.id] || { bets: [], net: 0, score: scoreOf(p) };
@@ -1582,7 +1583,7 @@ function weatherBadge(x) {
   const w = x.weather || {};
   const c = Number(w.coco);
   let icon = null;
-  if (c) icon = c <= 1 ? '☀️' : c === 2 ? '🌤️' : c === 3 ? '⛅' : c === 4 ? '☁️' : c <= 6 ? '🌫️' : c <= 9 || c === 17 || c === 18 ? '🌧️' : c <= 13 || c === 19 || c === 20 ? '🌨️' : c <= 16 || c === 21 || c === 22 ? '❄️' : '⛈️';
+  if (c) icon = c <= 1 ? '☀️' : c === 2 ? '🌤️' : c === 3 ? '⛅' : c === 4 ? '☁️' : c <= 6 ? '🌫️' : c === 7 || c === 17 ? '🌦️' : c <= 9 || c === 18 ? '🌧️' : c <= 13 || c === 19 || c === 20 ? '🌨️' : c <= 16 || c === 21 || c === 22 ? '❄️' : '⛈️';
   const ctx = String((Array.isArray(x.context) ? x.context[0] : '') || x.contextLine || '');
   if (!icon) icon = /frosty/i.test(ctx) ? '❄️' : /cold/i.test(ctx) ? '🥶' : /chilly/i.test(ctx) ? '🌥️' : /mild/i.test(ctx) ? '⛅' : /warm|hot/i.test(ctx) ? '☀️' : null;
   if (Number(w.prcpMm) >= 0.5 && !/🌧️|🌨️|⛈️|❄️/u.test(icon || '')) icon = '🌦️';
@@ -1619,14 +1620,14 @@ function revealModel(s, rid) {
     : x.rank === 1 ? { cls: 'pb', text: '⚡ HIS FASTEST EVER HERE' } : x.rank && x.of ? { cls: x.rank <= 10 ? 'top' : x.rank > x.of - 10 ? 'low' : '', text: `#${x.rank} OF ${x.of}` } : null;
   return {
     rid, r, reveal: x, place: f.place || 0, time: f.timeText || fmtTime(f.officialS), date: x.dateText || x.date || '',
-    generic, big, bigLen: big.length, sub: generic ? (title ? `Strava: “${title}”` : '') : punch,
+    generic, big, bigLen: big.length, sub: generic ? '' : punch, // a generic Strava title ("Morning Run") isn't worth a line
     shortBig: generic ? (title || punch) : title, ctx, badge, wx: weatherBadge(x), tie: clueTie(s, rid),
   };
 }
 function revealCardHtml(m) {
   const r = m.r;
-  const size = m.bigLen > 70 ? 46 : m.bigLen > 44 ? 56 : m.bigLen > 26 ? 68 : 84;
-  return `<div class="rvc" style="--c1:${esc(r?.colour?.primary || '#2a62e0')}">
+  const size = m.bigLen > 70 ? 42 : m.bigLen > 44 ? 52 : m.bigLen > 26 ? 64 : 84;
+  return `<div class="rvc-wrap"><div class="rvc" style="--c1:${esc(r?.colour?.primary || '#2a62e0')}">
     <div class="rvc-front"><div class="rp">${r ? portrait(r, 300) : ''}</div><div class="nm outlined white">${esc(r?.nickname || '')}</div><div class="pl">${ordinalHtml(m.place)}</div><div class="q outlined">?</div></div>
     <div class="rvc-back">
       <div class="rvc-top"><span class="rp">${r ? portrait(r, 84) : ''}</span><span class="nm">${esc(r?.nickname || '')}</span><span class="pl">${ordinalHtml(m.place)}</span></div>
@@ -1639,7 +1640,7 @@ function revealCardHtml(m) {
         ${m.tie ? `<div class="tie ${esc(m.tie.verdict)}"><span class="who">${esc(m.tie.who)}</span> said <b>“${esc(m.tie.hl)}”</b>. ${esc(m.tie.tail)}</div>` : ''}
       </div>
     </div>
-  </div>`;
+  </div></div>`;
 }
 // what the commentators say as each card flips (deterministic, so it can be rendered ahead of time)
 function revealLine(m, i, n) {

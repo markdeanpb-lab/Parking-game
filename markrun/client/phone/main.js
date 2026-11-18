@@ -300,7 +300,7 @@ function renderFlow() {
     const r = runnerById(S.round, st.id);
     const priv = (me.privateClues || []).filter((c) => c.runnerId === r.id);
     const bet = findBet('win', r.id);
-    main = `<div class="rhead hero" style="--c1:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 140)}</div>
+    main = `<div class="rhead hero${tray ? ' traying' : ''}" style="--c1:${esc(r.colour.primary)}"><div class="rp">${portrait(r, 140)}</div>
         <div class="rn">${rankHtml(S.round, r)}<b>${esc(nameOf(r))}</b><span class="money">${winsHtml(S.round, { type: 'win', runnerId: r.id, stake: bet?.stake || EXAMPLE_STAKE })}</span></div></div>
       ${clueBlock(r.publicClue, '📺')}
       ${priv.map((c) => clueBlock(c, c.tier === 'hot' ? '🔥' : '🤫', c.tier === 'hot' ? 'hot' : 'secret')).join('')}

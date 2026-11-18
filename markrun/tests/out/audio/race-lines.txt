@@ -1,0 +1,6 @@
+race-line-01-jeff.wav: Pam called it: Nemesis is leading!
+race-line-02-jeff.wav: The Hill! Lap one! Here we find out who skipped leg day!
+race-line-03-pam.wav: That's 200 of Jo's budget heading for the boating lake.
+race-line-04-pam.wav: Classic Long Socks. Has never stretched. Never will.
+race-line-05-jeff.wav: The funnel awaits! The Long Socks is in front, The Tail Walker's Nemesis is coming!
+race-line-06-jeff.wav: This is incredible! The Long Socks leads, and there is hardly any race left!

@@ -9,11 +9,13 @@ import { decorateFixture, fixtureInPlayMarket, fixtureBetRevealOrder, fixtureSup
 
 const FIXTURE = path.join(ROOT, 'data', 'fixtures', 'round.json');
 let game; // module or null
-let loaded = false;
+let loading = null; // one shared import promise, so early callers wait for the real module instead of getting the fixture
 
-async function loadGame() {
-  if (loaded) return game;
-  loaded = true;
+function loadGame() {
+  if (!loading) loading = doLoadGame();
+  return loading;
+}
+async function doLoadGame() {
   game = null;
   if (process.env.MARKRUN_ROUND_SOURCE === 'fixture') return null;
   const file = path.join(ROOT, 'server', 'game', 'round.mjs');

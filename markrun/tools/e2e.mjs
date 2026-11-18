@@ -23,6 +23,7 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'markrun-e2e-'));
 const RESTART_AFTER = Number(arg('restart-after', 0));
+const REVEAL_SPEED = Number(arg('reveal-speed', 0)); // e.g. --reveal-speed=1: replay round 1's reveal at that TV speed for screenshots
 // the restart test needs a fixed port across restarts: pick a currently free one (unless --port is given)
 async function freePort() { const net = await import('node:net'); return new Promise((res) => { const sv = net.createServer(); sv.listen(0, '127.0.0.1', () => { const p = sv.address().port; sv.close(() => res(p)); }); }); }
 const FIXED_PORT = arg('port', RESTART_AFTER ? await freePort() : 0);
@@ -299,14 +300,31 @@ try {
         await sleep(150);
       }
       if ((await health()).phase !== 'RESULTS') break;
-      if (stages[i] === 'reveal') { // "Remember this one?": phone A is Mark, phone B believes or doubts
+      if (stages[i] === 'reveal' && round === 1 && REVEAL_SPEED) { // watch the reveal at (near) real speed: every card + the verdicts
+        await tv.goto(`${BASE}/tv?autostart&speed=${REVEAL_SPEED}&race=${RACE}&mute&nopremium`);
+        for (let c = 0; c < 5; c++) {
+          const asked = await pa.waitForSelector('.markq [data-mk]', { timeout: 15000 }).then(() => true).catch(() => false);
+          if (!asked) break;
+          await pb.waitForSelector('.markq [data-mk]', { timeout: 3000 }).catch(() => {});
+          if (c === 0) { await sleep(300); await Promise.all([shot(tv, '20e-tv-reveal-asking'), shot(pa, '20b-phoneA-remember'), shot(pb, '20c-phoneB-doeshe')]); }
+          await pa.click(`.markq [data-mk="${c % 2 ? 'no' : 'yes'}"]`, { timeout: 3000 }).catch(() => {});
+          await sleep(200);
+          if (c === 0) await shot(pb, '20f-phoneB-doeshe-markanswered');
+          await pb.click(`.markq [data-mk="${c === 2 ? 'doubt' : 'believe'}"]`, { timeout: 3000 }).catch(() => {});
+          const seen = await tv.waitForSelector('.rvc.flip .mk-verdict', { timeout: 10000 }).then(() => true).catch(() => false);
+          await sleep(900);
+          await shot(tv, `20g-tv-reveal-card-${c + 1}${seen ? '' : '-noverdict'}`);
+          await tv.waitForFunction(() => !document.querySelector('.rvc.flip'), null, { timeout: 15000 }).catch(() => {});
+        }
+        await sleep(2500);
+        await shot(tv, '20h-tv-reveal-winner-punch');
+        console.log(`  memory moment (real speed): scores now ${JSON.stringify((await health()).scores)}`);
+      } else if (stages[i] === 'reveal') { // "Remember this one?": phone A is Mark, phone B believes or doubts
         const asked = await pa.waitForSelector('.markq [data-mk]', { timeout: 8000 }).then(() => true).catch(() => false);
         if (!asked) throw new Error('Mark was never asked "Remember this one?"');
-        if (round === 1) { await pb.waitForSelector('.markq [data-mk]', { timeout: 3000 }).catch(() => {}); await Promise.all([shot(pa, '20b-phoneA-remember'), shot(pb, '20c-phoneB-doeshe')]); }
+        await fitCheck(pa, 'phoneA-remember'); await fitCheck(pb, 'phoneB-doeshe');
         await pa.click('.markq [data-mk="yes"]', { timeout: 3000 }).catch(() => {});
         await pb.click('.markq [data-mk="believe"]', { timeout: 3000 }).catch(() => {});
-        await tv.waitForSelector('.rvc.flip .mk-verdict', { timeout: 8000 }).catch(() => console.log('  (no verdict chip seen on the TV)'));
-        if (round === 1) { await sleep(400); await shot(tv, '20d-tv-reveal-card-verdict'); }
         const bonus = await health();
         console.log(`  memory moment: scores now ${JSON.stringify(bonus.scores)}`);
       }

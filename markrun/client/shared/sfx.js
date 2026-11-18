@@ -337,6 +337,7 @@ export function createAudio({ assetBase = DEFAULT_BASE } = {}) {
     music = { kind, assets: true, bus, stems: st, loopS: m.loopS, nextT: ctx.currentTime + 0.12, sources: [] };
     const sched = () => {
       if (!music?.assets || !ready()) return;
+      if (music.nextT < ctx.currentTime) music.nextT = ctx.currentTime + 0.05; // the context was suspended: restart cleanly
       while (music.nextT < ctx.currentTime + 1.5) {
         for (const x of Object.values(music.stems)) {
           const src = ctx.createBufferSource(); src.buffer = x.buf; src.connect(x.gain);

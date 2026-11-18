@@ -334,3 +334,8 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 .mk-run .mk-meta small { display: block; font-size: 14px; font-weight: 800; color: #4a5080; line-height: 1.25; margin-top: 4px; }
 .mk-done { flex: 1; text-align: center; font-family: var(--font-display); font-size: 22px; color: #fff; text-shadow: 0 2px 0 var(--ink); padding: 14px 0; }
 .scr.markq .acts { gap: 10px; }
+
+/* stake tray open on the runner screen: compact the hero + clues so the tray always fits without scrolling */
+.rhead.hero.traying .rp svg { width: 72px !important; height: 72px !important; }
+.rhead.hero.traying ~ .clue .kicker, .rhead.hero.traying ~ .clue small, .rhead.hero.traying ~ .special { display: none; }
+.rhead.hero.traying ~ .clue { padding-top: 8px; padding-bottom: 8px; }
