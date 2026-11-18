@@ -23,7 +23,10 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'markrun-e2e-'));
 const RESTART_AFTER = Number(arg('restart-after', 0));
-const env = { ...process.env, PORT: String(arg('port', RESTART_AFTER ? 18790 : 0)), MARKRUN_SESSION_DB: path.join(tmp, 'session.db'), MARKRUN_HOST: '127.0.0.1', MARKRUN_MARKET_MS: process.env.MARKRUN_MARKET_MS || '20000' };
+// the restart test needs a fixed port across restarts: pick a currently free one (unless --port is given)
+async function freePort() { const net = await import('node:net'); return new Promise((res) => { const sv = net.createServer(); sv.listen(0, '127.0.0.1', () => { const p = sv.address().port; sv.close(() => res(p)); }); }); }
+const FIXED_PORT = arg('port', RESTART_AFTER ? await freePort() : 0);
+const env = { ...process.env, PORT: String(FIXED_PORT), MARKRUN_SESSION_DB: path.join(tmp, 'session.db'), MARKRUN_HOST: '127.0.0.1', MARKRUN_MARKET_MS: process.env.MARKRUN_MARKET_MS || '20000' };
 if (SOURCE === 'fixture') env.MARKRUN_ROUND_SOURCE = 'fixture';
 let srv, srvOut = '', stopping = false;
 async function startServer(fresh) {

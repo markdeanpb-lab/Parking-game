@@ -27,7 +27,7 @@ export const FKEYS = Object.keys(FEATURES);
 
 // Odds use the training-load features only (the only ones with out-of-fold predictive power inside a banded field).
 export const ODDS_FEATURES = ['vol28', 'vol7', 'long14', 'hard', 'rpw', 'form'];
-export const MODEL_DEFAULTS = { lambda: 50, sigma: 16, privateWeight: 0.5, margin: 0.01 };
+export const MODEL_DEFAULTS = { lambda: 50, sigma: 13.5, privateWeight: 0.5, margin: 0.01 };
 
 const modelCache = new WeakMap();
 
