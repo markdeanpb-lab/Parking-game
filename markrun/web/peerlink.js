@@ -285,6 +285,8 @@ export function peerTransport({ code, sig, onProblem = () => {}, log = console }
           const s = dec(d);
           if (s == null) return;
           lastMsgAt = Date.now();
+          const rec = globalThis.__markrunRecord; // tests only (privacy checks): set by the test harness
+          if (Array.isArray(rec) && rec.length < 20000) rec.push(s);
           if (s === HB) { rawSend(HBR); return; }
           if (s === HBR) return;
           let m;

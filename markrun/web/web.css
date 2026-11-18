@@ -1,0 +1,109 @@
+/* MARKRUN web edition: launcher, phone "can't reach the TV" card, TV lobby room code, options additions. */
+html, body { min-height: 100%; }
+body.web-launcher { min-height: 100dvh; overflow-x: hidden; }
+.hidden { display: none !important; }
+
+#launcher {
+  min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(10px, 2.2vh, 22px); padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 16px);
+  text-align: center; color: #fff;
+}
+.wl-logo { font-size: clamp(54px, 13vw, 150px); transform: skewX(-8deg) rotate(-3deg); -webkit-text-stroke-width: .1em; text-shadow: 0 .08em 0 var(--ink); }
+.wl-logo span { color: var(--tomato); }
+.wl-sub { font-size: clamp(15px, 2.4vw, 24px); font-weight: 900; text-shadow: 0 2px 0 var(--ink); margin-bottom: clamp(4px, 2vh, 18px); }
+#launcher > section { width: 100%; max-width: 760px; display: flex; flex-direction: column; align-items: stretch; gap: clamp(12px, 2.4vh, 22px); }
+.wl-big {
+  display: flex; align-items: center; gap: clamp(12px, 3vw, 26px); width: 100%; min-height: clamp(104px, 17vh, 170px);
+  padding: 14px clamp(16px, 4vw, 34px); border: 5px solid var(--ink); border-radius: 26px; box-shadow: 0 9px 0 var(--ink);
+  cursor: pointer; text-align: left; transform: skewX(-4deg); transition: transform .08s, box-shadow .08s;
+}
+.wl-big:active { transform: skewX(-4deg) translateY(6px); box-shadow: 0 3px 0 var(--ink); }
+.wl-big:focus-visible, .wl-rejoin:focus-visible, .wl-code input:focus { outline: 5px solid var(--sun); outline-offset: 3px; }
+.wl-big.tv { background: var(--sun); color: var(--ink); }
+.wl-big.phone { background: var(--grass); color: #fff; }
+.wl-big .em { font-size: clamp(46px, 9vw, 86px); line-height: 1; transform: skewX(4deg); font-family: var(--emoji); }
+.wl-big .tx { display: flex; flex-direction: column; transform: skewX(4deg); min-width: 0; }
+.wl-big b { font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 6.4vw, 60px); line-height: 1.02; }
+.wl-big.phone b { -webkit-text-stroke: .06em var(--ink); paint-order: stroke fill; }
+.wl-big small { font-size: clamp(14px, 2.6vw, 22px); font-weight: 900; opacity: .85; margin-top: 4px; }
+.wl-rejoin {
+  align-self: center; padding: 12px 22px; border-radius: 16px; border: 4px solid var(--ink); background: #fff; color: var(--ink);
+  font-size: clamp(16px, 3.4vw, 24px); font-weight: 900; box-shadow: 0 5px 0 var(--ink); cursor: pointer;
+}
+.wl-rejoin b { font-family: var(--font-display); font-weight: 400; letter-spacing: .12em; color: var(--tomato); }
+#wl-join h2 { margin: 0; font-size: clamp(26px, 6vw, 46px); }
+.wl-code { display: flex; justify-content: center; gap: clamp(8px, 3vw, 18px); }
+.wl-code input {
+  width: clamp(62px, 19vw, 120px); height: clamp(84px, 25vw, 150px); padding: 0; border: 5px solid var(--ink); border-radius: 20px;
+  background: #fff; color: var(--ink); box-shadow: 0 7px 0 var(--ink); text-align: center; text-transform: uppercase;
+  font-family: var(--font-display); font-size: clamp(52px, 15vw, 104px); line-height: 1; caret-color: var(--tomato);
+}
+.wl-err { min-height: 1.3em; font-weight: 900; color: #fff; text-shadow: 0 2px 0 var(--ink); font-size: 18px; }
+.wl-go { align-self: center; min-width: min(100%, 360px); font-size: clamp(28px, 6vw, 40px) !important; min-height: 80px; }
+.wl-back { align-self: center; background: none; border: 0; color: #fff; font-weight: 900; font-size: 18px; text-decoration: underline; cursor: pointer; padding: 10px; }
+#wl-busy { align-items: center !important; }
+#wl-busy .msg { font-family: var(--font-display); font-size: clamp(22px, 4vw, 34px); text-shadow: 0 3px 0 var(--ink); }
+.wl-spin { width: 56px; height: 56px; border-radius: 50%; border: 7px solid rgba(255,255,255,.4); border-top-color: var(--sun); animation: wlspin 1s linear infinite; }
+@keyframes wlspin { to { transform: rotate(360deg); } }
+.wl-fatal { background: #fff; color: var(--ink); border: 5px solid var(--ink); border-radius: 22px; box-shadow: 0 8px 0 var(--ink); padding: 20px 24px; max-width: 560px; }
+.wl-fatal .em { font-size: 54px; }
+.wl-fatal h2 { font-family: var(--font-display); font-weight: 400; margin: 6px 0; }
+@media (max-height: 520px) and (orientation: landscape) { /* phone held sideways: keep both buttons on screen */
+  #wl-home { flex-direction: row !important; flex-wrap: wrap; justify-content: center; }
+  .wl-big { flex: 1 1 280px; min-height: 96px; }
+  .wl-logo { font-size: 48px; }
+  .wl-code input { height: 70px; font-size: 48px; }
+}
+
+/* ---- phone: can't reach the TV ---- */
+#web-problem {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px;
+  background: rgba(20, 24, 60, .72); backdrop-filter: blur(2px);
+}
+#web-problem .wp-card {
+  width: min(100%, 420px); background: #fff; color: var(--ink); border: 5px solid var(--ink); border-radius: 24px;
+  box-shadow: 0 8px 0 var(--ink); padding: 18px 18px 16px; text-align: center; max-height: calc(100dvh - 32px); overflow: auto;
+}
+#web-problem .em { font-size: 54px; line-height: 1.1; font-family: var(--emoji); }
+#web-problem h2 { font-family: var(--font-display); font-weight: 400; font-size: 32px; margin: 4px 0 6px; color: var(--tomato); }
+#web-problem p { font-size: 18px; margin: 0 0 10px; }
+#web-problem .wp-code { font-size: 18px; margin-bottom: 12px; }
+#web-problem .wp-code b { font-family: var(--font-display); font-weight: 400; font-size: 34px; letter-spacing: .14em; }
+#web-problem .wp-acts { display: flex; gap: 10px; }
+#web-problem .wp-acts .btn { flex: 1; min-height: 56px; font-size: 20px; }
+#web-problem small { display: block; margin-top: 10px; font-size: 14px; opacity: .8; }
+
+/* ---- TV lobby: the room code, HUGE (inside the 1920x1080 stage) ---- */
+.web-edition .qr-card.web-room { width: 640px; right: 70px; top: 46px; padding: 22px 26px 18px; }
+.qr-card.web-room .wr-head { font-family: var(--font-display); font-size: 40px; line-height: 1.05; }
+.qr-card.web-room .wr-link { font-size: 34px; font-weight: 1000; color: var(--panel-deep); word-break: break-all; line-height: 1.1; margin: 4px 0; }
+.qr-card.web-room .wr-link.soft { color: var(--ink-2); font-size: 30px; }
+.qr-card.web-room .wr-and { font-family: var(--font-display); font-size: 36px; }
+.qr-card.web-room .wr-code { display: flex; justify-content: center; gap: 16px; margin: 12px 0 18px; }
+.qr-card.web-room .wr-code b {
+  width: 128px; height: 160px; display: grid; place-items: center; border: 6px solid var(--ink); border-radius: 22px;
+  background: var(--sun); box-shadow: 0 9px 0 var(--ink); font-family: var(--font-display); font-weight: 400; font-size: 132px; line-height: 1; color: var(--ink);
+}
+.qr-card.web-room .wr-code b:nth-child(even) { transform: rotate(3deg); } .qr-card.web-room .wr-code b:nth-child(odd) { transform: rotate(-2deg); }
+.qr-card.web-room .wr-row { display: flex; align-items: center; gap: 20px; text-align: left; }
+.qr-card.web-room .qr { width: 210px !important; height: 210px !important; flex: none; margin: 0 !important; border: 4px solid var(--ink); border-radius: 12px; }
+.qr-card.web-room .wr-or { font-size: 26px; line-height: 1.2; }
+.qr-card.web-room .wr-or b { font-family: var(--font-display); font-weight: 400; font-size: 32px; display: block; }
+.qr-card.web-room .wr-status { margin-top: 12px; font-size: 22px; font-weight: 900; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.qr-card.web-room .wr-status i { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--ink); background: var(--sun); }
+.qr-card.web-room .wr-status.ok i { background: var(--grass); }
+.qr-card.web-room .wr-status.warn i, .qr-card.web-room .wr-status.bad i { background: var(--tomato); }
+.qr-card.web-room .wr-status.wait i { animation: wlblink 1s ease-in-out infinite; }
+@keyframes wlblink { 50% { opacity: .25; } }
+/* Refresh Historical Data needs the home-computer (Node) edition */
+.web-edition [data-refresh] { display: none !important; }
+.web-edition #tvmodal .web-opt { margin: 18px 0 8px; padding: 16px 18px; border: 4px dashed rgba(20,24,60,.3); border-radius: 16px; text-align: left; font-size: 22px; }
+.web-edition #tvmodal .web-opt label { display: block; font-weight: 1000; margin-bottom: 8px; }
+.web-edition #tvmodal .web-opt label small { font-weight: 700; opacity: .7; font-size: 18px; }
+.web-edition #tvmodal .web-link-row { display: flex; gap: 12px; }
+.web-edition #tvmodal .web-link-row input { flex: 1; min-width: 0; font: inherit; font-size: 24px; padding: 10px 14px; border: 4px solid var(--ink); border-radius: 12px; }
+.web-edition #tvmodal .web-data { margin-top: 12px; font-size: 20px; }
+#web-pill {
+  position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 300; padding: 8px 16px; border-radius: 14px;
+  background: var(--tomato); color: #fff; border: 3px solid var(--ink); font-family: var(--font-display); font-size: 18px; box-shadow: 0 4px 0 var(--ink);
+}

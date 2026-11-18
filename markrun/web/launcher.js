@@ -114,7 +114,7 @@ function openJoin(prefill = '') {
     b.onpaste = (e) => { const t = e.clipboardData?.getData('text') || ''; e.preventDefault(); boxes.forEach((x) => { x.value = ''; }); fill(clean(t)); };
     b.onfocus = () => b.select?.();
   });
-  if (prefill) fill(clean(prefill)); else { sync(); setTimeout(() => boxes[0].focus(), 50); }
+  if (prefill) fill(clean(prefill)); else { sync(); setTimeout(() => { if (!boxes.some((x) => x.value) && !boxes.includes(document.activeElement)) boxes[0].focus(); }, 50); }
   go.onclick = () => { const c = value(); if (c.length === 4) { goFullscreen(); startPhone(c); } };
 }
 
