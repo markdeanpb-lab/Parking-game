@@ -1,5 +1,13 @@
 // WebSocket client with auto-reconnect (exponential backoff), visibility/online handling and clock sync.
-export function connect({ role, getToken, getKey, onWelcome, onState, onMessage, onStatus }) {
+// Transport injection: if a page sets globalThis.__markrunTransport = { connect(opts) } BEFORE the TV/phone module loads
+// (the web edition does: in-page host for the TV, WebRTC/PeerJS for phones), connect() delegates to it. Same callbacks,
+// same returned API ({ send, reconnect, close, serverNow, open }).
+export function connect(opts) {
+  const injected = globalThis.__markrunTransport;
+  if (injected && typeof injected.connect === 'function') return injected.connect(opts);
+  return connectWs(opts);
+}
+function connectWs({ role, getToken, getKey, onWelcome, onState, onMessage, onStatus }) {
   let ws = null;
   let attempt = 0;
   let timer = null;

@@ -13,14 +13,17 @@ export const isLoopback = (addr) => trustLoopback && LOOPBACK.has(String(addr ||
 export const isTrustedLocal = (req) => isLoopback(req.socket.remoteAddress)
   && !req.headers['x-forwarded-for'] && !req.headers['x-forwarded-host'] && !req.headers['forwarded'];
 
-export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKey = null } = {}) {
+// Transport-agnostic: pass `wss` (anything with on('connection', (ws, req)) whose sockets look like ws: send, readyState,
+// on('message'|'close'|'pong'), ping, terminate) to run the hub over another transport (the web edition uses WebRTC).
+// `tvExtra()` adds fields to the TV view that can change at runtime (web edition: room code, join link, QR).
+export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKey = null, wss: injected = null, tvExtra = null } = {}) {
   const claims = new Map(); // reqId -> { c, playerId, timer }
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
+  const wss = injected || new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
   const clients = new Set();
 
   const send = (c, msg) => { if (c.ws.readyState === 1) c.ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
   const viewFor = (c) => (c.role === 'tv'
-    ? game.tvView({ joinUrl, tvUrl, qrSvg, info })
+    ? game.tvView({ joinUrl, tvUrl, qrSvg, info, ...(tvExtra?.() || {}) })
     : game.phoneView(c.playerId));
 
   function push(c, force = false) {
@@ -218,7 +221,7 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKe
       try { c.ws.ping(); } catch { /* ignore */ }
     }
   }, 10_000);
-  hb.unref();
+  hb.unref?.();
   wss.on('close', () => clearInterval(hb));
   return { wss, clients, broadcast, close: () => { clearInterval(hb); for (const c of clients) c.ws.terminate(); wss.close(); } };
 }

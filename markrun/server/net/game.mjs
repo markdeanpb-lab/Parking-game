@@ -1,8 +1,8 @@
 // Server-authoritative MARKRUN session state machine.
 //   LOBBY -> INTRO -> BETTING -> RACE -> RESULTS -> SCOREBOARD -> (INTRO of next round | FINALE)
 // Pure game-flow logic: no sockets here. The hub (server/net/hub.mjs) turns actions into calls and state into views.
-import crypto from 'node:crypto';
-import { EventEmitter } from 'node:events';
+// Isomorphic (Node + browser web edition): Web Crypto + a tiny emitter instead of node:crypto / node:events.
+import { Emitter as EventEmitter, randHex } from './emitter.mjs';
 import { validateBets, stakeCap } from './bets.mjs';
 import { broadcastToRace, distanceAt, timeAtDistance } from '../game/raceplan.mjs';
 
@@ -27,18 +27,19 @@ const SETTING_LIMITS = {
   startingBankroll: [100, 10000], roundsPerGame: [1, 12], volume: [0, 1], betTimer: [0, 600],
 };
 
+const ENV = (typeof process !== 'undefined' && process.env) || {};
 const T = { // default timeouts (ms) - safety nets; the TV normally drives these phases
   INTRO: 180_000, REVEAL_BASE: 8_000, REVEAL_PER_BET: 4_000, RACE_EXTRA: 60_000, STAGE: 45_000,
-  MARKET: Number(process.env.MARKRUN_MARKET_MS) || 12_000,
-  STALL: Number(process.env.MARKRUN_STALL_MS) || 45_000,     // TV made no progress for this long -> force on
-  NO_TV: Number(process.env.MARKRUN_NO_TV_MS) || 60_000,     // no TV connected at all for this long -> force on
+  MARKET: Number(ENV.MARKRUN_MARKET_MS) || 12_000,
+  STALL: Number(ENV.MARKRUN_STALL_MS) || 45_000,     // TV made no progress for this long -> force on
+  NO_TV: Number(ENV.MARKRUN_NO_TV_MS) || 60_000,     // no TV connected at all for this long -> force on
   SCOREBOARD_ALL_READY: 12_000, SCOREBOARD_READY_NOW: 3_500,
 };
 
 export function newSessionState(settings = {}) {
   return {
     v: 1,
-    sessionId: crypto.randomBytes(6).toString('hex'),
+    sessionId: randHex(6),
     phase: 'LOBBY',
     settings: { ...DEFAULT_SETTINGS, ...settings },
     players: [],
@@ -54,7 +55,7 @@ export function newSessionState(settings = {}) {
     deadline: null,
     carryReady: false,
     gameNumber: 1,
-    gameSessionId: crypto.randomBytes(6).toString('hex'), // new id per game (passed to createRound as settings.sessionId)
+    gameSessionId: randHex(6), // new id per game (passed to createRound as settings.sessionId)
     refreshing: false,
     updatedAt: Date.now(),
   };
@@ -141,7 +142,7 @@ export class Game extends EventEmitter {
       let n = 1;
       while (this.player(`p${n}`)) n++;
       const p = {
-        id: `p${n}`, name, token: crypto.randomBytes(16).toString('hex'),
+        id: `p${n}`, name, token: randHex(16),
         avatar: cleanAvatar(avatar, this.s.players.length),
         bankroll: this.s.settings.startingBankroll, ready: false, joinedAt: this.now(),
       };
@@ -155,7 +156,7 @@ export class Game extends EventEmitter {
       const p = this.player(playerId);
       if (!p) throw new GameError('No such player.');
       if (this.isConnected(p.id)) throw new GameError(`${p.name} is still connected.`);
-      const t = crypto.randomBytes(16).toString('hex');
+      const t = randHex(16);
       p.claimTokens = [...(p.claimTokens || []), t].slice(-3);
       this.changed();
       return { player: p, token: t };
@@ -228,7 +229,7 @@ export class Game extends EventEmitter {
           p.bankroll = amt;
         }
       }
-      this.s.gameSessionId ||= crypto.randomBytes(6).toString('hex');
+      this.s.gameSessionId ||= randHex(6);
       const st = this.s.settings;
       // final round: the player in last place gets an extra hot tip (game module)
       const trailing = number >= st.roundsPerGame && this.s.players.length > 1
@@ -440,7 +441,7 @@ export class Game extends EventEmitter {
     this.s.phase = 'LOBBY'; this.s.roundNumber = 0; this.s.round = null; this.s.results = null; this.s.history = []; this.s.roundLog = []; this.s.superlatives = [];
     this.s.bets = {}; this.s.drafts = {}; this.s.locked = {}; this.s.revealed = false;
     this.s.gameNumber = (this.s.gameNumber || 1) + 1;
-    this.s.gameSessionId = crypto.randomBytes(6).toString('hex');
+    this.s.gameSessionId = randHex(6);
     for (const p of this.s.players) p.bankroll = this.s.settings.startingBankroll;
     this.clearReady(); this.setDeadline(null); this.changed();
   }

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#2f8cff">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>MARKRUN</title>
+  <link rel="preload" href="assets/fonts/LilitaOne-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="web.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ffd23f' stroke='%2314183c' stroke-width='6'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' font-family='Arial Black' fill='%2314183c'%3EM%3C/text%3E%3C/svg%3E">
+</head>
+<body class="web-launcher sky-bg">
+  <div id="launcher">
+    <div class="wl-logo outlined">MARK<span>RUN</span></div>
+    <div class="wl-sub">Real parkruns. Real Mark. Fake money. 🍷</div>
+    <section id="wl-home">
+      <button class="wl-big tv" id="wl-tv"><span class="em">📺</span><span class="tx"><b>This is the TV</b><small>the computer on the big screen</small></span></button>
+      <button class="wl-big phone" id="wl-phone"><span class="em">📱</span><span class="tx"><b>Join on my phone</b><small>type the code from the TV</small></span></button>
+      <button class="wl-rejoin hidden" id="wl-rejoin"></button>
+    </section>
+    <section id="wl-join" class="hidden">
+      <h2 class="outlined white thin">Enter the code on the TV</h2>
+      <div class="wl-code">
+        <input aria-label="Code letter 1" maxlength="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" enterkeyhint="next">
+        <input aria-label="Code letter 2" maxlength="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" enterkeyhint="next">
+        <input aria-label="Code letter 3" maxlength="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" enterkeyhint="next">
+        <input aria-label="Code letter 4" maxlength="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" enterkeyhint="go">
+      </div>
+      <div class="wl-err"></div>
+      <button class="btn green big wl-go" id="wl-go" disabled>JOIN ▶</button>
+      <button class="wl-back" id="wl-back">← Back</button>
+    </section>
+    <section id="wl-busy" class="hidden"><div class="wl-spin"></div><div class="msg"></div></section>
+  </div>
+  <noscript><p style="color:#fff;text-align:center;font-size:22px">MARKRUN needs JavaScript.</p></noscript>
+  <script type="module" src="js/launcher.js"></script>
+</body>
+</html>
