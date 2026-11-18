@@ -10,6 +10,7 @@ import { provisionalNet } from '../game/provisional.mjs';
 export const PHASES = ['LOBBY', 'INTRO', 'BETTING', 'RACE', 'RESULTS', 'SCOREBOARD', 'FINALE'];
 export const RESULT_STAGES = ['order', 'reveal', 'clues', 'payouts', 'awards'];
 export const MAX_PLAYERS = 4;
+export const MARK_BONUS = 25; // "Does he really?": a correct believe/doubt
 export const REACTIONS = ['😱', '😂', '🔥'];
 export const AVATAR_EMOJI = ['🦊', '🐸', '🦉', '🐙', '🦄', '🐯', '🐼', '🦖', '🐧', '🐝', '🦩', '🐶'];
 export const AVATAR_COLOURS = ['#ff4d5a', '#ffb000', '#2ec27e', '#2f8cff', '#9b5cff', '#ff6fb5', '#13c4c4', '#ff7a1a'];
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   volume: 0.8,
   betTimer: 90, // seconds; a soft countdown (hurry-up nudge, then your slip is locked as it stands); 0 = off
   runnerPlayerId: null, // "I'm Mark": the other player gets an extra hot tip
+  premiumVoices: true, // TV: Kokoro neural commentary voices when available (falls back to the browser's voices)
 });
 const SETTING_LIMITS = {
   roundBudget: [100, 5000], roundsPerGame: [1, 12], volume: [0, 1], betTimer: [0, 600],
@@ -34,6 +36,7 @@ const ENV = (typeof process !== 'undefined' && process.env) || {};
 const T = { // default timeouts (ms) - safety nets; the TV normally drives these phases
   INTRO: 180_000, REVEAL_BASE: 8_000, REVEAL_PER_BET: 4_000, RACE_EXTRA: 60_000, STAGE: 45_000,
   MARKET: Number(ENV.MARKRUN_MARKET_MS) || 15_000,
+  MARK_ASK: Number(ENV.MARKRUN_MARK_ASK_MS) || 7_000, // "Remember this one?" window per reveal card
   STALL: Number(ENV.MARKRUN_STALL_MS) || 45_000,     // TV made no progress for this long -> force on
   NO_TV: Number(ENV.MARKRUN_NO_TV_MS) || 60_000,     // no TV connected at all for this long -> force on
   SCOREBOARD_ALL_READY: 12_000, SCOREBOARD_READY_NOW: 3_500,
@@ -131,6 +134,7 @@ export class Game extends EventEmitter {
     this.busy = false;
     this.rearm(true);
     if (this.s.market?.open) { this.s.market.closesAt = Math.max(this.s.market.closesAt, this.now() + 3000); this.armMarket(); }
+    if (this.s.markMoment?.open) this.s.markMoment.open = null; // a restart drops a half-asked question (the TV asks again)
   }
 
   // ---- helpers ------------------------------------------------------------------------------------
@@ -172,7 +176,7 @@ export class Game extends EventEmitter {
     this.timer = setTimeout(() => this.run(() => this.onTimeout(tag)), Math.max(0, wait));
     this.timer.unref?.();
   }
-  dispose() { clearTimeout(this.timer); this.removeAllListeners(); }
+  dispose() { clearTimeout(this.timer); clearTimeout(this.marketTimer); clearTimeout(this.markTimer); this.removeAllListeners(); }
 
   async onTimeout(tag) {
     const now = `${this.s.phase}:${this.s.resultsStage}:${this.s.revealed}:${this.s.roundNumber}`;
@@ -300,7 +304,7 @@ export class Game extends EventEmitter {
       this.s.results = null;
       this.s.resultsStage = 0;
       this.s.carryReady = false;
-      this.s.market = null; this.s.marketUsed = false; this.s.live = null; this.s.revealSeq = null;
+      this.s.market = null; this.s.marketUsed = false; this.s.live = null; this.s.revealSeq = null; this.s.markMoment = null;
       this.clearReady();
       this.progress = { key: null, value: -1 };
       this.setDeadline(this.tvCount ? T.STALL : T.NO_TV);
@@ -372,6 +376,7 @@ export class Game extends EventEmitter {
   }
   reveal() {
     this.s.revealed = true;
+    this.personalise();
     this.s.betLines = [];
     const players = this.s.players.map((p) => ({ id: p.id, name: p.name }));
     const budgets = Object.fromEntries(this.s.players.map((p) => [p.id, this.budget()])); // "smallest to largest relative to the budget"
@@ -389,15 +394,22 @@ export class Game extends EventEmitter {
       return this.toRace();
     });
   }
-  async toRace() {
+  // personalised race commentary once the bets are final (game module; feature-detected). Runs at the bet reveal
+  // (so the TV can pre-render the voices while the bets are shown), once per round.
+  personalise() {
     const r = this.s.round;
-    this.s.results = null; // settled at the finish: in-play bets can still be added at halfway
-    // personalised race commentary now the bets are known (game module; feature-detected)
+    if (!r || r.personalised) return;
+    r.personalised = true;
     try {
       const pc = this.rounds.personaliseCommentary?.(r, Object.fromEntries(this.s.players.map((p) => [p.id, this.s.bets[p.id] || []])), this.s.players.map((p) => ({ id: p.id, name: p.name })));
       const merged = Array.isArray(pc) ? pc : Array.isArray(pc?.commentary) ? pc.commentary : null;
       if (merged && r.racePlan) r.racePlan.commentary = merged;
     } catch (e) { console.warn('[markrun] personaliseCommentary failed:', e.message); }
+  }
+  async toRace() {
+    const r = this.s.round;
+    this.s.results = null; // settled at the finish: in-play bets can still be added at halfway
+    this.personalise();
     // halfway market only when it's still a contest: skip it if 2nd is more than 20 s behind at halfway
     const pm = this.rounds.inPlayMarket?.(r);
     const second = pm?.standings?.find((x) => x.place === 2) || pm?.standings?.[1];
@@ -453,6 +465,7 @@ export class Game extends EventEmitter {
   }
   nextStage(from) {
     if (this.s.phase !== 'RESULTS' || (from != null && from !== this.s.resultsStage)) return;
+    if (this.s.markMoment?.open) this.closeMarkAsk(false);
     if (this.s.resultsStage >= RESULT_STAGES.length - 1) return this.toScoreboard();
     this.s.resultsStage++;
     this.setDeadline(T.STAGE);
@@ -565,6 +578,72 @@ export class Game extends EventEmitter {
       this.changed();
     });
   }
+  // ---- "Remember this one?" (results reveal; only when someone ticked "I'm Mark") --------------------------
+  // Before each reveal card flips the TV asks (markAsk). Mark's phone shows that run's details privately and asks
+  // "Remember this one?" (yes/no); everyone else answers "Does he really?" (believe/doubt). The window closes when
+  // everyone has answered or after T.MARK_ASK; a correct believe/doubt (matching Mark's answer) scores MARK_BONUS,
+  // banked straight into the score and shown as pay.bonus in the payouts.
+  markPlayer() { const id = this.s.settings.runnerPlayerId; return id && this.player(id) ? id : null; }
+  markAsk(roundId, runnerId, index = 0) {
+    return this.run(() => {
+      const mark = this.markPlayer();
+      if (!mark || this.s.phase !== 'RESULTS' || RESULT_STAGES[this.s.resultsStage] !== 'reveal') return;
+      if (roundId && roundId !== this.s.round?.public?.roundId) return;
+      if (!this.s.results?.reveal?.some((x) => x.runnerId === runnerId)) return;
+      const mm = this.s.markMoment ||= { roundId: this.s.round.public.roundId, markId: mark, open: null, log: [] };
+      if (mm.log.some((x) => x.runnerId === runnerId) || mm.open?.runnerId === runnerId) return;
+      if (mm.open) this.closeMarkAsk(false);
+      mm.open = { runnerId, index: Number(index) || 0, closesAt: this.now() + T.MARK_ASK, answers: {} };
+      clearTimeout(this.markTimer);
+      this.markTimer = setTimeout(() => this.run(() => this.closeMarkAsk(true)), T.MARK_ASK);
+      this.markTimer.unref?.();
+      this.setDeadline(T.STAGE); // the reveal stage legitimately takes longer with the questions
+      this.changed();
+    });
+  }
+  markAnswer(playerId, runnerId, answer) {
+    return this.run(() => {
+      const mm = this.s.markMoment;
+      const o = mm?.open;
+      if (!o || o.runnerId !== runnerId || !this.player(playerId) || o.answers[playerId]) return;
+      const ok = playerId === mm.markId ? ['yes', 'no'] : ['believe', 'doubt'];
+      if (!ok.includes(answer)) return;
+      o.answers[playerId] = answer;
+      if (this.s.players.every((p) => o.answers[p.id] || !this.isConnected(p.id))) this.closeMarkAsk(false);
+      this.changed();
+    });
+  }
+  closeMarkAsk(emit = true) {
+    clearTimeout(this.markTimer);
+    const mm = this.s.markMoment;
+    const o = mm?.open;
+    if (!o) return;
+    mm.open = null;
+    const mark = o.answers[mm.markId] || null;
+    const entry = { runnerId: o.runnerId, mark, guesses: {}, bonus: {} };
+    for (const p of this.s.players) {
+      if (p.id === mm.markId) continue;
+      const g = o.answers[p.id];
+      if (!g) continue;
+      entry.guesses[p.id] = g;
+      if (mark && ((g === 'believe') === (mark === 'yes'))) entry.bonus[p.id] = MARK_BONUS;
+    }
+    mm.log.push(entry);
+    for (const [pid, b] of Object.entries(entry.bonus)) this.bankBonus(pid, b);
+    if (emit) this.changed();
+  }
+  bankBonus(pid, amount) { // into the score, this round's net, the payout (pay.bonus) and the history row
+    const p = this.player(pid);
+    if (!p || !amount) return;
+    p.score = (p.score || 0) + amount;
+    const pay = this.s.results?.payouts?.[pid];
+    if (pay) { pay.bonus = (pay.bonus || 0) + amount; pay.net = (pay.net || 0) + amount; pay.score = p.score; }
+    const h = this.s.history.at(-1);
+    if (h && h.round === this.s.roundNumber) { h.scores = this.scores(); h.nets[pid] = (h.nets[pid] || 0) + amount; }
+    const lg = (this.s.roundLog || []).at(-1);
+    if (lg && lg.number === this.s.roundNumber) lg.scores = this.scores();
+  }
+
   // ---- progress heartbeats: safety timers only fire if the TV stops making progress ----
   tvPresence(count) {
     const before = this.tvCount || 0;
@@ -690,6 +769,8 @@ export class Game extends EventEmitter {
       revealSeq: s.revealed && s.phase === 'BETTING' ? s.revealSeq : null,
       market: s.phase === 'RACE' && s.market ? { open: s.market.open, atM: s.market.atM, standings: s.market.standings, odds: s.market.odds, closesAt: s.market.closesAt, durationS: s.market.durationS } : null,
       superlatives: s.phase === 'FINALE' ? (s.superlatives || []) : [],
+      markMoment: s.phase === 'RESULTS' && s.markMoment ? { markId: s.markMoment.markId, log: s.markMoment.log,
+        open: s.markMoment.open ? { runnerId: s.markMoment.open.runnerId, index: s.markMoment.open.index, closesAt: s.markMoment.open.closesAt, answered: Object.keys(s.markMoment.open.answers) } : null } : null,
       results: showResults ? s.results : null,
       clues: showResults ? this.allClues() : null, // after the race every clue (incl. private ones) can be reviewed
       resultsStage: s.phase === 'RESULTS' ? s.resultsStage : RESULT_STAGES.length,
@@ -712,7 +793,20 @@ export class Game extends EventEmitter {
     v.backedBy = this.s.revealed || ['RACE', 'RESULTS'].includes(this.s.phase) ? this.backedBy() : {};
     v.marketAvailable = this.s.phase === 'RACE' && this.marketAvailable() && !this.s.marketUsed;
     v.introExtras = this.s.phase === 'INTRO' ? (this.s.introExtras || null) : null;
+    v.voicePrefetch = this.voicePrefetch();
     return { ...v, role: 'tv', ...extra };
+  }
+
+  // Premium voices (TV only, never phones): the race's commentary text while bets are placed, so the TV can render
+  // it ahead of time. Text and broadcast second only; nothing is shown on screen. Sent only when the TV has premium
+  // voices on. (After the bet reveal it is the personalised version.)
+  voicePrefetch() {
+    const s = this.s;
+    if (!s.settings.premiumVoices || s.phase !== 'BETTING' || !s.round?.racePlan) return null;
+    const plan = s.round.racePlan;
+    const lines = (plan.commentary || []).filter((l) => l?.text).map((l) => ({ text: l.text, speaker: l.speaker === 'pam' ? 'pam' : 'jeff', b: Math.round((l.broadcastS || 0) * 10) / 10, priority: l.priority || 2 }));
+    for (const c of plan.cutscenes || []) for (const l of c.lines || []) if (l?.text) lines.push({ text: l.text, speaker: l.speaker === 'pam' ? 'pam' : 'jeff', b: Math.round((c.atBroadcastS || 0) * 10) / 10, priority: 3 });
+    return { roundId: s.round.public.roundId, personalised: !!s.round.personalised, lines };
   }
 
   phoneView(playerId) {
@@ -730,6 +824,8 @@ export class Game extends EventEmitter {
       bets: this.s.locked[p.id] ? (this.s.bets[p.id] || []) : (this.s.drafts[p.id] || []),
       budget, stakeCap: budget,
     };
+    const mo = this.s.phase === 'RESULTS' ? this.s.markMoment?.open : null;
+    if (mo) v.me.markPrompt = { runnerId: mo.runnerId, index: mo.index, closesAt: mo.closesAt, role: p.id === this.s.markMoment.markId ? 'mark' : 'guess', answer: mo.answers[p.id] || null, markAnswered: !!mo.answers[this.s.markMoment.markId] };
     if (this.s.phase === 'RACE' && this.s.live) {
       const st = this.liveStandings() || [];
       const mine = new Set((this.s.bets[p.id] || []).map((b) => b.runnerId || b.pick).filter((x) => x && x !== 'yes' && x !== 'no'));

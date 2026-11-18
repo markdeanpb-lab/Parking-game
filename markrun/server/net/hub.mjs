@@ -148,6 +148,7 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKe
       case 'ready': return game.ready(pid, m.value !== false);
       case 'inplay': await game.placeInPlay(pid, { runnerId: m.runnerId, stake: m.stake }); return send(c, { t: 'inplayOk' });
       case 'next': return game.phoneNext(pid);
+      case 'markAnswer': return game.markAnswer(pid, m.runnerId, m.answer);
       case 'iAmMark': return game.setRunnerPlayer(pid, m.value !== false);
       case 'profile': return game.updateProfile(pid, { name: m.name, avatar: m.avatar });
       case 'react': {
@@ -201,6 +202,7 @@ export function attachHub(server, game, { joinUrl, tvUrl, qrSvg, info = {}, tvKe
       case 'forceLock': return game.forceLock();
       case 'marketOpen': return game.openMarket(m.roundId);
       case 'raceTime': return game.raceTime(m.roundId, m.b);
+      case 'markAsk': return game.markAsk(m.roundId, m.runnerId, m.index);
       case 'refresh': {
         const toTvs = (msg) => { const s = JSON.stringify(msg); for (const o of clients) if (o.role === 'tv') send(o, s); };
         toTvs({ t: 'refresh', step: 'start', msg: 'Starting refresh (this uses the internet)…' });

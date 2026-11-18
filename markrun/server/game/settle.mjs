@@ -127,6 +127,9 @@ export function revealCard(runnerId, perf, used = new Set()) {
     finsburyNumber: f.finsbury_number ?? null,
     wasPB: finsPB || parkrunPB,
     pbKind: parkrunPB ? 'parkrun' : finsPB ? 'finsbury' : null,
+    // for the TV reveal card's badges (rank among all his Finsbury runs, a weather icon)
+    rank: perf.rank ?? null, of: perf.of ?? null,
+    weather: w ? { tempC: w.temp_c == null ? null : Math.round(w.temp_c), windKmh: w.wind_kmh == null ? null : Math.round(w.wind_kmh), prcpMm: w.prcp_mm ?? null, coco: w.coco ?? null } : null,
     pacingSource: perf.pacingSource,
     pool: perf.pool,
     ...revealContext(perf),

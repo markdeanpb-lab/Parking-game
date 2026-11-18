@@ -24,7 +24,7 @@ import { distanceAt, timeAtDistance, raceToBroadcast, broadcastToRace } from './
 import { makeRng } from './rng.mjs';
 
 export const RULES = {
-  maxPausing: 3, maxPauseS: 18, pauseGapS: 20, anyGapS: 6, startQuietS: 8, noGoM: 4700, maxInsets: 3,
+  maxPausing: 1, maxPauseS: 18, pauseGapS: 20, anyGapS: 6, startQuietS: 8, noGoM: 4700, maxInsets: 3,
   cooldownRaces: 4, cooldownLiveRaces: 3, marketGapS: 6, battleGapS: 2, battleWindowS: 3.5, scrumM: 1000,
 };
 const HILLS = [[1720, 1960], [4220, 4460]];
@@ -51,11 +51,24 @@ export const CUTSCENE_KINDS = {
   ice_cream_van: { cat: 'surge', label: 'The Ice-Cream Van Jingle', ref: 'B2' },
   photographer: { cat: 'finish', label: 'The Wildlife Photographer', ref: 'X1' },
   sore_loser_var: { cat: 'finish', label: 'Sore Loser VAR', ref: 'X5' },
+  // batch 2 (docs/CUTSCENE_IDEAS_2.md)
+  pointing_standoff: { cat: 'finish', label: 'The Pointing Standoff', ref: '2/1' },
+  sub20_wall: { cat: 'wall', label: 'The Sub-20 Wall', ref: '2/2', story: true },
+  mirror_routine: { cat: 'pair', label: 'The Mirror Routine', ref: '2/3' },
+  heart_vs_heart: { cat: 'pair', label: 'Heart vs Heart', ref: '2/4' },
+  breakfast: { cat: 'start', label: 'Half Marathon Before Breakfast', ref: '2/5' },
+  before_after: { cat: 'pair', label: 'Before and After', ref: '2/6' },
+  road_to_100: { cat: 'tag', label: 'Road to 100', ref: '2/7', story: true },
+  incline_button: { cat: 'hill', label: 'Where\'s the Incline Button?', ref: '2/8' },
+  pb_bell: { cat: 'finish', label: 'The PB Bell', ref: '2/9', story: true },
+  wrong_kit_bag: { cat: 'start', label: 'The Wrong Kit Bag', ref: '2/10' },
 };
+export const BENCHED = new Set(['mirror_signal']); // docs/CUTSCENE_IDEAS_2.md section 4
 export const PAUSING = new Set(['freeze', 'replay']);
 // default wall durations (s)
 const DUR = { funfair_sign: 2.6, funfair_drone: 5.8, hook_a_duck: 7, hook_a_duck2: 5, test_strength: 6.5, test_strength2: 6, funfair_rejoin: 2.8,
-  goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 5.5, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 6 };
+  goose_toll: 6, treadmill_hill: 6, everest: 7, spaghetti_legs: 5, cannonball: 5.5, raincloud: 5, mirror_signal: 4, ice_cream_van: 5, photographer: 7.5, sore_loser_var: 6,
+  pointing_standoff: 7, mirror_routine: 5, heart_vs_heart: 5, before_after: 5, incline_button: 5, pb_bell: 4.5, road_to_100: 3.2, breakfast: 4.2, wrong_kit_bag: 5, sub20_wall: 6 };
 
 // Line banks (3-4 per kind; one line plays per cutscene, never repeated within a night) and visual variants.
 const J = (text) => ({ speaker: 'jeff', text }), P = (text) => ({ speaker: 'pam', text });
@@ -79,6 +92,16 @@ export const LINE_BANKS = {
   ice_cream_van: [J('He\'s heard the VAN!'), P('Sold out. Every time.'), J('Faster, Mark! It\'s got FLAKES!')],
   photographer: [P('Hold on. Wrong end of the goose.'), J('Lovely shot, Pam.'), P('Second time lucky.')],
   sore_loser_var: [J('Checking... checking... the result STANDS!'), P('The squirrel was onside, Jeff.'), J('VAR says NO!')],
+  pointing_standoff: [P('Same man. Same time. Different Saturday.'), J('It\'s a DEAD HEAT! With HIMSELF!'), P('One of them is copying.')],
+  sub20_wall: [J('It\'s the TWENTY-MINUTE WALL! And he\'s gone STRAIGHT THROUGH IT!'), P('He spent months on the wrong side of that.'), P('There\'s a door, Jeff.')],
+  mirror_routine: [P('He\'s just been overtaken by his own future.'), J('It\'s MARK against MARK! And the newer model\'s got more features!'), P('No spoilers, please.')],
+  heart_vs_heart: [P('Same pace. One of them is having a lovely time.'), J('Look at that heart GO! And look at that one... reading!'), P('I\'d ask for a refund on the watch.')],
+  breakfast: [P('He\'s been for a run already. Before nine.'), J('He thinks he\'s FINISHED! Somebody tell him!'), P('The rest of them have had toast.')],
+  before_after: [P('One of them knows how it goes.'), J('That\'s the SAME RACE! He\'s run it and he HASN\'T run it!'), P('Don\'t tell him. He\'ll only worry.')],
+  road_to_100: [P('He needs to get to a hundred. He knows.'), J('Stamp it, Maureen! STAMP IT!'), P('Free coffee at a hundred. Probably.')],
+  incline_button: [P('Outdoors doesn\'t have a console.'), J('He\'s looking for the INCLINE BUTTON!'), P('That\'s what Thursdays indoors do to a man.')],
+  pb_bell: [J('RING THE BELL! That was a PERSONAL BEST on the day!'), P('Twenty-one of these in the archive. The bell is tired.'), P('That\'s the goose\'s bell now.')],
+  wrong_kit_bag: [P('Wrong bag.'), J('He\'s brought the WRONG KIT!'), P('Some of him is still at the gym.')],
 };
 export const VISUAL_VARIANTS = {
   goose_toll: ['jelly', 'peak'], treadmill_hill: ['goose', 'marshal'], everest: ['flask', 'tent'], spaghetti_legs: ['spaghetti', 'jelly'],
@@ -86,7 +109,7 @@ export const VISUAL_VARIANTS = {
   photographer: ['goose', 'thumb'], sore_loser_var: ['squirrel', 'pigeon'], hook_a_duck: ['goose', 'duck'], test_strength: ['jeff', 'pam'],
 };
 // the three gags whose picture is weakest fire less often until a stronger staging lands (rates ~15-20% a race)
-const GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6 };
+const GATE = { cannonball: 0.33, mirror_signal: 0.33, treadmill_hill: 0.6, breakfast: 0.3, wrong_kit_bag: 0.3, incline_button: 0.5, heart_vs_heart: 0.8, mirror_routine: 0.8, before_after: 0.9, pb_bell: 0.9 };
 export const PER_NIGHT_CAP = 2;
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -128,7 +151,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   const info = Object.fromEntries(PR.map((r) => {
     const x = runners.find((q) => q.id === r.id) || {};
     const p = x.perf || x;
-    return [r.id, { name: x.shortName || x.nickname || null, personality: x.personality || null, facts: p.facts || x.facts || {}, features: p.features || x.features || {} }];
+    return [r.id, { name: x.shortName || x.nickname || null, personality: x.personality || null, facts: p.facts || x.facts || {}, features: p.features || x.features || {}, date: x.date || p.date || null }];
   }));
   const S = Object.fromEntries(PR.map((r) => [r.id, runnerStats(r)]));
   const backed = new Set(Array.isArray(backedBy) ? backedBy : Object.keys(backedBy || {}).filter((k) => (backedBy[k] || []).length));
@@ -152,10 +175,10 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     return timeAtDistance(live[1].r.progress, live[0].d) - t <= RULES.battleGapS;
   };
   const LIVE_KINDS = new Set(['cannonball', 'raincloud', 'mirror_signal', 'photographer', 'sore_loser_var']);
-  const freshness = (kind) => { const l = cm.last?.[kind]; if (l == null) return 1; const ago = raceNo - l; return ago >= (LIVE_KINDS.has(kind) ? RULES.cooldownLiveRaces : RULES.cooldownRaces) ? 0.6 : -1; };
-  if (raceNo <= 1 || raceNo < (cm.races || 0)) { cm.night = {}; cm.lines = []; cm.variants = {}; }
+  const freshness = (kind) => { if (CUTSCENE_KINDS[kind]?.story) return 1; const l = cm.last?.[kind]; if (l == null) return 1; const ago = raceNo - l; return ago >= (LIVE_KINDS.has(kind) ? RULES.cooldownLiveRaces : RULES.cooldownRaces) ? 0.6 : -1; };
+  if (raceNo <= 1 || raceNo < (cm.races || 0)) { cm.night = {}; cm.lines = []; cm.variants = {}; cm.wall = { shown: 0, holes: 0 }; cm.bell = 0; cm.road = []; }
   cm.night ||= {}; cm.lines ||= []; cm.variants ||= {};
-  const capped = (kind) => (cm.night[kind] || 0) >= PER_NIGHT_CAP;
+  const capped = (kind) => !CUTSCENE_KINDS[kind]?.story && (cm.night[kind] || 0) >= PER_NIGHT_CAP; // storylines have their own night caps
   const gateRoll = {}; // one roll per kind per race
   const gate = (kind) => GATE[kind] == null || (gateRoll[kind] ??= R.next()) < GATE[kind];
   const cool = (kind) => force === kind || (freshness(kind) >= 0 && !capped(kind) && gate(kind));
@@ -169,8 +192,10 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   function fits(c, { ignoreGroup = null } = {}) {
     if (force && c.kind === force) return true;
     const [a, b] = span(c);
+    if (c.params?.tag) return !out.some((x) => x.kind === c.kind);
+    if (c.params?.overlay) return !out.some((x) => x.kind === c.kind); // the finish-straight wall: world prop only, no clock, no camera
     if (c.mode === 'pre') return !out.some((x) => x.mode === 'pre');
-    if (c.mode === 'post') return !out.some((x) => x.mode === 'post');
+    if (c.mode === 'post') return !out.some((x) => x.mode === 'post' && !x.params?.tag);
     if (a < RULES.startQuietS) return false;
     if (leaderM(b + (PAUSING.has(c.mode) ? 0.3 : 0.5)) >= RULES.noGoM) return false;
     if (PAUSING.has(c.mode)) {
@@ -181,7 +206,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     }
     if (c.mode === 'inset' && c.params?.pip && out.filter((x) => x.mode === 'inset' && x.params?.pip).length >= RULES.maxInsets) return false;
     for (const x of out) {
-      if (x.mode === 'pre' || x.mode === 'post' || x.mode === 'slowmo') continue;
+      if (x.mode === 'pre' || x.mode === 'post' || x.mode === 'slowmo' || x.params?.overlay) continue;
       if (ignoreGroup && x.group === ignoreGroup) continue;
       const [xa, xb] = span(x);
       if (a < xb + RULES.anyGapS && b > xa - RULES.anyGapS) return false;
@@ -329,6 +354,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
   // D1 Mirror, Signal, Manoeuvre (inset): a real overtake (prefer backed runners, then the front of the race)
   {
     for (const e of evts) {
+      if (BENCHED.has('mirror_signal') && !isForced('mirror_signal')) break; // benched: the pair gags cover overtakes now
       if (e.type !== 'overtake' && !isForced('mirror_signal')) continue;
       if (!cool('mirror_signal')) break;
       const by = e.by || e.to, on = e.on || e.from;
@@ -353,6 +379,107 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
       C.push(mk('sore_loser_var', top.b.id, 'post', postB, { params: { winner: top.a.id, marginS: r1(top.g), finishRaceS: top.a.officialS },
         score: 5.5 + (3 - top.g) * 0.5, lines: [{ speaker: 'jeff', text: 'Checking... checking... the result STANDS!' }],
         truth: `${name(top.b.id)} really did finish just ${r1(top.g)} s behind ${name(top.a.id)}. There was no squirrel. The result stands.` }));
+    }
+  }
+
+  // ======== batch 2 (docs/CUTSCENE_IDEAS_2.md, gags 1-10) ========
+  const fact = (id, k) => info[id]?.facts?.[k];
+  const yearsApart = (a, b) => { const da = info[a]?.date, db = info[b]?.date; if (!da || !db) return null; return Math.abs(new Date(da) - new Date(db)) / (365.25 * 864e5); };
+  const finB = (id) => raceToBroadcast(tm, byId[id].officialS);
+  const postB2 = Math.min(lastFinishB + 3.2, Math.max(lastFinishB + 0.9, firstFinishB + 6.5));
+  // 1. The Pointing Standoff (post): two runners with the SAME official time
+  {
+    const pairs = [];
+    for (let i = 0; i < order.length; i++) for (let j = i + 1; j < order.length; j++) if (Math.round(order[i].officialS) === Math.round(order[j].officialS)) pairs.push([order[i], order[j]]);
+    if (pairs.length && cool('pointing_standoff')) { const [a, b] = pairs[0];
+      C.push(mk('pointing_standoff', a.id, 'post', postB2, { params: { other: b.id, finishRaceS: a.officialS }, score: 12,
+        truth: `${name(a.id)} and ${info[b.id]?.name || 'his twin'} really did run the identical time, to the second, on two different Saturdays${yearsApart(a.id, b.id) != null ? ` ${Math.round(yearsApart(a.id, b.id) * 12)} months apart` : ''}.` })); }
+  }
+  // 2. The Sub-20 Wall (live overlay at the finish, never pauses, never takes the camera): drops at 20:00 on the race clock
+  {
+    const sub = order.filter((r) => r.officialS < 1200), near = order.filter((r) => r.officialS >= 1200 && r.officialS <= 1237);
+    const wall = (cm.wall ||= { shown: 0, holes: 0 });
+    if ((sub.length || near.length) && (wall.shown || 0) < 4 && !force) {
+      const g = near.length ? 0.9 : !wall.shown ? 0.8 : 0.25;
+      if (R.next() < g || force === 'sub20_wall') {
+        const at = raceToBroadcast(tm, 1200);
+        const lastHit = near.length ? raceToBroadcast(tm, timeAtDistance(byId[near.at(-1).id].progress, 4960)) : at;
+        C.push(mk('sub20_wall', (near[0] || sub[0]).id, 'inset', at, { durationS: r1(Math.min(30, Math.max(3.5, lastHit - at + 2.5))), params: { overlay: true, near: near.map((r) => r.id), sub: sub.map((r) => r.id), holesBefore: wall.holes || 0, wallM: 4960 }, score: 20,
+          truth: near.length ? `${name(near[0].id)} finished just over 20 minutes. He spent months on the wrong side of that wall before he first broke it.` : `Everyone in this race who finished in under 20 minutes was through before the wall dropped.` }));
+      }
+    } else if (force === 'sub20_wall') C.push(mk('sub20_wall', order[0].id, 'inset', Math.max(8, raceToBroadcast(tm, Math.min(1200, order[0].officialS - 10))), { durationS: 6, params: { overlay: true, near: [order[1]?.id].filter(Boolean), sub: [], holesBefore: 2, wallM: 4960 }, score: 20, truth: 'Preview.' }));
+  }
+  // 3. The Mirror Routine: runs 3+ years apart, the newer really overtakes the older between 1 km and 4.7 km
+  for (const e of evts) {
+    if (e.type !== 'overtake' || e.atM < 1000 || e.atM > 4600 || !cool('mirror_routine')) continue;
+    const ya = yearsApart(e.by, e.on); if (ya == null || ya < 3) continue;
+    if (!(new Date(info[e.by].date) > new Date(info[e.on].date))) continue;
+    C.push(mk('mirror_routine', e.by, 'inset', e.broadcastS - 1.2, { params: { on: e.on, atM: e.atM, pip: true, years: Math.floor(ya) }, score: 6,
+      truth: `These two runs were ${Math.floor(ya)} years and ${Math.round((ya % 1) * 12)} months apart. Same man, same course. The later one really did pass the earlier one at ${km(e.atM)}.` }));
+    break;
+  }
+  // 4. Heart vs Heart: what his watch recorded differs by 25+ bpm, finishing times within 30 s
+  {
+    const hr = PR.filter((r) => Number.isFinite(Number(fact(r.id, 'hr_mean'))));
+    let best = null;
+    for (let i = 0; i < hr.length; i++) for (let j = i + 1; j < hr.length; j++) { const a = hr[i], b = hr[j]; const d = Math.abs(fact(a.id, 'hr_mean') - fact(b.id, 'hr_mean')); if (d >= 25 && Math.abs(a.officialS - b.officialS) <= 30 && (!best || d > best.d)) best = { a, b, d }; }
+    if (best && cool('heart_vs_heart')) {
+      const [hi, lo] = fact(best.a.id, 'hr_mean') >= fact(best.b.id, 'hr_mean') ? [best.a, best.b] : [best.b, best.a];
+      C.push(mk('heart_vs_heart', hi.id, 'inset', Math.max(20, B(hi.id, 2200)), { params: { other: lo.id, hr: Math.round(fact(hi.id, 'hr_mean')), hr2: Math.round(fact(lo.id, 'hr_mean')), pip: true, panel: true }, score: 5,
+        truth: `His watch recorded an average of ${Math.round(fact(hi.id, 'hr_mean'))} bpm on one of these runs and ${Math.round(fact(lo.id, 'hr_mean'))} on the other. The finishing times were ${Math.round(Math.abs(hi.officialS - lo.officialS))} seconds apart.` }));
+    }
+  }
+  // 5. Half Marathon Before Breakfast (pre): a run logged earlier that same morning
+  {
+    const wu = PR.map((r) => ({ r, km: Number(fact(r.id, 'warmup_km')?.km ?? 0) })).filter((x) => x.km > 0).sort((a, b) => b.km - a.km)[0];
+    if (wu && !capped('breakfast') && (wu.km >= 8 || gate('breakfast')) || (force === 'breakfast')) {
+      const x = wu || { r: order[0], km: 2.1 };
+      const big = x.km >= 8;
+      C.push(mk('breakfast', x.r.id, 'pre', big ? -8.2 : -6.5, { durationS: big ? 6 : 4.2, params: { km: Math.round(x.km * 10) / 10, variant: big ? 'big' : 'standard' }, score: big ? 9 : 4,
+        truth: big ? `He really had run ${x.km.toFixed(1)} km earlier that morning before running this one.` : `He really had jogged ${x.km.toFixed(1)} km earlier that morning to warm up. The others, on their Saturdays, did not.` }));
+    }
+  }
+  // 6. Before and After: one has a race coming up, another has that same race just behind him
+  {
+    let pair = null;
+    for (const a of PR) for (const b of PR) { if (a === b) continue; const up = fact(a.id, 'race_upcoming'), rec = fact(b.id, 'race_recent'); if (up?.name && rec?.name && up.name === rec.name) pair = pair || { a, b, up, rec }; }
+    if (pair && cool('before_after')) {
+      const at = Math.max(22, Math.min(B(pair.a.id, 3000), B(pair.b.id, 3000)));
+      C.push(mk('before_after', pair.a.id, 'inset', at, { params: { other: pair.b.id, pip: true }, score: 5.5,
+        truth: `One of these runs was ${pair.up.days_after} day${pair.up.days_after === 1 ? '' : 's'} before a ${Math.round(pair.up.km || 0) >= 20 ? 'half marathon' : 'race'}; the other was ${pair.rec.days_before} days after the very same race.` }));
+    }
+  }
+  // 7. Road to 100 (post tag, every race): Maureen stamps the five run numbers on a 100-box loyalty card
+  {
+    const nums = PR.map((r) => ({ id: r.id, n: Number(fact(r.id, 'finsbury_number')) })).filter((x) => Number.isFinite(x.n) && x.n > 0);
+    if (nums.length) C.push(mk('road_to_100', order[0].id, 'post', postB2 + 0.01, { durationS: 3.2, params: { tag: true, numbers: nums.map((x) => x.n).sort((a, b) => a - b), before: [...(cm.road || [])] }, score: 0,
+      truth: `Tonight's runs were Finsbury runs number ${nums.map((x) => x.n).sort((a, b) => a - b).join(', ')}. He has run it 98 times.` }));
+  }
+  // 8. Where's the Incline Button? (live): a treadmill session that week and a lap-1 Hill 15%+ slower than average
+  {
+    const r = [...PR].filter((x) => Number(fact(x.id, 'treadmill_7d')) > 0).sort((a, b) => S[b.id].hill1 - S[a.id].hill1)[0];
+    if (r && (S[r.id].hill1 >= 1.15 || force === 'incline_button') && cool('incline_button')) C.push(mk('incline_button', r.id, 'inset', B(r.id, 1790), { params: { atM: 1790, ratio: r2(S[r.id].hill1), treadmill: Number(fact(r.id, 'treadmill_7d')) }, score: 5.5,
+      truth: `He had run on a treadmill ${Number(fact(r.id, 'treadmill_7d')) === 1 ? 'once' : `${fact(r.id, 'treadmill_7d')} times`} that week. The real Hill then cost him ${pct(S[r.id].hill1)}% of his pace.` }));
+  }
+  // 9. The PB Bell (post): a course PB on its day that finishes in the top two; three escalating rings a night
+  {
+    const bell = cm.bell || 0;
+    const pb = order.slice(0, 2).find((r) => fact(r.id, 'was_finsbury_pb') === true);
+    if ((pb && bell < 3 && gate('pb_bell')) || force === 'pb_bell') {
+      const w = pb || order[0];
+      C.push(mk('pb_bell', w.id, 'post', postB2, { params: { ring: Math.min(3, bell + 1) }, score: 8.5, truth: `This run was a course PB on the day he ran it. He has set 21 of them here.` }));
+    }
+  }
+  // 10. The Wrong Kit Bag (pre): swim / weights / yoga / ski in the 7 days before (most minutes picks the costume)
+  {
+    const SPORT = { Swim: 'swim', WeightTraining: 'weights', Yoga: 'yoga', AlpineSki: 'ski' };
+    let best = null;
+    for (const r of PR) { const ct = fact(r.id, 'cross_training_7d') || {}; for (const [k, v] of Object.entries(ct)) if (SPORT[k] && (!best || (v.minutes || 0) > best.min)) best = { r, sport: SPORT[k], min: v.minutes || 0, count: v.count || 1 }; }
+    if ((best && cool('wrong_kit_bag')) || force === 'wrong_kit_bag') {
+      const b0 = best || { r: order[0], sport: 'swim', count: 1 };
+      const what = { swim: 'went swimming', weights: 'lifted weights', yoga: 'did yoga', ski: 'went skiing' }[b0.sport];
+      C.push(mk('wrong_kit_bag', b0.r.id, 'pre', -3.0, { durationS: 5, params: { variant: b0.sport }, score: 4.5,
+        truth: `In the week before this run he really ${what}${b0.count > 1 ? ` ${b0.count} times` : ' once'}.` }));
     }
   }
 
@@ -399,6 +526,7 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
     if (c.kind === 'hook_a_duck') bankKey = `hook_a_duck_${c.params.lap === 2 ? 2 : 1}`;
     if (c.kind === 'test_strength') bankKey = `test_strength_${c.params.variant || 'creep'}`;
     if (c.kind === 'funfair_rejoin') { const r = c.params.ratio ?? 1; bankKey = r <= 0.97 ? 'rejoin_fast' : r >= 1.03 ? 'rejoin_slow' : 'rejoin_even'; }
+    if (c.kind === 'road_to_100' && !c.params.numbers.some((n) => n >= 95)) { c.lines = []; continue; } // the card is wordless unless the later runs are in
     if (LINE_BANKS[bankKey] && !c.params.callback) c.lines = [pickLine(LINE_BANKS[bankKey], { n: Math.max(1, Math.round(c.params.costS ?? 0)) })];
     const vv = VISUAL_VARIANTS[c.kind];
     if (vv) {
@@ -409,11 +537,15 @@ export function planCutscenes({ racePlan, runners = [], theme = null, rng, sessi
       }
     }
   }
+  if ((cm.bell || 0) >= 3) for (const c of out) if (['goose_toll', 'treadmill_hill', 'pb_bell', 'pointing_standoff'].includes(c.kind)) c.params.gooseBell = true;
   out.forEach((c, i) => { c.id = `cs${i + 1}`; delete c._score; c.lines = (c.lines || []).slice(0, 2); });
   if (mem && !force) {
     cm.races = raceNo;
     for (const c of out) cm.last[c.kind] = raceNo;
     for (const k of new Set(out.map((c) => c.kind))) cm.night[k] = (cm.night[k] || 0) + 1;
+    const wl = out.find((c) => c.kind === 'sub20_wall'); if (wl) { cm.wall.shown = (cm.wall.shown || 0) + 1; cm.wall.holes = (cm.wall.holes || 0) + wl.params.near.length; }
+    if (out.some((c) => c.kind === 'pb_bell')) cm.bell = (cm.bell || 0) + 1;
+    const rd = out.find((c) => c.kind === 'road_to_100'); if (rd) cm.road = [...new Set([...(cm.road || []), ...rd.params.numbers])];
     for (const [k, v] of Object.entries(sigVar)) cm.variants[k] = v;
     if (cm._sig) { cm.funfairSigs = [...(cm.funfairSigs || []), cm._sig]; }
     if (out.some((c) => c.kind === 'goose_toll')) cm.goose = (cm.goose || 0) + 1;

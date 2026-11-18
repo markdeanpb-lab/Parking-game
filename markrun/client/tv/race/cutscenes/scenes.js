@@ -964,8 +964,10 @@ SCENES.cannonball = (K, cs) => {
     K.ov.caption(bb < -0.25 ? 'LOADED…' : bb > 0.85 && bb < 2.0 ? 'HUMAN CANNONBALL!' : null, { yellow: bb > 0 });
     if (I.camera) {
       // side-on, wide: the cannon at left, his arc across the frame
-      const mid = C0.g.position.clone().lerp(land, 0.42);
-      K.cam(mid.clone().addScaledVector(right, side * 15).add(V(0, 2.6, 0)).addScaledVector(fwd, -1.5), mid.clone().add(V(0, 2.2, 0)), 46);
+      // loaded: close on the cannon and his face; then follow him up and over
+      const cpos = C0.g.position;
+      if (bb < 0) K.cam(cpos.clone().addScaledVector(right, side * 6.5).addScaledVector(fwd, 1.2).add(V(0, 3.0, 0)), muzzle.clone().add(V(0, 0.2, 0)), 42);
+      else { const target = A.root.visible ? A.root.position.clone() : land.clone(); K.cam(cpos.clone().addScaledVector(right, side * 11).addScaledVector(fwd, 2.5 + flyU * 5).add(V(0, 3.4, 0)), target.add(V(0, 1.2, 0)), 50); }
     }
   };
   return I;
@@ -1018,7 +1020,7 @@ SCENES.raincloud = (K, cs) => {
     cue('line', t > 0.4, () => K.say(cs.lines?.[0]));
     K.ov.caption(t > 0.4 ? (t > 3.0 ? (zap ? 'ZAP.' : 'NICE TRY') : 'HIS OWN WEATHER') : null, { yellow: t > 3.0 });
     const ap = r.root.position;
-    K.cam(ap.clone().addScaledVector(right, 4.6).addScaledVector(fwd, 2.0).add(V(0, 2.1, 0)), ap.clone().add(V(0, 2.0, 0)).addScaledVector(fwd, 0.4), 46, 0, { sun: 30 });
+    K.cam(ap.clone().addScaledVector(right, 2.4).addScaledVector(fwd, 5.2).add(V(0, 2.4, 0)), ap.clone().add(V(0, 2.5, 0)), 50, 0, { sun: 30 });
   };
   return I;
 };

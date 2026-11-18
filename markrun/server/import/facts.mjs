@@ -35,6 +35,8 @@ export function computeFacts(db, curation = {}) {
   const races = acts.filter((a) => isRace(a, curation));
 
   const ins = db.prepare('INSERT OR REPLACE INTO facts(run_date,key,value,basis,refs) VALUES (?,?,?,?,?)');
+  const perfQ = db.prepare('SELECT hr, quality FROM performances WHERE run_date = ?');
+  const streamQ = db.prepare('SELECT raw_json FROM streams WHERE activity_id = ?');
   let n = 0;
   tx(db, () => {
     db.exec('DELETE FROM facts');
@@ -96,6 +98,14 @@ export function computeFacts(db, curation = {}) {
       put('warmup_km', warm, embedded ? `The parkrun was recorded inside "${pa?.name}" (${r1((pa?.distance_m || 0) / 1000)} km total)` : `Runs recorded earlier that morning: ${sameMorning.length}`,
         embedded && pa ? [pa.id] : sameMorning.map((a) => a.id));
 
+      // --- training-type counts in the 7 days before (treadmill / interval sessions), from titles, descriptions and trainer flag
+      const prev7 = runsIn(7).filter((a) => toMs(a.start_local) < dayStart);
+      const isTreadmill = (a) => a.is_trainer === 1 || /treadmill|dreadmill/i.test(`${a.name || ''} ${a.description || ''}`);
+      const isIntervals = (a) => /interval|reps\b|\breps|track session|\btrack\b|\d+\s*[x×]\s*\d|fartlek|tempo|session/i.test(`${a.name || ''} ${a.description || ''}`);
+      const tm = prev7.filter(isTreadmill), iv = prev7.filter(isIntervals);
+      put('treadmill_7d', tm.length, `Treadmill runs in the 7 days before: ${tm.map((a) => `"${a.name}"`).join(', ') || 'none'}`, tm.map((a) => a.id));
+      put('intervals_7d', iv.length, `Interval/track/tempo sessions in the 7 days before: ${iv.map((a) => `"${a.name}"`).join(', ') || 'none'}`, iv.map((a) => a.id));
+
       // --- races
       const recent = races.filter((a) => toMs(a.start_local) < dayStart && toMs(a.start_local) >= dayStart - 21 * DAY).pop();
       if (recent) put('race_recent', { name: recent.name, km: r1(recent.distance_m / 1000), days_before: Math.round((dayStart - toMs(recent.start_local.slice(0, 10))) / DAY) },
@@ -128,6 +138,21 @@ export function computeFacts(db, curation = {}) {
       const w = weather.get(p.run_date);
       if (w) put('weather', { temp_c: w.temp_c, wind_kmh: w.wind_kmh, gust_kmh: w.gust_kmh, prcp_mm: w.prcp_mm, rhum: w.rhum, coco: w.coco, station: w.station },
         `Hourly observation ${w.obs_hour} at ${w.station}`, [`weather:${w.station}`]);
+
+      // --- in-run measurements from the parkrun segment of the stream: mean HR, cadence (steps/min); kudos (post-race only)
+      if (pa) {
+        const perf = perfQ.get(p.run_date);
+        const hr = perf?.hr ? JSON.parse(perf.hr).filter((x) => x > 0) : [];
+        if (hr.length > 20) put('hr_mean', Math.round(hr.reduce((x, y) => x + y, 0) / hr.length), 'Mean recorded heart rate during the parkrun (watch sensor)', [pa.id]);
+        const q = perf ? JSON.parse(perf.quality || '{}') : {};
+        const st = streamQ.get(pa.id);
+        if (st && q.i0 != null && q.i1 != null) {
+          const cad = (JSON.parse(st.raw_json).cadence || []).slice(q.i0, q.i1).filter((x) => x > 50);
+          if (cad.length > 20) put('cadence_spm', Math.round((2 * cad.reduce((x, y) => x + y, 0)) / cad.length), 'Mean cadence during the parkrun (Strava stream, per-leg rpm x 2)', [pa.id]);
+        }
+        const kudos = JSON.parse(pa.raw_json).summary?.kudos_count;
+        if (Number.isFinite(kudos)) put('kudos', kudos, 'Kudos on the Strava activity', [pa.id]);
+      }
 
       // --- in-run measurements (post-race reveal only)
       if (pa) {
