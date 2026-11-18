@@ -119,3 +119,6 @@ export function kickerFrom(text, cat, rng) {
   if (!k || wc(k) > MAX_KICK) { const b = FALLBACK_KICK[GROUPS[cat] || 'other']; k = rng ? rng.pick(b) : b[0]; }
   return k;
 }
+
+// text for TTS / back-compat: headline + full stop (if it has no closing punctuation) + kicker
+export const joinClue = (headline, kicker) => `${headline}${/[.!?:"]$/.test(headline) ? '' : '.'} ${kicker}`;

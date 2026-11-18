@@ -4,7 +4,7 @@
 // Each clue declares which odds-model features it reveals (`features`), so the house can only price what players see.
 import { fill, km, words, raceType, isRaceName, isIntervalName, aOrAn, aKm, cap } from './text.mjs';
 import { contribution } from './model.mjs';
-import { headlineFor, kickerFrom, wc, MAX_KICK } from './headlines.mjs';
+import { headlineFor, kickerFrom, wc, MAX_KICK, joinClue } from './headlines.mjs';
 
 const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
 const sum = (a) => (a || []).reduce((s, x) => s + x, 0);
@@ -276,7 +276,7 @@ G.warmup = ({ f, rng }) => {
 };
 
 G.temp = ({ f, rng }) => {
-  const t = f.weather?.temp_c; if (t == null) return [];
+  const t = f.weather?.temp_c; if (t == null || (t < 20 && t > 2)) return []; // only genuinely hot or freezing mornings
   const v = { t: Math.round(t) };
   let T, interest;
   if (t >= 18) { T = ['{t}°C at the start. The man is approximately 40% sweat.', '{t}°C on the start line. Glorious for a picnic. Less so for a 5K.', 'A balmy {t}°C. Factor 30 or Factor Fast?']; interest = 0.75; }
@@ -289,19 +289,21 @@ G.temp = ({ f, rng }) => {
 G.wind = ({ f, rng }) => {
   const w = f.weather; if (!w || w.wind_kmh == null) return [];
   const g = w.gust_kmh, s = Math.round(w.wind_kmh);
-  if ((g != null && g >= 38) || s >= 25) {
+  if ((g != null && g >= 45) || s >= 28) {
     const v = { g: Math.round(g ?? s), s };
     const WT = ['Gusts up to {g} km/h. Flapping like a bin bag on the Seven Sisters Road.', 'Wind gusting to {g} km/h. Headwind up the Hill. Swings and roundabouts.', 'Gusting {g} km/h. Hold on to your hats. And your dignity.'];
     if (s >= 20) WT.push('A blustery {s} km/h wind, gusting {g}. Lean runners need not apply.');
     return [{ cat: 'wind', family: 'day', features: ['wind'], text: fill(rng.pick(WT), v), said: 'battled a proper gale', hint: 7, interest: 0.75, factKeys: ['weather'] }];
   }
+  return []; // calm or breezy mornings are trivia
   if (s <= 5) return [{ cat: 'wind', family: 'day', features: ['wind'], text: rng.pick(['Barely a breath of wind. Flags hanging like wet washing.', 'Dead calm conditions. Not even the ducks were blown off course.', 'Wind speed: practically nil. No excuses on the back straight today.']), said: 'had no wind to blame', hint: -3, interest: 0.45, factKeys: ['weather'] }];
   return [{ cat: 'wind', family: 'day', features: ['wind'], text: fill(rng.pick(['A breeze of about {s} km/h. Enough to ruffle a fringe, not enough to blame.', 'Moderate wind, around {s} km/h. Middling. Like most of his excuses.']), { s }), said: 'had a bit of a breeze', interest: 0.2, factKeys: ['weather'] }];
 };
 
 G.damp = ({ f, rng }) => {
   const w = f.weather; if (!w) return [];
-  if (w.prcp_mm != null && w.prcp_mm >= 0.2) return [{ cat: 'damp', family: 'fluff', features: [], text: fill(rng.pick(['{p} mm of rain that hour. Slippery corners, or lovely cooling drizzle?', 'Rain falling at the start: {p} mm. Puddles on the course. Puddles in the shoes.']), { p: w.prcp_mm }), said: 'got rained on', hint: w.prcp_mm >= 1 ? 3 : 0, interest: 0.55, factKeys: ['weather'] }];
+  if (w.prcp_mm != null && w.prcp_mm >= 1) return [{ cat: 'damp', family: 'fluff', features: [], text: fill(rng.pick(['{p} mm of rain that hour. Slippery corners, or lovely cooling drizzle?', 'Rain falling at the start: {p} mm. Puddles on the course. Puddles in the shoes.']), { p: w.prcp_mm }), said: 'got rained on', hint: w.prcp_mm >= 1 ? 3 : 0, interest: 0.55, factKeys: ['weather'] }];
+  return []; // humidity is trivia
   if (w.rhum != null && w.rhum >= 92) return [{ cat: 'damp', family: 'fluff', features: [], text: fill(rng.pick(['{h}% humidity. Less a run, more a wade through soup.', 'Humidity at {h}%. The air was basically a damp flannel.', '{h}% humidity at the start. Air so damp you could wring it out.']), { h: Math.round(w.rhum) }), said: 'ran through soup', interest: 0.3, factKeys: ['weather'] }];
   return [];
 };
@@ -337,6 +339,8 @@ G.block = ({ f, rng }) => {
 G.cross = ({ f, rng }) => {
   const X = f.cross_training_7d || {};
   const entries = Object.entries(X);
+  const totMin = entries.reduce((a, [, v]) => a + v.minutes, 0);
+  if (totMin < 90 && !X.AlpineSki) return []; // a bit of cross-training is trivia
   if (!entries.length) return [{ cat: 'cross', family: 'fluff', features: [], text: rng.pick(['No cross-training whatsoever that week. Pure, unfiltered runner.', 'Cross-training that week: none. Doesn\'t own a bike or a swimming cap. Allegedly.']), said: 'did no cross-training whatsoever', interest: 0.15, factKeys: ['cross_training_7d'] }];
   const [s, { count, minutes }] = rng.pick(entries);
   const v = { n: words(count), Nw: cap(words(count)), m: minutes, times: count === 2 ? 'twice' : `${words(count)} times` };
@@ -388,7 +392,7 @@ export function candidatesFor(p, field, rng, mem) {
         const kicker = kickerFrom(v.text, cat, rng);
         if (seenK.has(kicker)) continue;
         seenK.add(kicker);
-        const text = `${head} ${kicker}`;
+        const text = joinClue(head, kicker);
         vs.push({ text, kicker, skel: skeleton(text), style: /\?\s*$/.test(kicker) ? 'hedge' : 'fact' });
       }
       Object.assign(primary, { headline: head, kicker: vs[0].kicker, text: vs[0].text, skel: vs[0].skel, variants: vs, factSentence: head });
@@ -476,7 +480,7 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
       usedIntros.add(intro); rv.add(voice);
       const kicker = `${intro} "${op}"`;
       const headline = c.headline || c.factSentence || splitFact(c.text).fact;
-      text = `${headline} ${kicker}`;
+      text = joinClue(headline, kicker);
       x.clue = { ...c, text, headline, kicker, style: 'tipster', voice, lean: lean === 'pos' ? 1 : -1 };
     } else {
       x.clue = { ...c, text, headline: c.headline, kicker: o.kicker ?? c.kicker, style: o.style };
@@ -486,12 +490,20 @@ export function styleClues(assigned, rng, mem, roundNumber, pickOpinion) {
 }
 
 // Assign clues to slots: slots[0] = 'public', then one per player. Returns { [runnerId]: [{slot, clue}] }.
+export const DIR_MIN = 3;
 const PRICED = (model, c) => c.family === 'fitness' && c.features.some((k) => model.features.includes(k));
 export function assignClues(entries, slots, rng, model, { boost, publicPricedBonus } = {}) {
   // entries: [{ runnerId, perf, cands: {cat: clue} }]
-  const nSlots = slots.length;
+  // 1. every candidate's lean in seconds (negative = sounds quicker), RELATIVE TO THIS FIELD: model contribution + hint,
+  //    minus the field average for the same category. |dir| >= DIR_MIN counts as a directional clue.
+  const raw = new Map();
+  for (const e of entries) for (const c of Object.values(e.cands)) raw.set(c, contribution(model, e.perf.date, c.features) + (c.hint || 0));
+  const byCat = {};
+  for (const [c, v] of raw) (byCat[c.cat] ||= []).push(v);
+  for (const [c, v] of raw) { const arr = byCat[c.cat]; c.dir = Math.round((v - arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10; c.rawSignal = v; }
+  const isDir = (c) => Math.abs(c.dir ?? 0) >= DIR_MIN;
   let best = null;
-  for (let attempt = 0; attempt < 60; attempt++) {
+  for (let attempt = 0; attempt < 80; attempt++) {
     const usedSlotCat = slots.map(() => new Map());
     const catCount = new Map();
     const famSlot = slots.map(() => ({ fitness: 0, day: 0, fluff: 0 }));
@@ -504,8 +516,10 @@ export function assignClues(entries, slots, rng, model, { boost, publicPricedBon
         const s = slotOrder[si];
         const remaining = slotOrder.length - si;
         const hasFitness = chosen.some((c) => c.clue.family === 'fitness');
+        const hasDir = chosen.some((c) => isDir(c.clue));
         let opts = Object.values(e.cands).filter((c) => !chosen.some((x) => x.clue.cat === c.cat || (c.group && x.clue.group === c.group) || (c.cat === 'rest' && x.clue.cat === 'day_before') || (c.cat === 'day_before' && x.clue.cat === 'rest')));
-        if (!hasFitness && remaining === 1) { const fo = opts.filter((c) => c.family === 'fitness'); if (fo.length) opts = fo; }
+        if (!hasDir && remaining === 1) { const d = opts.filter(isDir); if (d.length) opts = d; } // every runner gets a directional clue
+        else if (!hasFitness && remaining === 1) { const fo = opts.filter((c) => c.family === 'fitness'); if (fo.length) opts = fo; }
         // same-family pairs (week_km + week_rel + month_km) are redundant on one runner
         opts = opts.filter((c) => !(['week_km', 'week_rel', 'month_km'].includes(c.cat) && chosen.some((x) => ['week_km', 'week_rel', 'month_km'].includes(x.clue.cat))) || opts.length <= 1);
         if (!opts.length) { ok = false; break; }
@@ -513,7 +527,8 @@ export function assignClues(entries, slots, rng, model, { boost, publicPricedBon
           - 1.3 * (usedSlotCat[s].get(c.cat) || 0)
           - 0.45 * (catCount.get(c.cat) || 0)
           - (famSlot[s][c.family] >= 3 ? 0.8 : 0)
-          + (c.family === 'fitness' && !hasFitness ? 0.25 : 0);
+          + (c.family === 'fitness' && !hasFitness ? 0.25 : 0)
+          + (isDir(c) ? 0.35 : -0.2);
         const c = opts.reduce((a, b) => (sc(b) > sc(a) ? b : a));
         score += c.interest - 1.3 * (usedSlotCat[s].get(c.cat) || 0) - 0.45 * (catCount.get(c.cat) || 0);
         usedSlotCat[s].set(c.cat, (usedSlotCat[s].get(c.cat) || 0) + 1);
@@ -527,14 +542,18 @@ export function assignClues(entries, slots, rng, model, { boost, publicPricedBon
     if (!ok) continue;
     // variety bonus: each slot should mix families (some red herrings by nature)
     for (const fs of famSlot) score += (fs.fitness > 0 ? 0.5 : 0) + ((fs.day + fs.fluff) > 0 ? 0.5 : 0);
+    // something to argue about: at least one runner whose public clue and a private clue point opposite ways
+    const argue = Object.values(res).some((list) => { const pub = list.find((x) => x.slot === 0)?.clue; return pub && Math.abs(pub.dir) >= 2 && list.some((x) => x.slot > 0 && Math.abs(x.clue.dir) >= 2 && Math.sign(x.clue.dir) !== Math.sign(pub.dir)); });
+    const allDir = Object.values(res).every((list) => list.some((x) => isDir(x.clue)));
+    score += (argue ? 4 : 0) + (allDir ? 3 : 0);
     if (!best || score > best.score) best = { score, res };
   }
   if (!best) throw new Error('clue assignment failed');
-  // attach model signal (seconds; negative = suggests faster)
+  // attach the signal (seconds, field-relative; negative = suggests faster)
   for (const e of entries) for (const x of best.res[e.runnerId]) {
     x.clue = { ...x.clue };
     x.clue.priced = Math.round(contribution(model, e.perf.date, x.clue.features) * 10) / 10;
-    x.clue.signal = Math.round((x.clue.priced + (x.clue.hint || 0)) * 10) / 10;
+    x.clue.signal = x.clue.dir;
   }
   return best.res;
 }

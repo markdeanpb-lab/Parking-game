@@ -255,9 +255,9 @@ export function createRaceView(container, opts = {}) {
       placed.push(box);
     }
     if (!st) {
-      if (mode !== 'race') return { tags };
+      if (mode !== 'race') return { tags, closing: null };
       // before the gun: no positions yet, so no tower rows
-      return { tags, raceS: 0, leaderM: 0, map: false, order: ids.map((id) => ({ id, hidden: true, gapText: '' })) };
+      return { tags, raceS: 0, leaderM: 0, map: false, closing: null, order: ids.map((id) => ({ id, hidden: true, gapText: '' })) };
     }
     // compact tower: top 3 + backed runners outside the top 3; gaps only in the final km / after finishing, or when a
     // backed runner is within ~5 s of the place ahead (then shown as the gap to that runner)
@@ -274,9 +274,38 @@ export function createRaceView(container, opts = {}) {
       return { id, gapText, finished: r.finished, hidden: !show };
     });
     return {
-      raceS: st.raceS, leaderM: st.leader.m, tags, order, map: WIDE_SHOTS.has(director?.shot?.type),
+      raceS: st.raceS, leaderM: st.leader.m, tags, order, map: WIDE_SHOTS.has(director?.shot?.type), closing: closingBar(st),
       dots: st.order.map((id, i) => ({ x: st.byId[id].x, z: st.byId[id].z, colour: pubById[id].colour.primary, lead: i === 0, focus: director?.shot?.ids?.includes(id) })),
     };
+  }
+
+  // ---------- closing-gap bar: the one backed duel that matters most right now ----------
+  let closeState = null;
+  function closingBar(st) {
+    if (!backedIds.length || replay || freeze > 0 || marketT != null) { closeState = null; return null; }
+    const gapS = (aheadId, behindId) => st.raceS - timeAtDistance(sim.byId[aheadId].progress, st.byId[behindId].m);
+    const cands = [];
+    st.order.forEach((id, i) => {
+      if (i === 0 || st.byId[id].finished || st.byId[st.order[i - 1]].finished) return;
+      const ahead = st.order[i - 1];
+      const bIn = backedIds.includes(id), aIn = backedIds.includes(ahead);
+      if (!bIn && !aIn) return;
+      const g = gapS(ahead, id);
+      if (g >= 0 && g <= 5) cands.push({ key: `${ahead}>${id}`, ahead, behind: id, g, who: bIn ? id : ahead, role: bIn ? 'chase' : 'hunted' });
+    });
+    // keep the current duel unless it's gone (> 5.5 s) or another is clearly tighter
+    let cur = closeState && cands.find((c) => c.key === closeState.key);
+    if (!cur && closeState) { const [a, bh] = closeState.key.split('>'); const g = !st.byId[bh].finished && st.order.indexOf(bh) === st.order.indexOf(a) + 1 ? gapS(a, bh) : 99; if (g <= 5.5) cur = { ...closeState, g }; }
+    const tight = cands.sort((x, y) => x.g - y.g)[0];
+    if (!cur || (tight && tight.key !== cur.key && tight.g < cur.g * 0.6)) cur = tight ? { ...tight, g0: tight.g } : null;
+    if (!cur) { closeState = null; return null; }
+    if (!closeState || closeState.key !== cur.key) closeState = { ...cur, g0: cur.g0 ?? cur.g };
+    const g0 = closeState.g0, g = cur.g, name = shortOf(pubById[cur.who]);
+    const colour = pubById[cur.who].colour.primary;
+    if (g < 0.5) return { text: 'ALONGSIDE!', name, colour, hot: true };
+    const closingIn = g < g0 - 0.15;
+    const verb = cur.role === 'chase' ? (closingIn ? 'closing' : 'chasing') : (closingIn ? 'under pressure' : 'holding on');
+    return { name, colour, text: closingIn ? `${verb}: ${g0.toFixed(1)} s → ${g.toFixed(1)} s` : `${verb}: ${g.toFixed(1)} s`, hot: g < 1.5 };
   }
 
   // ---------- spatial backer rings (ground halo in each backing player's colour) ----------

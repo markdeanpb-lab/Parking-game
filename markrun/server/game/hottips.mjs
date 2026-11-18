@@ -1,6 +1,7 @@
 // HOT TIPS: true in-race insider facts read from the pacing tables of THIS field (never a time, date or result).
 // The bookie never prices them; that is the player's edge. Tips are relative to the other four runners in the round.
 import { timeAtDistance, HILL_M } from './raceplan.mjs';
+import { joinClue } from './headlines.mjs';
 
 const T = (r, m) => timeAtDistance(r.progress, m);
 const HILL_TOP = [HILL_M[0] + 180, HILL_M[1] + 180];
@@ -67,8 +68,8 @@ const STRENGTH = { ahead_hill1: 0.25, ahead_2k: 0.25, ahead_4k: 0.3, led_1k_over
   overtaker: 0.35, dead_last_1k: 0.08, open_slowest: 0.08, hill2_slowest: 0.05, big_fade: 0.08, last_km_slowest: 0.06 };
 export const tipStrength = (type) => STRENGTH[type] ?? 0.3;
 // how often each type is chosen (decisive types are rare; tuned with tools/simulate.mjs for a modest hot-tip edge)
-export const TYPE_WEIGHT = { hill1_first: 0.1, hill2_fastest: 0.1, open_fastest: 0.25, last_km_fastest: 0.05, top3_2k: 0.3, even_pacer: 0.8, overtaker: 0.6,
-  ahead_hill1: 0.7, ahead_2k: 1.2, ahead_4k: 0.15, led_1k_over: 1.3, outclimbed_hill2: 0.8, dead_last_1k: 0.8, hill2_slowest: 0.7, big_fade: 1, last_km_slowest: 0.4 };
+export const TYPE_WEIGHT = { hill1_first: 0.45, hill2_fastest: 0.35, open_fastest: 0.45, last_km_fastest: 0.35, top3_2k: 0.5, even_pacer: 0.8, overtaker: 0.6,
+  ahead_hill1: 0.7, ahead_2k: 1.1, ahead_4k: 0.2, led_1k_over: 1.1, outclimbed_hill2: 0.8, dead_last_1k: 0.8, hill2_slowest: 0.7, big_fade: 1, last_km_slowest: 0.4 };
 
 // Choose `counts[playerId]` hot tips per player: different runners per player where possible, mixed polarities.
 // marketProb: { runnerId: implied win probability }. Good-sounding tips lean towards runners the market already likes,
@@ -99,7 +100,7 @@ export function chooseHotTips(field, analysis, playerIds, counts, rng, { positiv
       let steer = null, kicker = rng.pick(TT.kicks);
       if (STEERED.has(t.type)) { steer = finishSteer(field.find((r) => r.id === t.runnerId)); kicker = rng.pick(STEER_TEXT[steer]); }
       const headline = TT.head; // {o} = the rival's short name, filled once nicknames exist
-      const text = `${headline} ${kicker}`;
+      const text = joinClue(headline, kicker);
       out[pid].push({ ...t, headline, kicker, text, steer });
     }
   }

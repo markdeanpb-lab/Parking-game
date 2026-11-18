@@ -338,6 +338,12 @@ export class Game extends EventEmitter {
   async toRace() {
     const r = this.s.round;
     this.s.results = null; // settled at the finish: in-play bets can still be added at halfway
+    // personalised race commentary now the bets are known (game module; feature-detected)
+    try {
+      const pc = this.rounds.personaliseCommentary?.(r, Object.fromEntries(this.s.players.map((p) => [p.id, this.s.bets[p.id] || []])), this.s.players.map((p) => ({ id: p.id, name: p.name })));
+      const merged = Array.isArray(pc) ? pc : Array.isArray(pc?.commentary) ? pc.commentary : null;
+      if (merged && r.racePlan) r.racePlan.commentary = merged;
+    } catch (e) { console.warn('[markrun] personaliseCommentary failed:', e.message); }
     // halfway market only when it's still a contest: skip it if 2nd is more than 20 s behind at halfway
     const pm = this.rounds.inPlayMarket?.(r);
     const second = pm?.standings?.find((x) => x.place === 2) || pm?.standings?.[1];

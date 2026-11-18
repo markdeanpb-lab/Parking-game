@@ -5,13 +5,14 @@ import { getModel, predict, winProbs, beatProb, oddsFromProb, MODEL_DEFAULTS } f
 import { selectField, usageWeights } from './select.mjs';
 import { candidatesFor, assignClues, styleClues, CATEGORY_LABEL } from './clues.mjs';
 import { makeCharacters, introLine, roundTitle } from './characters.mjs';
-import { raceCommentary, introLines, COMMENTATORS } from './commentary.mjs';
+import { raceCommentary, introLines, personalise, COMMENTATORS } from './commentary.mjs';
 import { getMemory, peekMemory, saveMemory, ensureSessionSchema, pickLine } from './memory.mjs';
 import { leakContext, checkRound, checkText } from './leak.mjs';
 import { settle } from './settle.mjs';
 import { buildRacePlan } from './raceplan.mjs';
 import { chooseTheme, themeInfo, bandOf, THEMES } from './themes.mjs';
 import { chooseHotTips } from './hottips.mjs';
+import { joinClue } from './headlines.mjs';
 import { makeProps, setLapStats, inPlayMarket as ipm, betRevealOrder as bro, sessionSuperlatives as ss } from './markets.mjs';
 
 export const CURRENCY = { name: 'Parkpounds', singular: 'Parkpound', short: 'pp', symbol: 'ℙ' };
@@ -48,7 +49,7 @@ export function normalizeSettings(s = {}) {
 }
 
 
-const trimPerf = (p) => ({ date: p.date, officialS: p.officialS, pool: p.pool, pacingSource: p.pacingSource, hr: p.hr, splits: p.splits,
+const trimPerf = (p, data) => ({ rank: 1 + data.perfs.filter((q) => q.officialS < p.officialS).length, of: data.perfs.length, date: p.date, officialS: p.officialS, pool: p.pool, pacingSource: p.pacingSource, hr: p.hr, splits: p.splits,
   features: p.features, diversions: p.diversions, result: p.result, facts: p.facts });
 
 export function createRound({ hist, sess = null, players = [], roundNumber = 1, settings = {}, rng } = {}) {
@@ -127,7 +128,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   const safe = (c, id) => {
     const probs = checkText(c.text, ctx, { clue: true });
     const probs2 = [...probs, ...checkText(c.headline || '', ctx, { clue: true }), ...checkText(c.kicker || '', ctx, { clue: true })];
-    if (probs2.length) { leaks.push({ runnerId: id, text: c.text, probs: probs2 }); Object.assign(c, { text: 'Turned up, laced up. That\'s all we know.', headline: 'Turned up, laced up.', kicker: 'That\'s all we know.', features: [], signal: 0, said: null, category: 'misc', style: 'fact' }); }
+    if (probs2.length) { leaks.push({ runnerId: id, text: c.text, probs: probs2 }); Object.assign(c, { text: 'Turned up, laced up. That\'s all we know.', headline: 'Turned up, laced up', kicker: 'That\'s all we know.', features: [], signal: 0, said: null, category: 'misc', style: 'fact' }); }
     return c;
   };
   ids.forEach((id, i) => {
@@ -173,7 +174,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   for (const [pid, list] of Object.entries(tips)) for (const t of list) {
     if (!t.otherId) continue;
     t.headline = t.headline.replace('{o}', chars[ids.indexOf(t.otherId)].shortName);
-    t.text = `${t.headline} ${t.kicker}`;
+    t.text = joinClue(t.headline, t.kicker);
     Object.assign(clues[t.runnerId].private[pid], { headline: t.headline, text: t.text });
   }
   const runners = ids.map((id, i) => ({
@@ -223,7 +224,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
       archetype: sel.archetype, targetArchetype: sel.target, wildcardId, theme: theme.key,
       analysis: { ...sel.analysis, events: undefined },
       runners: ids.map((id, i) => ({ id, date: perfs[i].date, officialS: perfs[i].officialS, pool: perfs[i].pool, diverted: !!perfs[i].diversions?.length })),
-      perfs: Object.fromEntries(ids.map((id, i) => [id, trimPerf(perfs[i])])),
+      perfs: Object.fromEntries(ids.map((id, i) => [id, trimPerf(perfs[i], data)])),
       model: { mus: Object.fromEntries(ids.map((id, i) => [id, Math.round(mus[i] * 10) / 10])), probs: Object.fromEntries(ids.map((id, i) => [id, Math.round(probs[i] * 1000) / 1000])) },
       clues, hotTips: tips, styleCounts, propOutcomes, divOpen,
       leaks,
@@ -306,3 +307,13 @@ export function betReactionLines(round, betsByPlayer, players, rng) {
 }
 
 export function sessionSuperlatives(history, players) { return ss(history || [], players || []); }
+
+// Called by the server at race start, once bets are known: swaps generic lines for personal ones
+// (stakes and positions, tipster accountability, a tagline callback). Returns the new commentary and sets it on the plan.
+export function personaliseCommentary(round, betsByPlayer, players, racePlan, rng) {
+  const plan = racePlan || round.racePlan;
+  const ps = players?.length ? players : round.hidden?.players || [];
+  const out = personalise({ round, betsByPlayer: betsByPlayer || {}, players: ps, plan, rng: makeRng(rng), mem: memFor(round) });
+  plan.commentary = out;
+  return out;
+}

@@ -3,7 +3,7 @@
 // "press any key" overlay), ?mute.
 import { connect } from '../shared/net.js';
 import { createAudio } from '../shared/sfx.js';
-import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, oddsText, betOutcome, clueParts, confetti, fmtTime } from '../shared/ui.js';
+import { $, $$, esc, el, money, moneySay, signedMoney, ordinalHtml, avatarHtml, countUp, runnerById, runnerShort, betLabel, betOdds, betRunnerId, betKind, clueHtml, oddsText, betOutcome, clueParts, betWin, confetti, fmtTime } from '../shared/ui.js';
 import { runnerPortrait } from '../shared/portrait.js';
 import { createVoice } from './voice.js';
 import { createFallbackRaceView } from './fallback-race.js';
@@ -115,7 +115,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'm' || k === 'M') { localMute = !localMute; applyAudioSettings(); toast(localMute ? 'Muted' : 'Sound on'); return; }
   if (k === 'f' || k === 'F') { toggleFs(); return; }
   if (k === 'l' || k === 'L') { if (S?.phase === 'BETTING' && !S.revealed) { send({ t: 'forceLock' }); toast('Locking everyone in!'); } return; }
-  if (k === ' ' || k === 'Enter' || k === 'ArrowRight' || k === 'n' || k === 'N') { e.preventDefault(); advance(); }
+  if (k === ' ' || k === 'Enter' || k === 'ArrowRight' || k === 'n' || k === 'N') { e.preventDefault(); if (skipExplainer === false) { skipExplainer = true; return; } advance(); }
 });
 function advance() {
   if (!S) return;
@@ -166,8 +166,12 @@ function screenKey(st) {
 
 const wipeEl = el('<div id="wipe"><i></i><b></b></div>');
 document.body.appendChild(wipeEl);
+wipeEl.addEventListener('animationend', (e) => { if (e.target.tagName === 'B') wipeEl.classList.remove('go'); });
+let wipeTimer = null;
 function playWipe() {
   wipeEl.classList.remove('go'); void wipeEl.offsetWidth; wipeEl.classList.add('go');
+  clearTimeout(wipeTimer); wipeTimer = setTimeout(() => wipeEl.classList.remove('go'), 700); // belt and braces: never stuck on screen
+  window.__markrun.wipeUntil = Date.now() + 700;
   audio.play('wipe');
 }
 function switchScreen(key, st, prev) {
@@ -461,6 +465,7 @@ function refreshFinished(ok, msg) {
 // INTRO
 // =====================================================================================================
 let coldOpenDone = null;
+let skipExplainer = null; // true -> skip the round-1 explainer beats
 let raceView = null;
 let raceViewKind = null;
 let raceViewRound = null;
@@ -552,9 +557,51 @@ function introScreen(st) {
     lines.slice(0, 2).forEach((l) => say(l.text, l.speaker, 3));
     await waitVoice(tok, 6000, 9000);
   }
+  async function explainer() {
+    if (round.number !== 1) return;
+    const beats = [
+      ['📺 + 🤫', 'One clue on the telly,', 'one secret on your phone.', 'One clue on the telly, one secret on your phone. Read both.'],
+      ['🔥', 'HOT TIP', "means the bookie doesn't know this.", "If it's got a fire on it, the bookie doesn't know about it. Use it."],
+      ['½ · ×2', 'Half your pot per round.', 'The final round pays DOUBLE.', 'You can bet half your pot each round. The final round pays double. Pace yourselves.'],
+    ];
+    skipExplainer = false;
+    for (const [icon, l1, l2, voiceLine] of beats) {
+      if (tok.cancelled || skipExplainer) break;
+      box.innerHTML = `<div class="explain"><div class="anim-pop"><div class="ei">${icon}</div><div class="e1 outlined">${esc(l1)}</div><div class="e2 outlined white thin">${esc(l2)}</div></div><div class="eskip">SPACE to skip</div></div>`;
+      audio.play('reveal');
+      say(voiceLine, 'pam', 3);
+      const t0 = Date.now();
+      while (!skipExplainer && !tok.cancelled && (Date.now() - t0 < T(4500) || (SPEED <= 1.5 && voice.busy && Date.now() - t0 < 10000))) await new Promise((r) => setTimeout(r, 100));
+    }
+    skipExplainer = null;
+    voice.clear();
+  }
+  async function groupIntro(v) { // from round 2: one group frame and one joke line instead of five intros
+    box.innerHTML = `${titleHtml}<div class="lineup">${runners.map((r) => `<div class="lu"><div class="rp">${portrait(r, 120)}</div><b>${esc(runnerShort(r))}</b><span class="num">${esc(r.odds?.display || '')}</span></div>`).join('')}</div>`;
+    audio.play('fanfare');
+    const line = (round.introLines || []).find((l) => l.text) || { speaker: 'jeff', text: `Round ${round.number}: ${round.title}! Five Marks, one winner.` };
+    say(line.text, line.speaker || 'jeff', 3);
+    const joke = runners.map((r) => r.tagline).filter(Boolean)[Math.floor(Math.random() * runners.length)];
+    if (joke) say(joke, 'pam', 2);
+    if (v) { try { const info = v.playIntro(() => {}); const n = runners.length; v.seek?.((info?.flyoverS ?? 7) + n * (info?.perRunnerS ?? 4.2) + 0.5); } catch (e) { console.warn(e); } }
+    await waitVoice(tok, 5000, 11000);
+  }
   (async () => {
     await coldOpen();
     if (tok.cancelled) return;
+    await explainer();
+    if (tok.cancelled) return;
+    if (round.number >= 2) {
+      let v = null;
+      if (!FORCE_2D && Race3D?.createRaceView) {
+        v = await makeRaceView({ round, backedBy: {}, introCards: false }, { allow2d: false }).catch(() => null);
+        if (v && !tok.cancelled) { document.body.classList.add('racing'); root.classList.add('over3d'); root.querySelector('.clouds')?.remove(); root.querySelector('.hills')?.remove(); }
+      }
+      if (tok.cancelled) return;
+      await groupIntro(v);
+      await finish();
+      return;
+    }
     // 3D: helicopter fly-over + a close-up per runner; our card + voice line hold each shot (onIntroRunner)
     if (!FORCE_2D && Race3D?.createRaceView) {
       const byId = new Map(runners.map((r, i) => [r.id, i]));
@@ -686,10 +733,10 @@ function revealScreen(st) {
       const p = st.players.find((x) => x.id === playerId);
       const rid = betRunnerId(bet);
       const big = i === seq.length - 1 && seq.length > 1;
-      const chip = el(`<div class="fchip ${big ? 'big' : ''} anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<b>${money(bet.stake)}</b>${bet.type === 'h2h' ? '<i>⚔️</i>' : bet.type === 'special' || bet.boost ? '<i>🚀</i>' : ''}</div>`);
+      const chip = el(`<div class="fchip ${big ? 'big' : ''} anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<b>${money(bet.stake)}</b><small>wins +${money(betWin(round, bet))}</small>${bet.type === 'h2h' ? '<i>⚔️</i>' : bet.type === 'special' || bet.boost ? '<i>🚀</i>' : ''}</div>`);
       const card = rid ? root.querySelector(`.fo-card[data-rid="${rid}"] .fo-chips`) : null;
       if (card) card.appendChild(chip);
-      else $('.fo-side', root).appendChild(el(`<div class="fside anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<span>🎡 ${esc(betLabel(round, bet))}</span><b>${money(bet.stake)}</b></div>`));
+      else $('.fo-side', root).appendChild(el(`<div class="fside anim-pop" style="--pc:${esc(pcol(playerId))}">${avatarHtml(p?.avatar, 34)}<span>🎡 ${esc(betLabel(round, bet))}</span><b>${money(bet.stake)}</b><small>wins +${money(betWin(round, bet))}</small></div>`));
       if (rid) root.querySelector(`.fo-card[data-rid="${rid}"]`)?.classList.add('backed');
       audio.play(big ? 'kaching' : 'chip', { p: bet.stake / maxStake });
       tot[playerId] = (tot[playerId] || 0) + bet.stake;
@@ -969,7 +1016,8 @@ function resultsScreen(st) {
             const facts = (x.funFacts || []).filter(Boolean);
             const generic = !x.stravaTitle || /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$/i.test(String(x.stravaTitle).trim()) || /^(run|parkrun)$/i.test(String(x.stravaTitle).trim());
             const box = generic ? (facts[0] ? `<div class="strava fact"><span class="k">DID YOU KNOW?</span>${esc(facts[0])}</div>` : '') : `<div class="strava"><span class="k">STRAVA TITLE</span>“${esc(x.stravaTitle)}”</div>`;
-            const extra = x.punchline || facts[generic ? 1 : 0];
+            const ctx = Array.isArray(x.context) ? x.context[0] : x.context || x.contextLine || x.contextText;
+            const extra = ctx || x.punchline || facts[generic ? 1 : 0];
             return box + (extra ? `<div class="ff">${esc(extra)}</div>` : '');
           })()}
           ${x.wasPB || x.pbKind ? `<div class="pb">${x.pbKind === 'finsbury' ? 'COURSE PB!' : 'PB! 🏅'}</div>` : ''}
@@ -997,6 +1045,13 @@ function resultsScreen(st) {
       root.appendChild(el(`<div class="punch"><div class="anim-pop">${esc(punch)}</div></div>`));
       audio.play('stamp');
       say(punch.replace(/[“”]/g, ''), 'pam', 3);
+    }
+    const rmf = typeof res.realMarkFact === 'string' ? res.realMarkFact : res.realMarkFact?.text;
+    if (rmf && !t.cancelled) {
+      await waitVoice(t, 2200, 6000);
+      root.querySelector('.punch')?.remove();
+      root.appendChild(el(`<div class="punch rmf"><div class="anim-pop"><small>THE REAL MARK</small>${esc(rmf)}</div></div>`));
+      say(rmf, 'jeff', 3);
     }
     await waitVoice(t, 3000, 6000);
     done(1);
@@ -1094,7 +1149,7 @@ function resultsScreen(st) {
     if (!awards.length && !res.archetype?.label) { await sleepT(200, t); done(4); return; }
     root.innerHTML = head('ROUND AWARDS', '🏆') + `<div class="awards">${res.archetype?.label ? `<div class="arch panel yellow anim-pop"><div class="al display">${esc(res.archetype.label)}</div><div class="ab">${esc(res.archetype.blurb || '')}</div></div>` : ''}${awards.map((a) => {
       const p = s.players.find((x) => x.id === a.playerId);
-      return `<div class="award panel slant ${p ? '' : 'yellow'}" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="unslant" style="display:flex;align-items:center;gap:28px"><span class="trophy">🏆</span>${p ? avatarHtml(p.avatar, 84) : ''}<div><div class="at outlined white thin">${esc(a.title)}</div><div class="ax" style="color:${p ? '#fff' : 'var(--ink)'}">${esc(a.text || '')}</div></div></div></div>`;
+      return `<div class="award panel slant ${p ? '' : 'yellow'}" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="unslant" style="display:flex;align-items:center;gap:28px"><span class="trophy">🏆</span>${p ? avatarHtml(p.avatar, 84) : ''}<div><div class="at outlined white thin">${esc(a.title)}${p ? ` — ${esc(p.name)}` : ' — everyone'}</div><div class="ax" style="color:${p ? '#fff' : 'var(--ink)'}">${esc(a.text || '')}</div></div></div></div>`;
     }).join('')}</div>`;
     for (const a of $$('.award', root)) { if (t.cancelled) return; a.classList.add('show'); audio.play('fanfare'); await sleepT(1500, t); }
     if (awards[0]) say(`${awards[0].title}! ${awards[0].text || ''}`, 'jeff', 2);
@@ -1188,9 +1243,9 @@ function recapHtml(s, narrow) {
   const rows = s.players.map((p) => {
     const pay = res.payouts?.[p.id];
     const best = (pay?.bets || []).filter((b) => b.won).sort((a, b) => b.returned - a.returned)[0];
-    return `<div class="rcp">${avatarHtml(p.avatar, 54)}<span class="rn">${esc(p.name)}</span><span class="rx">${best ? `✅ ${esc(betLabel(s.round, best))}` : (pay?.bets || []).length ? '❌ nothing came in' : '🙈 no bets'}</span><span class="rnet ${pay?.net > 0 ? 'up' : pay?.net < 0 ? 'down' : ''}">${signedMoney(pay?.net || 0)}</span></div>`;
+    return `<div class="rcp">${avatarHtml(p.avatar, 54)}<span class="rn">${esc(p.name)}</span><span class="rx">${best ? `✅ ${esc(betLabel(s.round, best))} <b class="bw">${signedMoney(betOutcome(best).net)}</b>` : (pay?.bets || []).length ? '❌ nothing came in' : '🙈 no bets'}</span><span class="rnet ${pay?.net > 0 ? 'up' : pay?.net < 0 ? 'down' : ''}"><small>net</small> ${signedMoney(pay?.net || 0)}</span></div>`;
   }).join('');
-  const aw = (res.awards || []).slice(0, 2).map((a) => `<span class="raw">🏆 ${esc(a.title)}</span>`).join('');
+  const aw = (res.awards || []).slice(0, 2).map((a) => { const p = s.players.find((x) => x.id === a.playerId); return `<span class="raw">🏆 ${esc(a.title)}${p ? ` · ${esc(p.name)}` : ''}</span>`; }).join('');
   return `<div class="recap panel white ${narrow ? 'narrow' : ''}"><div class="rch"><span class="rp">${w ? portrait(w, 64) : ''}</span><span>Last race: <b>${esc(w?.nickname || '')}</b> won${res.archetype?.label ? ` · ${esc(res.archetype.label)}` : ''}</span>${aw}</div>${rows}</div>`;
 }
 function scoreScreen(st) {
@@ -1249,7 +1304,7 @@ function finaleScreen(st) {
     if (!card || !reel.length) return;
     const x = reel[k % reel.length];
     const p = st.players.find((q) => q.id === x.playerId);
-    card.innerHTML = `<div class="rc2 panel ${p ? '' : 'yellow'} anim-pop" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="tro">🏆</div>${p ? avatarHtml(p.avatar, 84) : ''}<div class="t outlined ${p ? 'white' : ''} thin">${esc(x.title)}</div><div class="x">${esc(x.text || '')}</div></div>`;
+    card.innerHTML = `<div class="rc2 panel ${p ? '' : 'yellow'} anim-pop" style="${p ? `background:${esc(p.avatar.colour)}` : ''}"><div class="tro">🏆</div>${p ? avatarHtml(p.avatar, 84) : ''}<div class="t outlined ${p ? 'white' : ''} thin">${esc(x.title)}</div>${p ? `<div class="who2">${esc(p.name)}</div>` : ''}<div class="x">${esc(x.text || '')}</div></div>`;
     $('.reel-dots', root).innerHTML = reel.map((_, i) => `<i class="${i === k % reel.length ? 'on' : ''}"></i>`).join('');
     audio.play('reveal');
     if (k < reel.length) say(`${x.title}! ${x.text || ''}`, k % 2 ? 'pam' : 'jeff', 2);

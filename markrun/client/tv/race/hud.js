@@ -105,6 +105,15 @@ const CSS = `
 .mr-wipe{position:absolute;top:-10%;bottom:-10%;left:-60%;width:45%;background:linear-gradient(90deg,var(--blue),var(--blue2));border-left:var(--ol) solid var(--ink);border-right:var(--ol) solid var(--ink);transform:skewX(var(--sk)) translateX(0);opacity:0}
 .mr-wipe.go{animation:mrwipe var(--slow) var(--ease)}
 @keyframes mrwipe{0%{opacity:1;transform:skewX(var(--sk)) translateX(0)}100%{opacity:1;transform:skewX(var(--sk)) translateX(420%)}}
+
+.mr-close{position:absolute;right:calc(var(--u)*2.2);top:calc(var(--u)*1.8);display:flex;align-items:center;gap:calc(var(--u)*.6);padding:calc(var(--u)*.35) calc(var(--u)*1.1) calc(var(--u)*.35) calc(var(--u)*.5);background:rgba(20,24,60,.85);border-radius:calc(var(--u)*.9);transform:skewX(var(--sk));font-family:var(--body);font-weight:800;font-size:calc(var(--u)*1.25);opacity:0;transition:opacity var(--slow) var(--ease),top var(--slow) var(--ease),background var(--fast) var(--ease);white-space:nowrap}
+.mr-close>*{transform:skewX(var(--usk))}
+.mr-close.on{opacity:1}
+.mr-hud:not(.mr-nomap) .mr-close{top:calc(var(--u)*16.2)}
+.mr-close .mr-cc{width:calc(var(--u)*.7);align-self:stretch;border-radius:calc(var(--u)*.3)}
+.mr-close b{font-family:var(--font-display,"Lilita One",sans-serif);font-weight:400;color:var(--yellow)}
+.mr-close.hot{background:rgba(255,77,90,.92)}
+.mr-close.hot b{color:#fff}
 `;
 
 const ord = (n) => `${n}<sup>${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) || n % 10 > 3 ? 0 : n % 10]}</sup>`;
@@ -128,7 +137,7 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     <div class="mr-market"><div class="mr-m1">MARKET OPEN</div><div class="mr-m2"></div></div>
     <div class="mr-title"><div class="mr-t0"></div><span class="mr-t1"></span><div class="mr-t2"></div></div>
     <div class="mr-results"></div>
-    <div class="mr-replayframe"></div><div class="mr-replay"><i></i><span>REPLAY</span></div><div class="mr-wipe"></div>`;
+    <div class="mr-close"><i class="mr-cc"></i><span><b class="mr-cn"></b> <span class="mr-ct"></span></span></div><div class="mr-replayframe"></div><div class="mr-replay"><i></i><span>REPLAY</span></div><div class="mr-wipe"></div>`;
   container.appendChild(root);
   const q = (s) => root.querySelector(s);
   const K = {}; root.querySelectorAll('[data-k]').forEach((e) => (K[e.dataset.k] = e));
@@ -216,6 +225,11 @@ export function createHud(container, { runners, backedBy = {}, course, park, C }
     else if (bannerT < 0) { bannerT = Math.min(0, bannerT + dt); if (bannerT === 0) popBanner(); }
     if (!s) return;
     if (s.map != null) root.classList.toggle('mr-nomap', !s.map);
+    if ('closing' in s) {
+      const c = s.closing, el = q('.mr-close');
+      el.classList.toggle('on', !!c);
+      if (c) { el.classList.toggle('hot', !!c.hot); el.querySelector('.mr-cc').style.background = c.colour; el.querySelector('.mr-cn').textContent = c.name; el.querySelector('.mr-ct').textContent = c.text === 'ALONGSIDE!' ? 'ALONGSIDE!' : c.text; }
+    }
     if (s.raceS != null) K.clock.textContent = fmt(s.raceS);
     if (s.leaderM != null) {
       K.lap.textContent = s.leaderM >= 2500 ? '2' : '1';

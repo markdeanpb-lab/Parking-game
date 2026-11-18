@@ -29,6 +29,35 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
   const leadGroup = (t) => { const st = sim.stateAt(Math.max(0, t)); const live = st.order.filter((id) => !st.byId[id].finished); const l = live[0] ?? st.order[0]; return (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < 20); };
   const groupNear = (id, t) => { const st = sim.stateAt(Math.max(0, t)); return st.order.filter((x) => !st.byId[x].finished && Math.abs(st.byId[x].m - st.byId[id].m) < 20); };
 
+  // ---- subject choice: point the camera at the money ----
+  // 1) the tightest pair involving a backed runner (within ~30 m all shot), 2) the tightest pair anywhere (~40 m),
+  // 3) otherwise a wide drone over the biggest cluster. Runners staying inside the pair's span ride along.
+  const pickSubject = (a, b) => {
+    const T = []; for (let k = 0; k <= 6; k++) T.push(sim.stateAt(Math.max(0, a + ((b - a) * k) / 6)));
+    const live = T[0].order.filter((id) => !T[0].byId[id].finished && !T.at(-1).byId[id].finished);
+    const pairs = [];
+    for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+      const x = live[i], y = live[j];
+      let mx = 0; for (const st of T) mx = Math.max(mx, Math.abs(st.byId[x].m - st.byId[y].m));
+      const pos = T[3].order.indexOf(x) + T[3].order.indexOf(y);
+      pairs.push({ ids: [x, y], gap: mx, backed: backedIds.includes(x) || backedIds.includes(y), pos });
+    }
+    const best = (l) => l.sort((p, q) => (p.gap + p.pos * 2) - (q.gap + q.pos * 2))[0];
+    let pick = best(pairs.filter((p) => p.backed && p.gap <= 30)) || best(pairs.filter((p) => p.gap <= 40));
+    if (pick) {
+      const ids = [...pick.ids];
+      for (const id of live) if (!ids.includes(id) && T.every((st) => { const ms = pick.ids.map((q) => st.byId[q].m); return st.byId[id].m > Math.min(...ms) - 6 && st.byId[id].m < Math.max(...ms) + 6; })) ids.push(id);
+      return { ids, kind: pick.backed ? 'backedPair' : 'pair', gap: pick.gap };
+    }
+    // nobody close to anybody: the biggest cluster within 150 m, framed wide
+    const st = T[3]; const ord = st.order.filter((id) => live.includes(id));
+    let bestG = [ord[0]];
+    for (let i = 0; i < ord.length; i++) { const g = ord.filter((id) => st.byId[ord[i]].m - st.byId[id].m >= 0 && st.byId[ord[i]].m - st.byId[id].m < 150); if (g.length > bestG.length) bestG = g; }
+    return { ids: bestG.length ? bestG : null, kind: 'pack' };
+  };
+  // long-lens side for duels up to ~24 m apart (FOV widens to fit), head-on when they're strung out in depth; alternate for variety
+  const pairType = (subj, prev) => (subj.kind === 'pack' ? 'drone' : subj.gap > 24 ? 'headon' : prev === 'side' ? 'headon' : 'side');
+
   // ---- fixed beats ----
   let gunEnd = 0.25 + 8;
   for (let t = 0.25; t < 30; t += 0.25) if (rate(t) > 7) { gunEnd = Math.max(gunEnd, t); break; }
@@ -61,34 +90,32 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     placed.push({ ...w, a, b });
   }
   placed.sort((x, y) => x.a - y.a);
-  // fill the middle with calm alternating shots (~10-12 s)
-  const cycle = ['side', 'drone', 'headon'];
-  let ci = 0, backedTurn = 0;
+  // fill the middle with calm ~10-12 s shots, each framed on the best subject for its window
   const fill = (a, b) => {
     const len = b - a; if (len <= 0.01) return;
     if (len < 8 && out.length >= 3) { out.at(-1).b = b; return; }
     const n = Math.max(1, Math.round(len / 11));
     for (let i = 0; i < n; i++) {
-      const s = a + (len * i) / n, e = a + (len * (i + 1)) / n, mid = (s + e) / 2;
-      let type = cycle[ci++ % cycle.length];
-      if (type === out.at(-1)?.type) type = cycle[ci++ % cycle.length];
-      // backed runners well off the lead get their own (side) shot every other filler
-      const st = sim.stateAt(mid); const lead = st.byId[st.order[0]];
-      const lonely = backedIds.filter((id) => st.byId[id] && !st.byId[id].finished && lead.m - st.byId[id].m > 40);
-      let ids = null;
-      if (lonely.length && backedTurn++ % 2 === 0) { ids = groupNear(lonely[backedTurn % lonely.length], mid); type = type === 'drone' ? 'side' : type; }
-      out.push({ type, a: s, b: e, ids });
+      const s = a + (len * i) / n, e = a + (len * (i + 1)) / n;
+      const subj = pickSubject(s, e);
+      out.push({ type: pairType(subj, out.at(-1)?.type), a: s, b: e, ids: subj.ids, subject: subj.kind, pack: subj.kind === 'pack' });
     }
   };
   let t = gunEnd;
-  for (const p of placed) { fill(t, p.a); out.push(p); t = p.b; }
+  for (const p of placed) {
+    fill(t, p.a);
+    if (p.tag === 'hill') { const subj = pickSubject(p.a, p.b); if (subj.kind !== 'pack') { p.ids = subj.ids; p.subject = subj.kind; } }
+    out.push(p); t = p.b;
+  }
   fill(t, bSlow);
   // finale (slow clock): tight side / head-on shots of ~11 s, head-on for the last 300 m, then the finish-line camera
   {
     const len = b4700 - bSlow;
-    if (len >= 8) { const n = Math.max(1, Math.round(len / 11)); for (let i = 0; i < n; i++) out.push({ type: i % 2 ? 'headon' : 'side', a: bSlow + (len * i) / n, b: bSlow + (len * (i + 1)) / n }); }
-    if (out.at(-1).type === 'headon' && out.at(-1).a >= bSlow) out.at(-1).b = bFin;
-    else out.push({ type: 'headon', a: Math.max(bSlow, out.at(-1).b), b: bFin });
+    if (len >= 8) { const n = Math.max(1, Math.round(len / 11)); for (let i = 0; i < n; i++) { const a = bSlow + (len * i) / n, e = bSlow + (len * (i + 1)) / n, subj = pickSubject(a, e); out.push({ type: pairType(subj, out.at(-1)?.type), a, b: e, ids: subj.ids, subject: subj.kind, pack: subj.kind === 'pack' }); } }
+    const a = Math.max(bSlow, out.at(-1).b), subj = pickSubject(a, bFin);
+    const last = { type: subj.kind === 'pack' ? 'headon' : 'headon', a, b: bFin, ids: subj.kind === 'pack' ? null : subj.ids, subject: subj.kind };
+    if (out.at(-1).type === 'headon' && out.at(-1).a >= bSlow && String(out.at(-1).ids) === String(last.ids)) out.at(-1).b = bFin;
+    else out.push(last);
   }
   if (out.at(-1).b - out.at(-1).a < 6 && out.length > 4) { const l = out.pop(); out.at(-1).b = l.b; }
   out.push({ type: 'finishcam', a: bFin, b: lastFin + 2.5, hard: true });
@@ -103,16 +130,16 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     const i = out.findIndex((s) => e.broadcastS >= s.a && e.broadcastS < s.b);
     if (i < 0) continue;
     const s = out[i];
-    if (['heli', 'startgo', 'finishcam', 'celebrate', 'drone'].includes(s.type) || s.interrupt || s.tag || s.hard) continue; // the wide drone already shows the pack
+    if (['heli', 'startgo', 'finishcam', 'celebrate', 'drone'].includes(s.type) || s.interrupt || s.tag || s.hard || s.subject === 'backedPair') continue; // the drone shows the pack; a backed duel keeps priority
     const framed = (s.ids || leadGroup((s.a + s.b) / 2));
     if (pair.every((id) => framed.includes(id))) continue; // already in frame
     if (e.broadcastS - s.a < 8 || s.b - e.broadcastS < 8) {
       // short shot: plan the whole calm shot around the pair instead of cutting mid-shot
-      Object.assign(s, { type: 'side', ids: pair, interrupt: e.type });
+      Object.assign(s, { type: 'side', ids: pair, interrupt: e.type, pack: false, subject: 'pair' });
     } else {
       // long shot: one blended move to frame the pair, then the shot continues
       const ia = e.broadcastS - 1.8;
-      out.splice(i, 1, { ...s, b: ia }, { type: 'side', a: ia, b: s.b, ids: pair, interrupt: e.type });
+      out.splice(i, 1, { ...s, b: ia }, { type: 'side', a: ia, b: s.b, ids: pair, interrupt: e.type, subject: 'pair' });
     }
     lastI = e.broadcastS;
   }
@@ -289,7 +316,7 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         const arc = Math.sin(Math.PI * e) * Math.min(12, glide.from.pos.distanceTo(T.pos) * 0.12);
         pos = glide.from.pos.clone().lerp(T.pos, e).add(up.clone().multiplyScalar(arc));
         // aim at a blend of the old and new subjects so the action stays in frame during the move
-        const lk = glide.from.look.clone().lerp(T.look, e);
+        const el = Math.min(1, u * 2.2); const lk = glide.from.look.clone().lerp(T.look, el * el * (3 - 2 * el)); // reach the new subject early
         m4.lookAt(pos, lk, up); quat = new THREE.Quaternion().setFromRotationMatrix(m4);
         fov = glide.from.fov + (T.fov - glide.from.fov) * e;
       }

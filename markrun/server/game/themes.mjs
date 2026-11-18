@@ -22,12 +22,12 @@ export const THEMES = {
   block: T('block', 'The Marathon Block Stakes', ['All five were in serious training: big long runs or a race countdown. Engine or exhaust?', 'Long-run season. Big miles in every pair of legs. Who has the engine?'],
     { pred: (f) => !!f.training_block || (f.longest_run_14d?.km ?? 0) >= 18, windowS: 90 }),
   taper: T('taper', 'The Taper Trophy', ['Every runner here had a race within ten days. Saving legs, or sharpening them?', 'Big race looming for all five. Who\'s holding back?'],
-    { pred: (f) => !!f.race_upcoming && f.race_upcoming.days_after <= 10, windowS: 140, sigmaX: 1.4 }),
+    { pred: (f) => !!f.race_upcoming && f.race_upcoming.days_after <= 10, windowS: 140, sigmaX: 2.5 }),
   windy: T('windy', 'The Windy Miller Cup', ['A proper blow on every one of these mornings. Lean into it.', 'Five breezy Saturdays. The Hill has a headwind. Somehow.'],
-    { pred: (f) => (f.weather?.wind_kmh ?? 0) >= 20 || (f.weather?.gust_kmh ?? 0) >= 38, windowS: 120 }),
+    { pred: (f) => (f.weather?.wind_kmh ?? 0) >= 20 || (f.weather?.gust_kmh ?? 0) >= 38, windowS: 120, sigmaX: 2 }),
   rusty: T('rusty', 'The Rusty Hinge Handicap', ['All five came after a quiet patch. Who has oiled the hinges?', 'Five comeback mornings. Fresh legs, or forgotten legs?'],
-    { pred: (f) => (f.days_since_last_run ?? 0) >= 7 || (f.km_7d ?? 99) <= 6, windowS: 140, sigmaX: 1.6 }),
-  funfair: T('funfair', 'The Funfair Stakes', ['The fair is in town. Three of these five will be taking a detour.', 'Bank-holiday chaos: three of our runners get lured round the fairground.'], { funfair: true, sigmaX: 1.5 }),
+    { pred: (f) => (f.days_since_last_run ?? 0) >= 7 || (f.km_7d ?? 99) <= 6, windowS: 140, sigmaX: 50 } /* comeback mornings defeat every form guide: priced as an open book */),
+  funfair: T('funfair', 'The Funfair Stakes', ['The fair is in town. Three of these five will be taking a detour.', 'Bank-holiday chaos: three of our runners get lured round the fairground.'], { funfair: true, sigmaX: 3 }),
   wildcard: T('wildcard', 'The Wildcard Handicap', ['One of these five was not exactly trying that morning. Read the clues.', 'A passenger lurks in this field. Spot the Sunday jogger.'], { wildcard: true }),
 };
 
@@ -41,7 +41,9 @@ export function chooseTheme({ rng, mem, roundNumber, settings = {}, data, availa
   if (roundNumber > 1 && !used.has('wildcard') && data.novelty.length && rng.chance(settings.wildcardRate ?? 0.08)) return THEMES.wildcard;
   const divLeft = data.main.filter((p) => p.diversions?.length && available(p)).length;
   if (roundNumber > 2 && !used.has('funfair') && divLeft >= 3 && rng.chance(settings.funfairRate ?? 0.16)) return THEMES.funfair;
-  if (roundNumber > 1 && rng.chance(settings.dataThemeRate ?? 0.5)) {
+  // never more than two pace-band themes in a row; round 1 may open with a data theme too
+  const lastTwoBand = (mem?.themes || []).slice(-2).length === 2 && (mem?.themes || []).slice(-2).every((k) => k.startsWith('band_'));
+  if (lastTwoBand || rng.chance(roundNumber === 1 ? (settings.openingThemeRate ?? 0.4) : (settings.dataThemeRate ?? 0.5))) {
     const opts = DATA_THEMES.filter((k) => !used.has(k) && data.main.filter((p) => available(p) && THEMES[k].pred(p.facts)).length >= 6);
     if (opts.length) return THEMES[rng.pick(opts)];
   }

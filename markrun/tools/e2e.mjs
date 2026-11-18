@@ -70,7 +70,7 @@ async function ctx(opts, label) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${label} console: ${m.text()}`); });
   return page;
 }
-const shot = async (page, name) => { const t0 = Date.now(); try { await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); console.log('  shot', name, `${Date.now() - t0}ms`); } catch (e) { console.log('  shot FAILED (slow headless GPU?)', name, e.message.split('\n')[0]); } };
+const shot = async (page, name) => { const t0 = Date.now(); try { await page.waitForFunction(() => !document.querySelector('#wipe.go'), null, { timeout: 3000 }).catch(() => {}); await page.screenshot({ path: path.join(OUT, `${name}.png`), timeout: 60000 }); console.log('  shot', name, `${Date.now() - t0}ms`); } catch (e) { console.log('  shot FAILED (slow headless GPU?)', name, e.message.split('\n')[0]); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let ok = false;
@@ -140,7 +140,7 @@ try {
   console.log('round source:', h.source);
   await sleep(300);
   await shot(tv, '05-tv-intro-title');
-  await tv.waitForSelector('.intro .rcard, .betting', { timeout: 30000 });
+  await tv.waitForSelector('.intro .l3, .intro .explain, .betting', { timeout: 30000 });
   await sleep(500);
   await shot(tv, '06-tv-intro-runner');
   await pa.waitForSelector('.flow');

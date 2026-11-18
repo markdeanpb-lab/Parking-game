@@ -73,6 +73,7 @@ export function hasExport(name) { return !!game && typeof game[name] === 'functi
 export function inPlayAvailable(round) { return round?.source === 'fixture' || (round?.source === 'game' && hasExport('inPlayMarket')); }
 export function betRevealOrder(round, betsByPlayer, bankrolls, players) { return call('betRevealOrder', round, betsByPlayer, bankrolls, players); }
 export function inPlayMarket(round) { return call('inPlayMarket', round); }
+export function personaliseCommentary(round, betsByPlayer, players) { return call('personaliseCommentary', round, betsByPlayer, players, round?.racePlan); }
 export function sessionSuperlatives(history, players) {
   if (!hasExport('sessionSuperlatives')) return history.some((h) => h.round?.hidden?.fixture) ? fixtureSuperlatives(history, players) : undefined;
   try { return game.sessionSuperlatives(history, players); } catch (e) { console.warn('[markrun] sessionSuperlatives failed:', e.message); return undefined; }

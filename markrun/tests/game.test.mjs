@@ -112,13 +112,13 @@ test('no leaks in 2000 generated rounds (clues, names, intros, odds, matchups)',
         else {
           if (countWords(c.headline) > 8) problems.push(`headline > 8 words: ${c.headline}`);
           if (countWords(c.kicker) > 10) problems.push(`kicker > 10 words: ${c.kicker}`);
-          if (c.text !== `${c.headline} ${c.kicker}`) problems.push(`text mismatch: ${c.text}`);
+          if (c.text !== `${c.headline}${/[.!?:"]$/.test(c.headline) ? '' : '.'} ${c.kicker}`) problems.push(`text mismatch: ${c.text}`);
         }
       }
       // props: only plausible ones
       for (const pr of r.public.props || []) {
         if (pr.id === 'funfair' && !(r.hidden.divOpen || r.public.theme.key === 'funfair')) problems.push('funfair prop offered when no funfair runner was possible');
-        if (!['funfair', 'photo', 'latelead'].includes(pr.id)) problems.push(`unknown prop ${pr.id}`);
+        if (pr.id !== 'funfair') problems.push(`unknown prop ${pr.id}`);
       }
       // the betting-phase commentary must be clean too
       problems.push(...betReactionLines(r, { p1: [{ type: 'win', runnerId: 'r1', stake: 300 }], p2: [] }, P2).flatMap((l) => checkText(l.text, ctx)));
@@ -332,7 +332,7 @@ test('bet reveal order, clash lines, superlatives, highlights and headlines', ()
   assert.match(all, /opposite|opposition|sofa to sofa|against/i, 'h2h opposition named');
   for (const x of seq) assert.ok(['jeff', 'pam'].includes(x.line.speaker));
   const res = settleRound(r, bets, { p1: 1000, p2: 1000 });
-  assert.ok(res.clueReview.filter((c) => c.highlight).length <= 3);
+  assert.ok(res.clueReview.filter((c) => c.highlight).length <= 2);
   for (const rv of res.reveal) assert.ok(rv.headline.includes(rv.dateText) && rv.headline.includes(rv.timeText));
   const sup = sessionSuperlatives([{ number: 1, round: { public: r.public, hidden: r.hidden }, bets, results: res }], P2.map((p) => ({ ...p, bankroll: res.payouts[p.id].bankroll })));
   assert.ok(sup.length >= 3 && sup.every((x) => x.title && x.text));

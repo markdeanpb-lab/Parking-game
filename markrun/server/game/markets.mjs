@@ -17,7 +17,7 @@ export const PROP_BASE = { photo: 0.2, latelead: 0.37, funfair_open: 0.18 };
 // At most one cheap side bet per round, and only where it makes sense:
 //  - The Funfair Stakes: "Will one of the funfair-goers win?"
 //  - "Will anyone visit the funfair?" only when a diversion run could be drawn this round (offered half the time then)
-//  - otherwise sometimes a photo-finish or late-lead-change prop, sometimes nothing (props: [])
+//  - otherwise no side bet at all (props omitted)
 export function makeProps({ theme, perfs, plan, settings = {}, rng, divOpen = true }) {
   const margin = settings.margin ?? MODEL_DEFAULTS.margin;
   const mk = (id, text, p, outcome) => {
@@ -32,10 +32,6 @@ export function makeProps({ theme, perfs, plan, settings = {}, rng, divOpen = tr
     const r = rng ? rng.next() : 0;
     if (divOpen && r < (settings.funfairPropRate ?? 0.5)) {
       prop = mk('funfair', 'Will anyone visit the funfair?', settings.funfairPropBase ?? PROP_BASE.funfair_open, perfs.some((p) => p.diversions?.length) ? 'yes' : 'no');
-    } else if (r < 0.75) {
-      const which = rng && rng.chance(0.5) ? 'photo' : 'latelead';
-      if (which === 'photo') prop = mk('photo', 'Photo finish? Won by two seconds or less', PROP_BASE.photo, plan.summary.winningMarginS <= 2 ? 'yes' : 'no');
-      else prop = mk('latelead', 'Will the lead change in the last kilometre?', PROP_BASE.latelead, plan.events.some((e) => e.type === 'lead_change' && e.atM > 4000) ? 'yes' : 'no');
     }
   }
   return prop ? { props: [prop.pub], outcomes: { [prop.pub.id]: prop.outcome } } : { props: [], outcomes: {} };

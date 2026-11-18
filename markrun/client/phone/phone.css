@@ -210,3 +210,27 @@ body.phone input { user-select: text; -webkit-user-select: text; }
 .race-hero svg { width: 130px; height: 130px; filter: drop-shadow(0 6px 0 rgba(20,24,60,.5)); }
 @media (max-height: 760px) { .race-hero svg { width: 96px; height: 96px; } }
 .hold .lbl { white-space: nowrap; font-size: 20px; }
+
+/* adviser pass: money in plain words, labelled clues, content up top */
+.main { justify-content: flex-start; padding-top: 14px; }
+.scr.locked .main, .scr.race .main, .scr.results .main, .scr .main:has(> .big-emoji) { justify-content: center; }
+.rhead.hero { flex-direction: column; text-align: center; gap: 6px; }
+.rhead.hero .rp svg { width: 140px; height: 140px; }
+.rhead.hero .rn { align-items: center; }
+.rhead.hero .rn .lane { align-self: center; }
+.rhead .rn .wins { font-size: 14px; font-weight: 900; color: #fff; opacity: .9; }
+.clue .ctag { display: block; font-style: normal; font-family: var(--font-display); font-size: 12px; letter-spacing: .08em; color: var(--panel-deep); margin-bottom: 2px; }
+.clue .ctag.hot { color: #b8360b; }
+.clue .ctag.pub { color: #4a5080; }
+.tray .ts .wn { flex: 1; font-weight: 900; font-size: 16px; }
+.tray .ts .wn b { font-family: var(--font-display); font-weight: 400; font-size: 26px; color: #7dffb3; }
+.tray .ts .wn small { opacity: .75; font-size: 12px; }
+.tray .ts > b { margin-right: 0; }
+.rv-line span { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rv-line span small { display: block; font-size: 12px; color: #4a5080; }
+.rv-line span small b { font-family: var(--font-body); font-size: 12px; color: var(--grass-deep); font-weight: 900; }
+.mkr .o em { display: block; font-style: normal; font-family: var(--font-body); font-weight: 900; font-size: 11px; color: var(--grass-deep); text-align: right; }
+@media (max-height: 760px) { .rhead.hero .rp svg { width: 104px; height: 104px; } .main { padding-top: 8px; } }
+.rv-line .rl { flex: 1; min-width: 0; }
+.rv-line .rl small { display: block; font-size: 12px; color: #4a5080; font-weight: 800; }
+.rv-line .rl small b { font-family: var(--font-body); font-size: 12px; color: var(--grass-deep); font-weight: 900; }

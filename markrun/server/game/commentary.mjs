@@ -1,7 +1,7 @@
 // Two original commentators. Jeff Bellows: overexcited veteran of a thousand village fun runs.
 // Pam Pettigrew: dry, deadpan, quietly devastating. Lines are short (TTS) and never repeat within a session.
 import { fill, countWords } from './text.mjs';
-import { pickLineId, releaseLine } from './memory.mjs';
+import { pickLineId, releaseLine, pickLine } from './memory.mjs';
 import { rankAt, broadcastToRace, distanceAt } from './raceplan.mjs';
 import { spokenOdds } from './model.mjs';
 
@@ -137,7 +137,6 @@ const B = {
     'Off they go, past the tennis courts, hearts pounding!',
     'And it\'s go time! Lovely start, nobody fell over!',
     'They\'re off! Like greyhounds! Slightly rounder greyhounds!',
-    'Away they go! Here we go! Here we go!',
   ],
   start_pam: [
     'Someone forgot to start their watch. They\'ll be furious.',
@@ -270,7 +269,6 @@ const B = {
     'I walked this bit once. Nobody saw.',
     'It\'s not that steep, Jeff.',
     'Someone\'s walking. I won\'t say who.',
-    'They\'ll be fine. Probably.',
     'You can hear the breathing from here.',
     'Smiles have left the building.',
   ],
@@ -723,7 +721,6 @@ export function raceCommentary(ctx) {
   const winner = plan.finishOrder[0], last = plan.finishOrder.at(-1);
 
   add(0.4, line(rng, mem, 'start', 'jeff', {}), 1, null, 1);
-  add(6, line(rng, mem, 'start_pam', 'pam', {}), 3, null, 6);
   // early leader (if nobody changes lead before ~30 s broadcast)
   const tEarly = 13;
   if (!ev.some((e) => (e.type === 'lead_change' && e.atM >= 400 || e.type === 'breakaway') && e.broadcastS < tEarly + 8)) {
@@ -763,11 +760,9 @@ export function raceCommentary(ctx) {
       add(t + 5, (rng.chance(0.5) && cbOnce(e.who, 'up')) || line(rng, mem, 'breakaway_pam', 'pam', {}), 3, e, 5);
     } else if (e.type === 'hill') {
       add(t, line(rng, mem, e.lap === 1 ? 'hill1' : 'hill2', 'jeff', {}), 2, e, 4);
-      add(t + 5, line(rng, mem, e.lap === 1 ? 'hill1_pam' : 'hill2_pam', 'pam', {}), 3, e, 5);
     } else if (e.type === 'lap') {
       const o = e.order || runnersAt(e.raceS);
       add(t, line(rng, mem, 'lap', 'jeff', { a: nm(o[0]), b: nm(o[1]) }), 2, e, 4);
-      add(t + 5, line(rng, mem, 'lap_pam', 'pam', {}), 3, e, 5);
     } else if (e.type === 'final_stretch') {
       const o = e.order || runnersAt(e.raceS);
       add(t, line(rng, mem, 'final_stretch', 'jeff', { a: nm(o[0]), b: nm(o[1]) }), 1, e, 3);
@@ -818,11 +813,6 @@ export function raceCommentary(ctx) {
     const tw = dur * 0.42;
     add(tw, line(rng, mem, 'wildcard_mid', 'jeff', { a: nm(ctx.wildcardId) }), 2, null, 8);
   }
-  // fillers through the long middle section
-  for (let t = 20; t < dur * 0.7; t += 11) {
-    const who = rng.chance(0.65) ? 'pam' : 'jeff';
-    add(t + rng.next() * 3, line(rng, mem, `filler_${who}`, who, {}), 4, null, 6);
-  }
   // private-clue callback once, mid-race, about a runner doing well
   const priv = privateCallback(ctx);
   if (priv) add(dur * 0.55, priv, 3, null, 10);
@@ -850,7 +840,8 @@ export function raceCommentary(ctx) {
     if (ts[i] - ts[i - 1] < 16) continue;
     for (let t = ts[i - 1] + 7; t < ts[i] - 7; t += 9) {
       const late = ctx.wildcardId && t > fourth && plan.finishOrder.at(-1) === ctx.wildcardId && waits++ < 2;
-      const who = late ? 'jeff' : rng.chance(0.6) ? 'pam' : 'jeff';
+      if (!late) continue; // no generic filler: silence is fine, except while we wait for a wildcard straggler
+      const who = 'jeff';
       extra.push({ t, lines: line(rng, mem, late ? 'wildcard_wait' : `gap_${who}`, who, { a: nm(ctx.wildcardId) }), priority: 4, eventRef: null, latest: 3 });
     }
   }
@@ -885,7 +876,7 @@ function privateCallback(ctx) {
 }
 
 // Greedy scheduler: place by priority; keep >= MIN_GAP between line starts and never overlap speech.
-const MIN_GAP = 4.6;
+const MIN_GAP = 9.5; // calm broadcast: about 12-14 lines a race, room to breathe
 function schedule(cand, dur, mem) {
   const placed = [];
   const fits = (t, d) => placed.every((p) => t >= p.t + Math.max(MIN_GAP, p.d + 1.0) || t + Math.max(MIN_GAP, d + 1.0) <= p.t);
@@ -913,6 +904,10 @@ function schedule(cand, dur, mem) {
     let tt = t0;
     c.lines.forEach((l, k) => { placed.push({ t: tt, d: ds[k], priority: c.priority, ...l, _lid: l._lid, eventRef: c.eventRef }); tt += Math.max(MIN_GAP, ds[k] + 0.8); });
   }
+  // no orphan reactions: a Pam reply to an event needs Jeff's call of that event to have made the cut
+  const key = (p) => (p.eventRef ? `${p.eventRef.type}@${p.eventRef.raceS}` : null);
+  const called = new Set(placed.filter((p) => p.speaker === 'jeff' && key(p)).map(key));
+  for (let k = placed.length - 1; k >= 0; k--) if (placed[k].speaker === 'pam' && key(placed[k]) && !called.has(key(placed[k]))) placed.splice(k, 1);
   // give back unspoken templates so later rounds can still use them
   const spoken = new Set(placed.map((p) => p._lid));
   for (const c of cand) for (const l of c.lines) if (l._lid && !spoken.has(l._lid)) releaseLine(mem, l._lid);
@@ -936,4 +931,88 @@ export function resultsLines(rng, mem, { round, players, payouts, winner, winner
   }
   out.push(...line(rng, mem, 'res_pam', 'pam', {}));
   return out;
+}
+
+// ---------- personalised race commentary (called at race start, once bets are known) ----------
+const PZ = {
+  pz_pos_good: ['Good news for {name}: {x} is {pos}!', '{name}\'s {stake} on {x}? Currently {pos}. Lovely.', '{x} is {pos}, and {name} is on the edge of the sofa!'],
+  pz_pos_bad: ['{name}\'s {stake} on {x} is currently {pos}.', 'Bad news for {name}: {x} is down in {pos}.', '{x} sits {pos}. {name} is very quiet.'],
+  pz_pos_mid: ['{name}\'s {stake} rides on {x}, running {pos}.', '{x}, carrying {name}\'s {stake}, is {pos}.'],
+  pz_tip_wrong_neg: ['{who} said avoid {x}, and he\'s leading!', 'Remember {who} saying swerve {x}? He\'s in front!'],
+  pz_tip_wrong_pos: ['{who}\'s banker {x} is dead last. Awkward.', '{who} fancied {x}. {x} is last. Say nothing.'],
+  pz_tip_right_pos: ['{who} called it: {x} is leading!', '{who} fancied {x}, and look at him go!'],
+  pz_bio: ['{x}. {tag}', 'Classic {x}. {tag}', 'That\'s {x} for you. {tag}'],
+};
+const ORD = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'];
+
+export function personalise({ round, betsByPlayer, players, plan, rng, mem }) {
+  const pub = round.public;
+  const R = new Map(pub.runners.map((r) => [r.id, r]));
+  const sn = (id) => R.get(id)?.shortName || R.get(id)?.nickname || id;
+  const ev = plan.events;
+  const at = (b) => rankAt(plan.runners, broadcastToRace(plan.timeMap, b));
+  const winT = ev.find((e) => e.type === 'finish' && e.place === 1)?.broadcastS ?? plan.timeMap.durationS;
+  const lapT = ev.find((e) => e.type === 'lap')?.broadcastS, fsT = ev.find((e) => e.type === 'final_stretch')?.broadcastS;
+  const cand = [];
+  const pz = (group, speaker, vars) => {
+    const t = fill(pickLine(rng, mem, group, PZ[group]), vars);
+    return countWords(t) <= 18 ? { speaker, text: t } : null;
+  };
+  // 1. stakes and positions: each player's biggest win bet, at halfway or on the run-in
+  const times = [lapT, fsT].filter((t) => t != null);
+  players.forEach((p, i) => {
+    const bets = (betsByPlayer[p.id] || []).filter((b) => ['win', 'special'].includes(b.type)).sort((a, b) => b.stake - a.stake);
+    if (!bets.length || !times.length) return;
+    const b = bets[0];
+    const t = times[(i + (rng.chance(0.5) ? 1 : 0)) % times.length] + 6;
+    if (t > winT - 4) return;
+    const pos = at(t).indexOf(b.runnerId) + 1;
+    const g = pos <= 2 ? 'pz_pos_good' : pos >= 4 ? 'pz_pos_bad' : 'pz_pos_mid';
+    const l = pz(g, pos <= 2 ? 'jeff' : 'pam', { name: p.name, stake: b.stake, x: sn(b.runnerId), pos: ORD[pos - 1] });
+    if (l) cand.push({ t, l, kind: 'stake' });
+  });
+  // 2. tipster accountability (one per race)
+  const tips = [];
+  for (const id of R.keys()) {
+    const C = round.hidden?.clues?.[id];
+    for (const c of [C?.public, ...Object.values(C?.private || {})]) if (c?.style === 'tipster') tips.push({ id, c });
+  }
+  const leadT = (id) => ev.find((e) => (e.type === 'lead_change' && e.to === id && e.atM >= 400))?.broadcastS ?? (lapT != null && at(lapT)[0] === id ? lapT : null);
+  for (const { id, c } of rng.shuffle(tips)) {
+    const who = c.voice === 'pam' ? 'Pam' : 'Jeff', other = c.voice === 'pam' ? 'jeff' : 'pam';
+    const lt = leadT(id);
+    let l = null, t = null;
+    if (c.lean < 0 && lt != null && lt < winT - 6) { t = lt + 5; l = pz('pz_tip_wrong_neg', other, { who, x: sn(id) }); }
+    else if (c.lean > 0 && fsT != null && at(fsT).at(-1) === id) { t = fsT + 5; l = pz('pz_tip_wrong_pos', other, { who, x: sn(id) }); }
+    else if (c.lean > 0 && lt != null && lt < winT - 6) { t = lt + 5; l = pz('pz_tip_right_pos', c.voice || 'jeff', { who, x: sn(id) }); }
+    if (l) { cand.push({ t, l, kind: 'tip' }); break; }
+  }
+  // 3. a bio/tagline callback for the first runner to make a move after the opening
+  const move = ev.find((e) => (e.type === 'lead_change' || e.type === 'breakaway') && e.broadcastS > plan.timeMap.durationS * 0.2 && e.broadcastS < winT - 15);
+  if (move) {
+    const id = move.to || move.who;
+    const tag = String(R.get(id)?.tagline || '').replace(/\.$/, '.');
+    const l = tag && pz('pz_bio', 'pam', { x: sn(id), tag });
+    if (l) cand.push({ t: move.broadcastS + 5, l, kind: 'bio' });
+  }
+  // merge: keep the must-say lines (priority 1, finishes); a personal line may replace an ordinary line nearby
+  const out = (plan.commentary || []).map((x) => ({ ...x }));
+  const protectedLine = (x) => x.priority === 1 || ['finish', 'final_stretch', 'diversion'].includes(x.eventRef?.type);
+  for (const { t, l } of cand.sort((a, b) => a.t - b.t)) {
+    let placed = false;
+    for (const shift of [0, 2, 4, -2, 6]) {
+      const tt = t + shift;
+      if (tt <= 1 || tt > winT + 8) continue;
+      const clash = out.filter((x) => Math.abs(x.broadcastS - tt) < MIN_GAP);
+      if (clash.some(protectedLine) || clash.some((x) => x.personal)) continue;
+      for (const x of clash) { // personal beats generic; drop a replaced line's follow-up too (no orphan reactions)
+        for (const y of out.filter((z) => z === x || (x.eventRef && z.eventRef && z.eventRef.type === x.eventRef.type && z.eventRef.raceS === x.eventRef.raceS))) out.splice(out.indexOf(y), 1);
+      }
+      out.push({ broadcastS: Math.round(tt * 100) / 100, text: l.text, speaker: l.speaker, priority: 2, personal: true });
+      placed = true;
+      break;
+    }
+    void placed;
+  }
+  return out.sort((a, b) => a.broadcastS - b.broadcastS);
 }

@@ -35,6 +35,27 @@ const pickFun = (key, used, vars = {}) => {
   return fill(t, vars);
 };
 
+const SEASON_TEMP = (t) => (t == null ? '' : t <= 0 ? 'frosty ' : t <= 4 ? 'cold ' : t <= 9 ? 'chilly ' : t <= 15 ? 'mild ' : t <= 19 ? 'warm ' : 'hot ');
+const NUMW = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+const span = (d) => (d % 7 === 0 && d / 7 <= 12 ? `${NUMW[d / 7]} week${d === 7 ? '' : 's'}` : `${d <= 12 ? NUMW[d] : d} day${d === 1 ? '' : 's'}`);
+const raceWord = (km, name = '') => (/\bxc\b|cross ?country/i.test(name) ? 'a cross-country race' : km >= 38 ? 'a marathon' : km >= 19 && km <= 23.5 ? 'a half marathon' : km >= 9 && km <= 11.5 ? 'a 10K' : km >= 4.5 && km <= 5.6 ? 'a 5K' : km >= 1.3 && km <= 2.1 ? 'a mile race' : 'a race');
+
+// True context for the reveal, computed from the data only: season (date + temperature), Finsbury run number,
+// rank among all his Finsbury runs, and where it sat relative to his races.
+export function revealContext(perf) {
+  const f = perf.facts || {};
+  const [, m] = perf.date.split('-').map(Number);
+  const out = [];
+  out.push(`A ${SEASON_TEMP(f.weather?.temp_c)}${MONTHS[m - 1]} morning`);
+  if (f.finsbury_number) out.push(`his ${ordinal(f.finsbury_number)} Finsbury parkrun`);
+  if (perf.rank && perf.of) out.push(perf.rank === 1 ? `his fastest of all ${perf.of} here` : `his ${ordinal(perf.rank)}-fastest of ${perf.of} here`);
+  const rr = f.race_recent, ru = f.race_upcoming;
+  if (rr && rr.days_before <= 28) out.push(`${span(rr.days_before)} after ${raceWord(rr.km, rr.name)}`);
+  else if (ru && ru.days_after <= 28) out.push(`${span(ru.days_after)} before ${raceWord(ru.km, ru.name)}`);
+  const line = `${out[0]}: ${out.slice(1, 3).join(', and ')}.${out[3] ? ` ${out[3].charAt(0).toUpperCase()}${out[3].slice(1)}.` : ''}`;
+  return { context: out, contextLine: line };
+}
+
 export function revealCard(runnerId, perf, used = new Set()) {
   const f = perf.facts || {};
   const act = f.activity || {};
@@ -108,6 +129,7 @@ export function revealCard(runnerId, perf, used = new Set()) {
     pbKind: parkrunPB ? 'parkrun' : finsPB ? 'finsbury' : null,
     pacingSource: perf.pacingSource,
     pool: perf.pool,
+    ...revealContext(perf),
     funFacts: fun.slice(0, 5),
     punchline,
     genericTitle,
@@ -167,9 +189,11 @@ const TIPSTER_QUIPS = {
   neutral: ['{who}\'s tip: neither right nor wrong. Very {who}.', 'Inconclusive. {who} is claiming a moral victory.', '{who} hedged without hedging. Impressive.'],
 };
 
-function verdictFor(signal, place, n) {
-  if (signal == null || Math.abs(signal) < 1.5) return 'neutral';
-  const good = place <= 2, bad = place >= n - 1;
+// outcome is judged against the runner's PRICE rank (beat the market = good), falling back to the places
+function verdictFor(signal, place, n, priceRank = null) {
+  if (signal == null || Math.abs(signal) < 1) return 'neutral';
+  const good = priceRank != null && place !== priceRank ? place < priceRank : place <= 2;
+  const bad = priceRank != null && place !== priceRank ? place > priceRank : place >= n - 1;
   if (signal < 0) return good ? 'useful' : bad ? 'red_herring' : 'neutral';
   return bad ? 'useful' : good ? 'red_herring' : 'neutral';
 }
@@ -251,6 +275,7 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
   for (const p of players) if (!payouts[p.id]) payouts[p.id] = { bets: [], staked: 0, net: 0, bankroll: bankrolls[p.id] ?? 0 };
 
   // clue review
+  const priceRank = new Map([...pub.runners].sort((a, b) => a.odds.win - b.odds.win).map((r, i) => [r.id, i + 1]));
   const clueReview = [];
   for (const id of order) {
     const C = H.clues[id];
@@ -266,7 +291,7 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
         verdict = lean > 0 ? (pl <= 2 ? 'useful' : pl >= n - 1 ? 'red_herring' : 'neutral') : (pl >= n - 1 ? 'useful' : pl <= 2 ? 'red_herring' : 'neutral');
         quip = fill(pickLine(rng, mem, `quip_tip_${verdict}`, TIPSTER_QUIPS[verdict]), { who: c.voice === 'pam' ? 'Pam' : 'Jeff' });
       } else {
-        verdict = verdictFor(c.signal, pl, n);
+        verdict = verdictFor(c.signal, pl, n, priceRank.get(id));
         const grp = CAT_GROUP[c.category];
         const useCat = grp && rng.chance(0.4);
         quip = useCat ? pickLine(rng, mem, `quip_${grp}_${verdict}`, CAT_QUIPS[grp][verdict]) : pickLine(rng, mem, `quip_${verdict}`, QUIPS[verdict]);
@@ -278,7 +303,7 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
     }
   }
 
-  const top = [...clueReview].filter((c) => c._w > 0).sort((a, b) => b._w - a._w).slice(0, 3);
+  const top = [...clueReview].filter((c) => c._w > 0).sort((a, b) => b._w - a._w).slice(0, 2);
   for (const c of clueReview) { if (top.includes(c)) c.highlight = true; delete c._w; }
 
   // archetype
@@ -371,7 +396,25 @@ export function settle(round, betsByPlayer = {}, bankrolls = {}, { rng, mem, inP
     awards,
     commentary,
     ...(drinks ? { drinks } : {}),
+    realMarkFact: realMarkFact(H, order, rng),
     favouriteId: favId,
     deadHeat: deadHeat.length > 1 ? deadHeat : undefined,
   };
+}
+
+// One "Real Mark fact" per round, from the database only (ranks, run numbers, dates). No age, nothing invented.
+export function realMarkFact(H, order, rng) {
+  const ps = (H.runners || []).map((r) => ({ ...r, ...(H.perfs?.[r.id] || {}) }));
+  if (!ps.length) return null;
+  const out = [];
+  const win = ps.find((p) => p.id === order[0]);
+  const best = [...ps].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0];
+  if (best?.rank && best.rank <= 10) out.push(`One of tonight's runs was Mark's ${ordinal(best.rank)}-fastest of all ${best.of} at Finsbury.`);
+  if (win?.rank) out.push(`The winning run ranks ${ordinal(win.rank)} of Mark's ${win.of} Finsbury parkruns.`);
+  const ds = ps.map((p) => p.date).sort();
+  const months = (Number(ds.at(-1).slice(0, 4)) - Number(ds[0].slice(0, 4))) * 12 + Number(ds.at(-1).slice(5, 7)) - Number(ds[0].slice(5, 7));
+  if (months >= 12) out.push(`Tonight's five runs span ${Math.floor(months / 12)} year${months >= 24 ? 's' : ''}${months % 12 ? ` and ${months % 12} month${months % 12 === 1 ? '' : 's'}` : ''} of Mark's Saturdays.`);
+  const nums = ps.map((p) => p.facts?.finsbury_number).filter(Boolean).sort((a, b) => a - b);
+  if (nums.length >= 2) out.push(`Between them: Mark's ${ordinal(nums[0])} to ${ordinal(nums.at(-1))} Finsbury parkruns.`);
+  return out.length ? (rng ? out[Math.floor(rng.next() * Math.min(2, out.length))] : out[0]) : null;
 }

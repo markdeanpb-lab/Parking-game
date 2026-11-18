@@ -172,3 +172,10 @@ export function clueParts(c, maxWords = 10) {
   const kicker = [rest, quote ? `“${quote}”` : ''].filter(Boolean).join(' ');
   return { headline: head, kicker };
 }
+
+// Profit if this bet comes in (winnings only, the stake comes back on top). Includes the x2 finale and boosts.
+export function betWin(round, b) {
+  const dec = Number(betOdds(round, b)) || 0;
+  const mult = Number(round?.payoutMultiplier) || 1;
+  return Math.max(0, Math.round((b?.stake || 0) * (1 + mult * (dec - 1))) - (b?.stake || 0));
+}
