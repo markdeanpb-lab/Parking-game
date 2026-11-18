@@ -480,10 +480,14 @@ function disposeRaceView() {
   raceLayer.innerHTML = '';
   document.body.classList.remove('racing');
 }
+// The finish stamp hook is read from the view's creation opts when it fires, so every view (including an intro view
+// reused for the race) routes it through this shell-level handler, which the race screen sets.
+let winnerStampHandler = null;
+const playersForView = (list) => (list || []).map((p) => ({ id: p.id, name: p.name, avatar: p.avatar }));
 async function makeRaceView(opts, { allow2d = true } = {}) {
   disposeRaceView();
   const w = worldData || await worldPromise;
-  const full = { course: w.course, park: w.park, speed: SPEED, ...opts };
+  const full = { course: w.course, park: w.park, speed: SPEED, players: playersForView(S?.players), onWinnerStamp: (e) => winnerStampHandler?.(e), ...opts };
   if (Race3D?.createRaceView && !FORCE_2D) {
     try {
       try { raceView = await Race3D.createRaceView(raceLayer, full); } catch (e) {
@@ -999,6 +1003,7 @@ function raceScreen(st) {
   }
   // P8: per-player stamps after the finish replay
   let stamped = false;
+  winnerStampHandler = () => showStamps();
   function showStamps() {
     if (stamped || tok.cancelled) return;
     stamped = true;
@@ -1053,6 +1058,7 @@ function raceScreen(st) {
     let v = null;
     if (raceView && raceViewRound === round.roundId && canReuseView(raceView)) {
       try {
+        raceView.setPlayers?.(playersForView(st.players));
         if (typeof raceView.setBackedBy === 'function') { raceView.setBackedBy(st.backedBy || {}); raceView.loadPlan(st.racePlan); }
         else raceView.loadPlan(st.racePlan, { backedBy: st.backedBy || {} });
         raceView.setPaused(false);
@@ -1060,7 +1066,7 @@ function raceScreen(st) {
         log({ type: 'raceview', kind: '3d', reused: true });
       } catch (e) { console.warn('could not re-use the intro view', e); }
     }
-    if (!v) v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {}, onWinnerStamp: () => showStamps() });
+    if (!v) v = await makeRaceView({ round, plan: st.racePlan, backedBy: st.backedBy || {} });
     clearInterval(loadHb);
     if (tok.cancelled) return;
     if (!v) { root.appendChild(el('<div class="race-err panel red">Race view failed to load</div>')); return; }
@@ -1126,7 +1132,7 @@ function raceScreen(st) {
       mkLayer.innerHTML = marketHtml(s);
       if (again) mkLayer.querySelector('.mk')?.classList.add('again'); // no re-pop on every state push
     },
-    destroy: () => { cancelToken(tok); clearInterval(clockIv); clearInterval(mkIv); clearInterval(ifIv); marketResolve?.(); audio.stopMusic(0.8); },
+    destroy: () => { cancelToken(tok); clearInterval(clockIv); clearInterval(mkIv); clearInterval(ifIv); marketResolve?.(); audio.stopMusic(0.8); winnerStampHandler = null; },
   };
 }
 
