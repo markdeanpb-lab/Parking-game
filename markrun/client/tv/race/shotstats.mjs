@@ -46,9 +46,13 @@ for (const fx of fixtures) {
   let r2 = 1, best2 = 1; for (let i = 1; i < midT.length; i++) { r2 = midT[i].type === midT[i - 1].type ? r2 + 1 : 1; best2 = Math.max(best2, r2); }
   const mid = race.filter((s) => !['heli', 'startgo', 'finishcam', 'placecam', 'celebrate', 'cutaway'].includes(s.type));
   const lens = mid.map((s) => s.b - s.a);
+  const isFk = (s) => { const st = sim.stateAt(Math.max(0, s.a)); return Math.max(...(s.ids || [st.order[0]]).map((id) => st.byId[id].m)) >= 4000; };
+  const mean = (l) => +(l.reduce((a, x) => a + x, 0) / Math.max(1, l.length)).toFixed(1);
+  const midOnly = mid.filter((s) => !isFk(s) && !s.start && s.type !== 'cutaway').map((s) => s.b - s.a), fkOnly = mid.filter((s) => isFk(s) && s.type !== 'cutaway').map((s) => s.b - s.a);
+  const angleCounts = {}; for (const s of race) angleCounts[s.type] = (angleCounts[s.type] || 0) + 1;
   const types = [...new Set(race.map((s) => s.type))];
   const hard = race.filter((s) => s.hard).length;
-  results[fx] = { shots: race.length, distinctTypes: types.length, types, longestSameRun: best, longestSameRunMidRace: best2, twoPlusShare: +(two / n).toFixed(3), midLen: { min: +Math.min(...lens).toFixed(1), max: +Math.max(...lens).toFixed(1), mean: +(lens.reduce((a, x) => a + x, 0) / lens.length).toFixed(1) }, hardCuts: hard, glides: race.length - hard };
+  results[fx] = { shots: race.length, distinctTypes: types.length, types, longestSameRun: best, longestSameRunMidRace: best2, twoPlusShare: +(two / n).toFixed(3), midRace: { n: midOnly.length, min: +Math.min(...midOnly).toFixed(1), mean: mean(midOnly) }, finalKm: { n: fkOnly.length, min: +Math.min(...fkOnly).toFixed(1), mean: mean(fkOnly) }, angleCounts, cutaways: race.filter((s) => s.type === 'cutaway').length, allTracking: { min: +Math.min(...lens).toFixed(1), max: +Math.max(...lens).toFixed(1), mean: +(lens.reduce((a, x) => a + x, 0) / lens.length).toFixed(1) }, hardCuts: hard, glides: race.length - hard };
   if (!args.includes('--json')) {
     console.log(`\n=== ${fx} (backed ${backed.join(',')}) ===`);
     for (const s of race) console.log(`${s.a.toFixed(1).padStart(6)}  ${(s.b - s.a).toFixed(1).padStart(5)}s  ${s.type.padEnd(10)} ${s.hard ? 'CUT  ' : 'glide'} ${String(s.ids || '').padEnd(12)} ${s.reason || ''}`);
