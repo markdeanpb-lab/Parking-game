@@ -17,7 +17,14 @@
 //    the real course - finish gantry, avenue, far corner, Hill foot (low hero angle up the climb), Hill top (looking
 //    down it), lake bend, cafe, bend towers, trackside towers - each pans and zooms with the runners through its stretch)
 //    / high DRONE ~25% (aerial tracking that shows the course shape; tags keep runners readable) / chase & other ~15%.
-//    The Hill gets its set camera on BOTH laps (a gag on the Hill is shot from it too).
+//    The Hill gets its set camera on BOTH laps (lap 1 the foot, lap 2 a low side-on; whatever story is on the Hill, and a
+//    gag on the Hill stays on it). One establishing WIDE per lap at a story break (the opening flyover when lap 1 has none).
+// E. Gags (hijinks, v2 timing): the threat + the gag on the hijink's own close angle, a hard cut ~1 s before the pass to a
+//    set camera / the drone / the other gag angle; a gag never takes the screen from a backed lead battle in the final km
+//    unless it is happening to one of them. Head-on shots of two runners within ~1 s swing ~23 degrees off the line.
+// F. Finish: head-on dolly; a close finish (photo finish, or under 1 s) cuts to the side-on LINE camera for the last ~3 s
+//    (slow-mo, then the photo freeze takes over from the same side); after the replay <= 5 s of the place camera (only if
+//    someone is about to cross), then the finish gantry pans on to each later finisher.
 // Every shot carries `reason` (see client/tv/race/shotstats.mjs). Positions are analytic in broadcast time: no jitter.
 import * as THREE from 'three';
 import { raceToBroadcast, timeAtDistance, HILL_M } from '../../../server/game/raceplan.mjs';
@@ -446,7 +453,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
         s.dist = Math.max(12, Math.min(want, gap - 6));
         s.lat = chooseLat(s, s.ids || ids);
         // two runners within ~1 s: swing the camera 20-30 degrees off the line so the trailing one isn't hidden
-        if (!s.start && (s.ids || ids).length > 1 && closeSec(s, s.ids || ids) <= 1.1) { s.lat = angledLat(s, s.ids || ids); s.angled = true; }
+        if (!s.start && (s.ids || ids).length > 1 && closeSec(s, s.ids || ids) <= 1.1) { s.dist = Math.min(s.dist, 22); s.lat = angledLat(s, s.ids || ids); s.angled = true; }
         s.fov = THREE.MathUtils.clamp(fovFor(Math.hypot(s.dist, s.lat), TARGET_FRAC - 0.02), 4, 30);
         break;
       }
@@ -506,7 +513,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       default: break;
     }
     // no camera standing in (or looking across) the lake / a closed feature: the water plane would swallow their legs
-    if (['high3q', 'side', 'hilltop', 'breakaway'].includes(s.type) && !s.fair) {
+    if (['high3q', 'side', 'hilltop', 'breakaway', 'chase', 'shoulder', 'hill'].includes(s.type) && !s.fair) {
       const wc = (sg) => wetCost(s, ids, sg); const c0 = wc(s.side), c1 = wc(-s.side);
       if (c1 < c0) s.side = -s.side;
     }
@@ -544,6 +551,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       const x0 = l.reduce((a, r) => a + r.x, 0) / l.length, z0 = l.reduce((a, r) => a + r.z, 0) / l.length, front = Math.max(...l.map((r) => r.m));
       let px, pz;
       if (s.type === 'side') { const r = l[0]; px = x0 - r.tz * sg * s.dist; pz = z0 + r.tx * sg * s.dist; }
+      else if (['chase', 'shoulder', 'hill'].includes(s.type)) { const rear = Math.min(...l.map((r) => r.m)); const q = C.sample(Math.max(0, rear - (s.dist || 13))); const lat = s.type === 'shoulder' ? 1.1 : s.type === 'hill' ? 2.2 : 3.4; px = q.x + q.rx * lat * sg; pz = q.z + q.rz * lat * sg; }
       else { const q = C.sample(Math.min(5110, front + (s.dist || 12))); const lat = s.type === 'high3q' ? 7 : s.type === 'breakaway' ? 3 : 2.4; px = q.x + q.rx * lat * sg; pz = q.z + q.rz * lat * sg; }
       if (world.inPark && !world.inPark(px, pz)) c += 2;
       for (let u = 0; u <= 0.85; u += 0.17) if (world.blocked?.(px + (x0 - px) * u, pz + (z0 - pz) * u, 0.4)) c += u === 0 ? 3 : 1;
@@ -559,10 +567,10 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     }
     return g;
   }
-  // a head-on lateral offset of ~24 degrees: the side that separates the two nearest runners most on screen, out of
+  // a head-on lateral offset of ~23 degrees: the side that separates the two nearest runners most on screen, out of
   // the lake / features and inside the park
   function angledLat(s, ids) {
-    const L = s.dist * Math.tan((24 * Math.PI) / 180);
+    const L = s.dist * Math.tan((23 * Math.PI) / 180); // (<= ~9 m off the path: inside the spectators' line)
     let best = null;
     for (const sg of [1, -1]) {
       let sep = 1e9, cost = 0;
@@ -791,18 +799,18 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         const al = pr.map((x) => (x.x - fin.x) * fin.tx + (x.z - fin.z) * fin.tz);
         const mid = pr.length ? THREE.MathUtils.clamp((Math.max(...al) + Math.min(...al)) / 2, -45, 0.6) : 0;
         const camD = 12;
-        pos = new THREE.Vector3(fin.x + fin.rx * camD * Ls - fin.tx * 0.6, fin.y + 1.7, fin.z + fin.rz * camD * Ls - fin.tz * 0.6);
-        look = new THREE.Vector3(fin.x + fin.tx * mid, fin.y + 1.15, fin.z + fin.tz * mid);
+        pos = new THREE.Vector3(fin.x + fin.rx * camD * Ls - fin.tx * 0.6, fin.y + 2.2, fin.z + fin.rz * camD * Ls - fin.tz * 0.6);
+        look = new THREE.Vector3(fin.x + fin.tx * mid, fin.y + 1.3, fin.z + fin.tz * mid);
         const d = pos.distanceTo(look), spread = pr.length > 1 ? Math.max(...al) - Math.min(...al) : 0;
-        fov = THREE.MathUtils.clamp(Math.max(fovFor(d, 0.4), deg(2 * Math.atan((spread + 3.5) / (2 * ASPECT * d)))), 8, 44);
-        s.smoothLook = true; s.smoothFov = true; break;
+        fov = THREE.MathUtils.clamp(Math.max(fovFor(d, 0.33), deg(2 * Math.atan((spread + 4.5) / (2 * ASPECT * d)))), 10, 46);
+        s.smoothLook = true; s.smoothFov = true; s.noLift = true; break;
       }
       case 'fixed': {
         // a set broadcast camera: stands still, pans and zooms with the runners (subject ~28% of the frame, group fits)
         const st = sim.stateAt(Math.max(0, b));
         const ids = s.groups ? s.groups.find((g) => g.some((id) => !st.byId[id]?.finished || b - (sim.byId[id]?.finishB ?? -9) < 1.2)) || s.groups.at(-1) : groupOf(s);
         const live = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished);
-        const c = center(ids, b);
+        const c = center(ids, b + 0.3); // (aimed a beat ahead: the smoothed pan then sits on them instead of trailing)
         pos = new THREE.Vector3(s.cam.x, s.cam.y, s.cam.z);
         look = new THREE.Vector3(c.x, c.y + 1.1, c.z);
         const d = Math.max(4, pos.distanceTo(look));
@@ -884,7 +892,7 @@ export function createDirector({ camera, C, sim, world, funfair }) {
     const T = evaluate(s, b);
     const gy = C.heightAt(T.pos.x, T.pos.z) + 1.1; if (T.pos.y < gy) T.pos.y = gy;
     // low long-lens cameras: lift until the line of sight to the subject's feet clears the terrain (hill crests)
-    if (s.type !== 'heli' && s.type !== 'celebrate') {
+    if (s.type !== 'heli' && s.type !== 'celebrate' && !s.noLift) {
       let need = 0; const fy = T.look.y - 0.7;
       for (let k = 1; k < 20; k++) {
         const u = k / 20, x = T.pos.x + (T.look.x - T.pos.x) * u, z = T.pos.z + (T.look.z - T.pos.z) * u, y = T.pos.y + (fy - T.pos.y) * u;

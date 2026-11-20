@@ -637,7 +637,7 @@ ${THREE.ShaderChunk.fog_fragment}
     const rail = new THREE.BoxGeometry(2.4, 0.12, 0.05); rail.translate(0, 0.65, 0.05); pk.push(rail);
     const rail2 = rail.clone(); rail2.translate(0, -0.35, 0); pk.push(rail2);
     const fenceGeo = mergeGeometries(pk); fenceGeo.rotateY(Math.PI / 2);
-    instanced(fenceGeo, toon(0xffffff), fences, { ol: 1.8 });
+    themeRefs.fences = instanced(fenceGeo, toon(0xffffff), fences, { ol: 1.8 }); // (hidden for the side-on line cameras)
   }
 
   // crowd zones (the crowd module fills these)

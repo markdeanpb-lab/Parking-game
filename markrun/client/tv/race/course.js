@@ -181,6 +181,22 @@ export function buildCourse(course, park, plan) {
     for (let k = 0; k < best.length; k++) if (best[k] < Rr && sw[k] > 0) { const w = 1 - smooth(PATH_W / 2 + 0.5, Rr, best[k]); T.h[k] = T.h[k] * (1 - w) + (shh[k] / sw[k]) * w; }
     T.pathSamples = samples;
   }
+  // ---- where the path crosses a lake inlet the levelling can sink it under the water plane (runners appeared to wade):
+  // raise a low causeway, ~0.3 m above the water, easing back to the ground over ~12 m
+  for (const f of flat) {
+    if (f.kind !== 'water' || f._level == null) continue;
+    const top = f._level + 0.3, R0 = PATH_W / 2 + 1.5, R1 = R0 + 12;
+    const wet = T.pathSamples.filter(([x, z]) => signedDist(f.pts, x, z) < 4);
+    if (!wet.length) continue;
+    const bb = bbox(wet.map(([x, z]) => [x, z]));
+    for (let j = Math.max(0, Math.floor((bb[1] - R1 - T.z0) / T.cell)); j <= Math.min(T.nz - 1, Math.ceil((bb[3] + R1 - T.z0) / T.cell)); j++)
+      for (let i = Math.max(0, Math.floor((bb[0] - R1 - T.x0) / T.cell)); i <= Math.min(T.nx - 1, Math.ceil((bb[2] + R1 - T.x0) / T.cell)); i++) {
+        const x = T.x0 + i * T.cell, z = T.z0 + j * T.cell; let d = 1e9;
+        for (const [px, pz] of wet) d = Math.min(d, Math.hypot(px - x, pz - z));
+        const w = 1 - smooth(R0, R1, d), k = j * T.nx + i;
+        if (w > 0 && T.h[k] < top) T.h[k] += (top - T.h[k]) * w;
+      }
+  }
   // ---- the Hill, dramatised: the climb's middle is made steeper (an S-curve on the heights between its foot and
   // its top, fading out ~100 m either side of the climb). Runners, path, props and cameras all read heightAt(), so
   // everything stays glued together; only the look of the slope changes.

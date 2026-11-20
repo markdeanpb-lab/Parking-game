@@ -419,7 +419,8 @@ export function createRaceView(container, opts = {}) {
     const u = ((x - sight.ax) * vx + (z - sight.az) * vz) / L2; if (u < 0.03 || u > 0.92) return false;
     const px = sight.ax + vx * u - x, pz = sight.az + vz * u - z; return px * px + pz * pz < (sight.near ? 16 : 2.2 * 2.2);
   }
-  function setBunting(on) { const T = world.theme; for (const o of [T.flags, T.poles, T.rope]) if (o) o.visible = on; }
+  // bunting (and the picket fences: they'd fill the low side-on line cameras' foreground)
+  function setBunting(on) { const T = world.theme; for (const o of [T.flags, T.poles, T.rope, T.fences]) if (o) o.visible = on; }
   // the photo-finish camera stands on the park side of the line
   let _ps = 0; function photoSide() { if (!_ps) { const f = world.anchors.finish; _ps = world.inPark(f.x + f.rx * 16, f.z + f.rz * 16) ? 1 : -1; } return _ps; }
 
@@ -501,7 +502,7 @@ export function createRaceView(container, opts = {}) {
   function playRace(onEvent, onDone) {
     if (!sim) throw new Error('createRaceView: playRace needs a plan (pass opts.plan or call loadPlan(plan) first)');
     mode = 'race'; hud.setDim(false); hud.results(null); clearPodium(); introState = null; hud.introCard(null); hud.titleCard(false); hud.market(false); marketT = null; paused = false; canvas.style.filter = '';
-    b = -PRE_ROLL; evIdx = 0; countdownIdx = 0; freeze = 0; photoDone = false; raceDone = false; replay = null; replayDone = false; curSlow = 1; hud.replay(false); firedBanners.clear(); titleShown = !!opts.skipRaceTitle; hud.setDimTop(false);
+    b = -PRE_ROLL; evIdx = 0; countdownIdx = 0; freeze = 0; photoDone = false; raceDone = false; replay = null; replayDone = false; curSlow = 1; hud.replay(false); firedBanners.clear(); for (const k in pairBanner) delete pairBanner[k]; titleShown = !!opts.skipRaceTitle; hud.setDimTop(false);
     raceCb = { onEvent, onDone };
     placeAtStart('idle');
     director.reset();
@@ -509,10 +510,19 @@ export function createRaceView(container, opts = {}) {
   }
   const countdowns = [[-3, '3'], [-2, '2'], [-1, '1'], [0, 'GO!']];
   // short stingers (UI_SPEC: <= 1.5 s, upper third, one at a time)
+  const pairBanner = {};
   function bannerFor(e) {
     switch (e.type) {
       case 'lead_change': return ['LEAD CHANGE', '', '#ff3d8b'];
-      case 'overtake': return backedIds.includes(e.by) || backedIds.includes(e.on) ? ['OVERTAKE', pubById[e.by] && pubById[e.on] ? `${shortOf(pubById[e.by])} passes ${shortOf(pubById[e.on])}` : '', '#2e6fe0'] : null;
+      case 'overtake': {
+        // one stinger per duel: a back-and-forth between the same two inside 12 s, or a pass that is also the lead
+        // changing hands (that one gets LEAD CHANGE), doesn't repeat it
+        const pair = [e.by, e.on].sort().join('|'), at = e.broadcastS ?? b;
+        if ((plan.events || []).some((x) => x.type === 'lead_change' && Math.abs((x.broadcastS ?? -9) - at) < 0.3 && x.to === e.by)) return null;
+        if (at - (pairBanner[pair] ?? -99) < 12) { pairBanner[pair] = at; return null; }
+        pairBanner[pair] = at;
+      }
+        return backedIds.includes(e.by) || backedIds.includes(e.on) ? ['OVERTAKE', pubById[e.by] && pubById[e.on] ? `${shortOf(pubById[e.by])} passes ${shortOf(pubById[e.on])}` : '', '#2e6fe0'] : null;
       case 'hill': return ['THE HILL', '', '#3aa845'];
       case 'lap': return ['LAP 2', '', '#2e6fe0'];
       case 'final_stretch': return ['FINAL STRETCH', '', '#ff8a1f'];
@@ -530,7 +540,7 @@ export function createRaceView(container, opts = {}) {
         const mg = sim.byId[a2].officialS - sim.byId[a1].officialS;
         hud.photoResult(shortOf(pubById[a1]), photoMargin(mg));
       }
-      if (freeze <= 0) { hud.photo(false); world.anchors.finishArch.visible = true; setBunting(true); startReplay(); }
+      if (freeze <= 0) { freeze = 0; hud.photo(false); world.anchors.finishArch.visible = true; setBunting(true); startReplay(); }
       return;
     }
     if (replay) { stepReplay(dt); return; }
@@ -707,13 +717,12 @@ export function createRaceView(container, opts = {}) {
       st = b >= 0 ? sim.stateAt(b) : null;
       if (replay) st = sim.stateAt(replayB());
       // cut away trees between a tracking camera and its subject
-      const occ = !freeze && marketT == null && TRACK_SHOTS.has(director.shot?.type);
-      // the side-on place camera looks across the line: the arch's near leg would fill its foreground
-      // (and the close-finish line camera, which stands on the line's extension like the photo camera)
-      // (and the close-finish line camera and the finish gantry: after the line the arch's legs would fill their frames;
-      // the bunting hangs across the side-on lines of sight)
+      const occ = freeze <= 0 && marketT == null && TRACK_SHOTS.has(director.shot?.type);
+      // the side-on place and close-finish line cameras look across the line, the gantry back through it: the arch's
+      // legs would fill their frames; the bunting and fences hang across the side-on lines of sight
       const onLine = ['linecam', 'placecam'].includes(director.shot?.type) && !replay;
-      if (!freeze) { world.anchors.finishArch.visible = !((onLine || director.shot?.cam?.name === 'gantry') && !replay); setBunting(!onLine); }
+      if (freeze <= 0) { // (freeze ends slightly negative: "!freeze" would be false for good after a photo finish)
+        world.anchors.finishArch.visible = !((onLine || director.shot?.cam?.name === 'gantry') && !replay); setBunting(!onLine); }
       world.setOcclusionCorridor(occ ? camera.position : null, occ ? director.cam.look : null);
       // keep spectators out of the sightline: the camera->subject corridor of tracking shots, and the near side of
       // the line for the side-on place / photo cameras
@@ -728,7 +737,7 @@ export function createRaceView(container, opts = {}) {
         } else if (kind === 'corridor') crowd.setMask(corridorMask);
         else crowd.setMask(null);
       }
-      if (kind === 'corridor') { sight.near = stype?.startsWith('gag'); sight.ax = camera.position.x; sight.az = camera.position.z; sight.bx = director.cam.look.x; sight.bz = director.cam.look.z; }
+      if (kind === 'corridor') { sight.near = stype?.startsWith('gag') || stype === 'hillside' || !!director.shot?.angled || !!director.shot?.cam?.hill; /* (cameras standing among the spectators) */ sight.ax = camera.position.x; sight.az = camera.position.z; sight.bx = director.cam.look.x; sight.bz = director.cam.look.z; }
       if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
       else if (replay) { const u = Math.min(1, replay.t / REPLAY_S); curSlow = Math.max(0.2, (replay.b1 - replay.b0) / REPLAY_S * 1.7 * Math.pow(1 - u, 0.7)); applyRace(replayB(), ddt); }
       else applyRace(b, freeze > 0 ? 0 : ddt);

@@ -16,12 +16,12 @@ const has = (k) => args.some((a) => a === `--${k}` || a.startsWith(`--${k}=`));
 const out = root + (process.env.OUT || 'tests/out/3d4/'); fs.mkdirSync(out, { recursive: true });
 const page0 = root + (val('page') || 'release/hijinks-preview-v2.html');
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--allow-file-access-from-files'] });
-const small = has('tags') && !has('every');
+const small = (has('tags') || has('banners')) && !has('every');
 const page = await browser.newPage({ viewport: small ? { width: 640, height: 360 } : { width: Number(process.env.W || 1280), height: Number(process.env.H || 720) } });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message)); if (process.env.DEBUG) page.on('console', (m) => console.log('[page]', m.text().slice(0, 300)));
 await page.goto('file://' + page0 + '?shot=1');
 await page.waitForFunction(() => window.__ready, null, { timeout: 180000 });
-await page.evaluate(() => { document.getElementById('title')?.classList.add('gone'); document.fonts?.ready; });
+await page.evaluate(() => { const t = document.getElementById('title'); if (t) { t.style.transition = 'none'; t.classList.add('gone'); } document.fonts?.ready; });
 const FAM = { close: ['headon', 'side', 'high3q', 'gag3q', 'gagside', 'gagrear', 'breakaway', 'hilltop'], fixed: ['fixed', 'cutaway'], drone: ['drone', 'pack'], other: ['chase', 'shoulder', 'hill'] };
 const famOf = (t) => Object.keys(FAM).find((k) => FAM[k].includes(t)) || 'set-piece';
 if (has('shots')) {
@@ -34,19 +34,20 @@ if (has('shots')) {
   console.log(JSON.stringify({ shots: shots.list.length, share, types, meanLen: +(mid.reduce((a, x) => a + x, 0) / mid.length).toFixed(1), minLen: +Math.min(...mid).toFixed(1), longestSameRun: best }));
 }
 if (has('tags')) {
+  await page.evaluate(([a, e]) => { window.__t0 = a; window.__t1 = e; }, [Number(process.env.T0 || 0.2), Number(process.env.T1 || 1e9)]);
   // play the race frame by frame in chunks (a single long evaluate stalls the renderer) and count tag toggles
   await page.evaluate(() => {
     const d = window.view._debug, root = window.view.hudRoot; const tags = [...root.querySelectorAll('.mr-tag')];
     const ids = window.__data.round.runners.slice().sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0)).map((x) => x.id);
-    d.seek(0.2, 0.5); d.unpause();
+    d.seek(window.__t0 ?? 0.2, 0.5); d.unpause();
     window.__T = { tags, ids, prev: tags.map(() => false), tog: tags.map(() => 0), visT: tags.map(() => 0), n: 0, hjVis: {}, hj: window.__data.plan.hijinks || [] };
   });
   for (;;) {
     const done = await page.evaluate(() => {
       const d = window.view._debug, T = window.__T;
       for (let k = 0; k < 40; k++) {
-        if (d.b >= d.sim.firstFinishB - 0.5) return true;
-        d.step(1 / 12, true); T.n++;
+        if (d.b >= Math.min(window.__t1 ?? 1e9, d.sim.firstFinishB - 0.5)) return true;
+        d.step(1 / 10, true); T.n++;
         T.tags.forEach((t, i) => { const v = t.style.opacity !== '0' && parseFloat(t.style.opacity || '0') > 0.5; if (v !== T.prev[i]) { T.tog[i]++; T.prev[i] = v; } if (v) T.visT[i]++; });
         for (const h of T.hj) if (d.b >= h.atBroadcastS && d.b < h.untilBroadcastS) { const i = T.ids.indexOf(h.who); T.hjVis[h.id] ||= { kind: h.kind, who: h.who, frames: 0, shown: 0 }; T.hjVis[h.id].frames++; if (T.prev[i]) T.hjVis[h.id].shown++; }
       }
@@ -59,9 +60,9 @@ if (has('tags')) {
 }
 if (has('finish')) {
   // the finish set-piece as it plays (frame by frame on the wall clock: slow-mo, photo freeze, replay, place camera)
-  await page.evaluate(() => { const d = window.view._debug; d.seek(d.sim.firstFinishB - Number(window.__pre || 7), 1.5); d.unpause(); });
+  await page.evaluate((pre) => { const d = window.view._debug; d.seek(d.sim.firstFinishB - pre, 1.5); d.unpause(); }, Number(process.env.PRE || 7));
   const files = [], labels = [];
-  for (let i = 0, wall = 0; i < 64; i++) {
+  for (let i = 0, wall = 0; i < Number(process.env.N || 64); i++) {
     const L = await page.evaluate(() => {
       const d = window.view._debug; for (let k = 0; k < 15; k++) d.step(1 / 30, k < 14);
       const s = d.director?.shot, root = window.view.hudRoot, ph = root.querySelector('.mr-photo');
@@ -77,16 +78,21 @@ if (has('finish')) {
 }
 if (has('banners')) {
   // how long each event banner stays up (broadcast clock, frame-stepped; the HUD updates every 0.2 s)
-  const r = await page.evaluate(() => {
-    const d = window.view._debug, el = window.view.hudRoot.querySelector('.mr-banner'); d.seek(0.2, 0.5); d.unpause();
-    const out = []; let on = null;
-    while (d.b < d.sim.firstFinishB - 0.5) {
-      for (let k = 0; k < 6; k++) d.step(1 / 30, true); d.render();
-      const txt = el.classList.contains('on') ? el.textContent : null;
-      if (txt !== (on?.txt ?? null)) { if (on) out.push({ txt: on.txt, at: +on.at.toFixed(1), secs: +(d.b - on.at).toFixed(1) }); on = txt ? { txt, at: d.b } : null; }
-    }
-    return out;
-  });
+  await page.evaluate(() => { const d = window.view._debug; d.seek(0.2, 0.5); d.unpause(); window.__B = { out: [], on: null }; });
+  for (;;) {
+    const done = await page.evaluate(() => {
+      const d = window.view._debug, el = window.view.hudRoot.querySelector('.mr-banner'), B = window.__B;
+      for (let n = 0; n < 30; n++) {
+        if (d.b >= d.sim.firstFinishB - 0.5) return true;
+        for (let k = 0; k < 6; k++) d.step(1 / 30, true); d.render();
+        const txt = el.classList.contains('on') ? el.textContent : null;
+        if (txt !== (B.on?.txt ?? null)) { if (B.on) B.out.push({ txt: B.on.txt, at: +B.on.at.toFixed(1), secs: +(d.b - B.on.at).toFixed(1) }); B.on = txt ? { txt, at: d.b } : null; }
+      }
+      return false;
+    });
+    if (done) break;
+  }
+  const r = await page.evaluate(() => window.__B.out);
   for (const x of r) console.log(x.at.toFixed(1).padStart(6), (x.secs.toFixed(1) + 's').padStart(5), x.txt);
   console.log(JSON.stringify({ banners: r.length, maxSecs: Math.max(...r.map((x) => x.secs)) }));
 }
