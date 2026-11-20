@@ -2,7 +2,7 @@
 // self-contained page: telegraph -> gag -> the real pass at 1x -> consequence; training-life gags from his own week.
 // Everything is inlined (three.js bundle, course + park data, the race plan, fonts as base64): no server, no fetch,
 // no external requests; runs from file:// and in a sandboxed iframe.
-//   node tools/build_hijinks_preview.mjs [--seed 109] [--mark r1] [--jo r4] [--max 9] [--out release/hijinks-preview-v2.html]
+//   node tools/build_hijinks_preview.mjs [--seed 141] [--mark r5] [--jo r4] [--max 9] [--out release/hijinks-preview-v2.html]
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -10,12 +10,12 @@ import * as esbuild from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
-const K = Number(arg('seed', 109)); // the showcase round: The Café Queue Cup
+const K = Number(arg('seed', 141)); // the showcase round: The Manor House Gold Cup
 const OUT = path.resolve(ROOT, arg('out', 'release/hijinks-preview-v2.html'));
 
 const { historyDb } = await import(path.join(ROOT, 'server/db.mjs'));
 const { createRound, gameReady, personaliseCommentary } = await import(path.join(ROOT, 'server/game/round.mjs'));
-const { planHijinks, applyHijinks } = await import(path.join(ROOT, 'server/game/hijinks.mjs'));
+const { planHijinks, applyHijinks, planMicroGags } = await import(path.join(ROOT, 'server/game/hijinks.mjs'));
 await gameReady?.();
 
 // ---- the round: a real one from the game's own round builder (no funfair detour) ----
@@ -25,7 +25,7 @@ let plan = round.racePlan;
 if (plan.runners.some((r) => r.diversions?.length)) throw new Error('this round has a funfair detour: pick another --seed');
 const pub = round.public;
 const ord = [...plan.runners].sort((a, b) => a.officialS - b.officialS).map((r) => r.id);
-const markId = arg('mark', 'r1'), joId = arg('jo', 'r4'); // Mark backs Stallion, Jo backs Gilet
+const markId = arg('mark', 'r5'), joId = arg('jo', 'r4'); // Mark backs Hugger, Jo backs Magnet (the deciding lead change)
 if (markId === joId) throw new Error('Mark and Jo must back different runners');
 const nameOf = (id) => { const r = pub.runners.find((x) => x.id === id); return r?.shortName || r?.nickname || id; };
 
@@ -37,8 +37,11 @@ const facts = Object.fromEntries(Object.entries(round.hidden.perfs).map(([id, x]
 const hijinks = planHijinks({ racePlan: plan, runners: pub.runners, facts, backedBy: { [markId]: ['Mark'], [joId]: ['Jo'] }, rng: K, max: Number(arg('max', 9)) });
 // the shared clock eases to 1x round each beat; every event / commentary time follows its race moment
 plan = applyHijinks(plan, hijinks);
+plan.microGags = planMicroGags({ racePlan: plan, backedBy: { [markId]: ['Mark'], [joId]: ['Jo'] }, rng: K });
+// one name per runner on screen and in the commentary (the HUD says the short name)
+for (const r of pub.runners) if (r.nickname && r.shortName && r.nickname !== r.shortName) for (const c of plan.commentary || []) c.text = c.text.split(r.nickname).join(r.shortName);
 // a hijink line has the floor: drop the regular commentary lines that would land on top of one
-plan.commentary = (plan.commentary || []).filter((c) => !plan.hijinks.some((h) => c.broadcastS > h.atBroadcastS - 2.5 && c.broadcastS < h.untilBroadcastS + 1.5));
+plan.commentary = (plan.commentary || []).filter((c) => !plan.hijinks.some((h) => c.broadcastS > (h.telegraphAtBroadcastS ?? h.atBroadcastS) - 1.5 && c.broadcastS < h.untilBroadcastS + 1.5));
 
 const data = {
   course: JSON.parse(fs.readFileSync(path.join(ROOT, 'data/course/course.json'), 'utf8')),
@@ -81,6 +84,12 @@ html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;font-family:va
 #title .who div{display:flex;align-items:center;gap:calc(var(--u)*.8);background:rgba(255,255,255,.08);border:calc(var(--u)*.18) solid rgba(255,255,255,.25);border-radius:calc(var(--u)*1.4);padding:calc(var(--u)*.6) calc(var(--u)*1.4)}
 #title .who .av{width:calc(var(--u)*3.6);height:calc(var(--u)*3.6);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:calc(var(--u)*2.2);border:calc(var(--u)*.22) solid #14183c}
 #title .who b{color:#ffd23f}
+#title .who small{display:block;font-size:.6em;opacity:.8;font-weight:700}
+#truth{position:absolute;left:50%;top:calc(var(--u)*6);transform:translateX(-50%) scale(.9);opacity:0;transition:opacity .3s,transform .3s;z-index:24;width:calc(var(--u)*62);background:#fffaf0;color:#14183c;border:calc(var(--u)*.3) solid #14183c;border-radius:calc(var(--u)*1.4);padding:calc(var(--u)*1.2) calc(var(--u)*1.8);box-shadow:0 calc(var(--u)*.6) 0 #14183c;pointer-events:none}
+#truth.on{opacity:1;transform:translateX(-50%) scale(1)}
+#truth .h{font-family:var(--font-display,'Lilita One',sans-serif);font-size:calc(var(--u)*1.4);color:#ff3d8b;letter-spacing:.04em}
+#truth .c{display:inline-block;margin:calc(var(--u)*.5) 0;font-family:var(--font-display,'Lilita One',sans-serif);font-size:calc(var(--u)*2.4);background:#ffd23f;border:calc(var(--u)*.22) solid #14183c;border-radius:calc(var(--u)*.7);padding:0 calc(var(--u)*.9);transform:skewX(-8deg)}
+#truth .t{font-size:calc(var(--u)*1.7);font-weight:800;line-height:1.25}
 #title .go{margin-top:calc(var(--u)*1.2);font-size:calc(var(--u)*1.3);opacity:.7}
 #ctl{position:absolute;right:calc(var(--u)*1);bottom:calc(var(--u)*1);display:flex;gap:calc(var(--u)*.5);z-index:30;opacity:.35;transition:opacity .2s}
 #ctl:hover{opacity:1}
@@ -94,10 +103,11 @@ body.shot #ctl,body.shot #end{display:none!important}
 <div id="stage"></div>
 <div id="subs"></div>
 <div id="title"><div class="logo">MARKRUN</div><div class="tag">Hijinks preview v2</div>
-  <div class="who"><div><span class="av" style="background:#ffb000">🦊</span><span>Mark backs <b id="tMark"></b></span></div><div><span class="av" style="background:#ff6fb5">🐼</span><span>Jo backs <b id="tJo"></b></span></div></div>
+  <div class="who"><div><span class="av" style="background:#ffb000">🦊</span><span>Mark backs <b id="tMark"></b><small>20 ${esc(pub.currency?.symbol || 'pp')} to win</small></span></div><div><span class="av" style="background:#ff6fb5">🐼</span><span>Jo backs <b id="tJo"></b><small>20 ${esc(pub.currency?.symbol || 'pp')} to win</small></span></div></div>
   <div class="go">${esc(pub.title || '')}</div></div>
 <div id="ctl"><button id="bPlay">Pause</button><button id="bRestart">Restart</button><button id="bNext">Next hijink</button><button id="bSpeed">1x</button></div>
 <div id="end"><button id="bAgain">Watch again</button></div>
+<div id="truth"><div class="h"></div><div class="c"></div><div class="t"></div></div>
 <script type="application/json" id="mr-data">${dataJson}</script>
 <script type="module">${safe(js)}</script>
 </body></html>
@@ -109,4 +119,5 @@ const mb = (fs.statSync(OUT).size / 1048576).toFixed(2);
 console.log(`${path.relative(ROOT, OUT)}: ${mb} MB  round "${pub.title}" (seed ${K}); Mark backs ${nameOf(markId)} (${markId}), Jo backs ${nameOf(joId)} (${joId})`);
 console.log(`  broadcast ${plan.timeMap.durationS} s (+8.5 s pre-roll), mid-race speed-up x${plan.timeMap.retimed.speedup}`);
 for (const h of plan.hijinks) console.log(`  ${h.id} ${h.kind.padEnd(14)} tel ${h.telegraphAtBroadcastS.toFixed(1)} gag ${h.atBroadcastS.toFixed(1)} beat ${h.beatBroadcastS.toFixed(1)} end ${h.untilBroadcastS.toFixed(1)}  ${nameOf(h.who)}${h.other ? ` / ${nameOf(h.other)}` : ''}  ${h.consequence ? (h.consequence.type === 'lose' ? '-1' : '+1') : '  '}  [${h.warn}]  ${h.truth}${h.after ? `  >> ${h.after.text}` : ''}`);
+console.log('  micro:', plan.microGags.map((m) => `${m.kind}@${m.atBroadcastS.toFixed(0)} ${nameOf(m.who)}`).join(', '));
 console.log('  finish:', ord.map((id) => `${nameOf(id)} ${plan.runners.find((r) => r.id === id).officialS}s`).join(', '));

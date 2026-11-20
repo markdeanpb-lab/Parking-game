@@ -127,7 +127,7 @@ export function createRaceView(container, opts = {}) {
     getPlan: () => plan, getSim: () => sim, getFunfair: () => funfair, updateSun: (v, sz) => updateSun(v, sz),
     emit: (e) => { try { raceCb?.onEvent?.(e); } catch (err) { console.error(err); } } });
   // live hijinks (hijinks/index.js): plan.hijinks played ON the running race (props + animation only; nothing pauses)
-  const hij = createHijinks({ scene, camera, C, world, runners, pubById, container, getPlan: () => plan, getSim: () => sim,
+  const hij = createHijinks({ scene, camera, C, world, runners, pubById, container, getPlan: () => plan, getSim: () => sim, getPlayers: () => players, getShot: () => director?.shot,
     emit: (e) => { try { raceCb?.onEvent?.(e); } catch (err) { console.error(err); } } });
 
   // ---------- plan-dependent parts (rebuilt by loadPlan) ----------
@@ -256,8 +256,9 @@ export function createRaceView(container, opts = {}) {
     const tags = [];
     const track = mode === 'race' && TRACK_SHOTS.has(director?.shot?.type);
     // runners a live hijink is happening to: their tag always shows (it must be clear who it's happening to)
-    const hjIds = new Set(); for (const hj of plan?.hijinks || []) if (b >= hj.atBroadcastS - 0.6 && b < (hj.untilBroadcastS ?? hj.endBroadcastS ?? hj.atBroadcastS + 4) + 1.5) { hjIds.add(hj.who); if (hj.other) hjIds.add(hj.other); }
+    const hjIds = new Set(); for (const hj of plan?.hijinks || []) if (b >= Math.min(hj.telegraphAtBroadcastS ?? 1e9, hj.atBroadcastS - 0.6) && b < (hj.untilBroadcastS ?? hj.endBroadcastS ?? hj.atBroadcastS + 4) + 1.5) { hjIds.add(hj.who); if (hj.other) hjIds.add(hj.other); }
     const cutNow = director?.shot !== lastTagShot; lastTagShot = director?.shot;
+    const wideShot = director?.shot?.type === 'wide';
     for (const id of ids) {
       const r = runners[id];
       proj.set(r.root.position.x, r.root.position.y + r.height + (r.popping ? 1.4 : 0.5), r.root.position.z); // above any emote bubble
@@ -270,10 +271,10 @@ export function createRaceView(container, opts = {}) {
       const fy = new THREE.Vector3(r.root.position.x, r.root.position.y + 0.3, r.root.position.z).project(camera).y;
       const onScreen = proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && fy < 0.95 && proj.y > -0.75;
       // size hysteresis: appears above ~9% of the frame height, stays down to ~7%
-      const bigEnough = pxTall > h * (S0?.on ? 0.07 : 0.09) || hj;
+      const bigEnough = pxTall > h * (S0?.on ? 0.07 : 0.09) || hj || wideShot; // (the establishing wide: position badges)
       const sx = (proj.x * 0.5 + 0.5) * w, sy = (-proj.y * 0.5 + 0.5) * h;
       const close = pxTall > h * 0.55; // close-up: a small tag above the head instead of none
-      tags.push({ id, x: sx, y: sy - 4, want: showTags && track && onScreen && bigEnough, hard: !showTags || !track || !onScreen, hj, pos: st ? st.order.indexOf(id) + 1 : 0,
+      tags.push({ id, x: sx, y: sy - 4, want: showTags && track && onScreen && bigEnough, hard: !showTags || !track || !onScreen, hj, pos: st ? st.order.indexOf(id) + 1 : 0, px: pxTall,
         scale: close ? 0.72 : THREE.MathUtils.clamp(0.75 + pxTall / h * 0.6, 0.8, 1.05), dist, mini: false,
         body: { l: sx - pxTall * 0.24, r: sx + pxTall * 0.24, t: sy, b: sy + pxTall * 1.05 } });
     }
@@ -285,20 +286,37 @@ export function createRaceView(container, opts = {}) {
     tags.sort((a, b) => (b.hj - a.hj) || (backedIds.includes(b.id) - backedIds.includes(a.id)) || (orderNow.indexOf(a.id) - orderNow.indexOf(b.id)));
     const placed = [];
     const rects = hudRects();
+    const hit = (box, p, m = 4) => box.l < p.r + m && box.r > p.l - m && box.t < p.b + m && box.b > p.t - m;
+    // what other tags must never cover: the whole body of a runner a gag is happening to, and the head of any nearer,
+    // bigger runner (a tag on a face reads as clutter)
+    const keepClear = (t) => tags.filter((o) => o !== t && o.want && (o.hj || (o.dist < t.dist - 1 && o.px > h * 0.18))).map((o) => (o.hj ? o.body : { l: o.body.l, r: o.body.r, t: o.body.t, b: o.body.t + (o.body.b - o.body.t) * 0.38 }));
     for (const t of tags) {
       if (!t.want) continue;
       const [, th0] = hud.tagSize(t.id);
       t.y = Math.max(t.y, th0 * t.scale + 12); // keep a close-up's tag inside the frame
       let ok = false;
       const prevMini = tagState[t.id]?.mini;
-      for (const mini of t.hj ? [false] : prevMini ? [true, false] : [false, true]) {
+      const clear = t.hj ? [] : keepClear(t);
+      for (const mini of t.hj ? [false] : wideShot ? [true] : prevMini ? [true, false] : [false, true]) {
         const [tw0] = hud.tagSize(t.id); const tw = (mini ? th0 * 1.5 : tw0) * t.scale, th = th0 * t.scale, pad = 8;
         const box = { l: t.x - tw / 2, r: t.x + tw / 2, t: t.y - th - 6, b: t.y + 4 };
-        if (!t.hj && placed.some((p) => box.l < p.r + 4 && box.r > p.l - 4 && box.t < p.b + 2 && box.b > p.t - 2)) continue;
-        if (!t.hj && rects.some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) continue;
+        if (t.hj) {
+          // a gag's tag always shows: slide it clear of the tower / map / bars (sideways first, else below)
+          for (const rc of rects) {
+            if (!hit(box, { l: rc.left, r: rc.right, t: rc.top, b: rc.bottom }, pad)) continue;
+            const dxR = rc.right + pad - box.l, dxL = box.r - (rc.left - pad);
+            const dx = (dxR <= dxL || rc.left - pad - tw < 0) && rc.right + pad + tw < w ? dxR : -dxL;
+            if (Math.abs(dx) < tw * 1.3 && box.l + dx >= 0 && box.r + dx <= w) { box.l += dx; box.r += dx; t.x += dx; }
+            else { const dy = rc.bottom + pad - box.t; box.t += dy; box.b += dy; t.y += dy; }
+          }
+          placed.push(box); t.mini = false; ok = true; break;
+        }
+        if (placed.some((p) => hit(box, p))) continue;
+        if (clear.some((p) => hit(box, p, 2))) continue;
+        if (rects.some((rc) => hit(box, { l: rc.left, r: rc.right, t: rc.top, b: rc.bottom }, pad))) continue;
         placed.push(box); t.mini = mini; ok = true; break;
       }
-      if (!ok) t.want = false;
+      if (!ok) { t.want = false; t.hjBlock = tags.some((o) => o.hj && o.want && o !== t && hit({ l: t.x - th0, r: t.x + th0, t: t.y - th0 - 6, b: t.y + 4 }, o.body, 2)); }
     }
     // stability: show after 0.2 s of wanting (at once for a hijink / right after a cut), stay up >= 1.2 s, hide after
     // 0.45 s of not wanting (at once when off screen); badge <-> full name only after 0.5 s; CSS fades both ways
@@ -306,7 +324,7 @@ export function createRaceView(container, opts = {}) {
       const S1 = tagState[t.id] ||= { on: false, chg: -1e9, wantT: null, unwantT: null, mini: false, miniT: null };
       if (t.want) { S1.unwantT = null; S1.wantT ??= wall; } else { S1.wantT = null; S1.unwantT ??= wall; }
       if (!S1.on && t.want && (t.hj || cutNow || wall - S1.wantT >= 0.2)) { S1.on = true; S1.chg = wall; S1.mini = t.mini; }
-      else if (S1.on && !t.want && !t.hj && (t.hard || (wall - S1.unwantT >= 0.45 && wall - S1.chg >= 1.2))) { S1.on = false; S1.chg = wall; }
+      else if (S1.on && !t.want && !t.hj && (t.hard || t.hjBlock || (wall - S1.unwantT >= 0.45 && wall - S1.chg >= 1.2))) { S1.on = false; S1.chg = wall; }
       if (S1.on && t.mini !== S1.mini) { S1.miniT ??= wall; if (wall - S1.miniT >= 0.5 || t.hj) { S1.mini = t.mini; S1.miniT = null; } } else S1.miniT = null;
       t.visible = S1.on && !(t.hard && !t.hj && !t.want); t.mini = S1.mini && !t.hj;
       if (t.hard && t.hj && !t.want) t.visible = false; // a hijink runner off the screen: nothing to point at
@@ -321,8 +339,9 @@ export function createRaceView(container, opts = {}) {
     const finalKm = st.leader.m >= 4000;
     const order = st.order.map((id, i) => {
       const r = st.byId[id];
-      const show = i < 3 || backedIds.includes(id);
+      const show = i < 3 || backedIds.includes(id) || hjIds.has(id); // a runner a gag is happening to is on the tower
       let gapText = finalKm || r.finished ? (r.gapText === 'LEADER' ? '' : r.gapText) : '';
+      if (r.finished && sim.photoFinish && id === sim.finishOrder[1] && /^\+0(\.0)?s$/.test(gapText || '')) gapText = 'PHOTO';
       if (!gapText && backedIds.includes(id) && i > 0 && !r.finished) {
         const ahead = st.byId[st.order[i - 1]];
         const g = st.raceS - timeAtDistance(sim.byId[st.order[i - 1]].progress, r.m);
@@ -337,7 +356,7 @@ export function createRaceView(container, opts = {}) {
   }
 
   // picture-in-picture course map: through the race, not in the finish set-piece / replays / freeze-frames
-  function mapOn() { const t = director?.shot?.type; return mode === 'race' && b > 0.5 && !replay && freeze <= 0 && marketT == null && !['finishcam', 'placecam', 'celebrate'].includes(t); }
+  function mapOn() { const t = director?.shot?.type; return mode === 'race' && b > 0.5 && !replay && freeze <= 0 && marketT == null && !['finishcam', 'linecam', 'placecam', 'celebrate'].includes(t) && !(sim && b > sim.firstFinishB); }
 
   // ---------- closing-gap bar: the one backed duel that matters most right now ----------
   let closeState = null;
@@ -493,7 +512,7 @@ export function createRaceView(container, opts = {}) {
   function bannerFor(e) {
     switch (e.type) {
       case 'lead_change': return ['LEAD CHANGE', '', '#ff3d8b'];
-      case 'overtake': return backedIds.includes(e.by) || backedIds.includes(e.on) ? ['OVERTAKE', '', '#2e6fe0'] : null;
+      case 'overtake': return backedIds.includes(e.by) || backedIds.includes(e.on) ? ['OVERTAKE', pubById[e.by] && pubById[e.on] ? `${shortOf(pubById[e.by])} passes ${shortOf(pubById[e.on])}` : '', '#2e6fe0'] : null;
       case 'hill': return ['THE HILL', '', '#3aa845'];
       case 'lap': return ['LAP 2', '', '#2e6fe0'];
       case 'final_stretch': return ['FINAL STRETCH', '', '#ff8a1f'];
@@ -509,7 +528,7 @@ export function createRaceView(container, opts = {}) {
       if (!photoVerdict && freeze < freeze0 * 0.4) {
         photoVerdict = true; const [a1, a2] = sim.finishOrder;
         const mg = sim.byId[a2].officialS - sim.byId[a1].officialS;
-        hud.photoResult(shortOf(pubById[a1]), mg < 0.5 ? 'a whisker' : `${mg.toFixed(mg < 1 ? 1 : 0)} s`);
+        hud.photoResult(shortOf(pubById[a1]), photoMargin(mg));
       }
       if (freeze <= 0) { hud.photo(false); world.anchors.finishArch.visible = true; setBunting(true); startReplay(); }
       return;
@@ -543,6 +562,14 @@ export function createRaceView(container, opts = {}) {
     // instant replay once the slow-mo has eased out (photo finishes go via the freeze-frame first)
     if (!replayDone && !replay && b >= sim.firstFinishB + 1.1) startReplay();
     if (!raceDone && b >= sim.lastFinishB + 3.5) { raceDone = true; raceCb?.onDone?.(); }
+  }
+  // the verdict's margin: the clock's gap, or (a dead heat on the clock) how far back the runner-up was on the line
+  function photoMargin(mg) {
+    if (mg >= 0.95) return `${mg.toFixed(mg < 1.5 ? 1 : 0)} s`;
+    const st0 = sim.stateAt(sim.firstFinishB), r2 = st0.byId[sim.finishOrder[1]];
+    const m = Math.max(0, 5000 - (r2.finished ? 5000 : r2.m));
+    const md = m < 0.08 ? 'a nose' : m < 1 ? `${Math.round(m * 100)} cm` : `${m.toFixed(1)} m`;
+    return mg < 0.5 ? `${md} (same time!)` : md;
   }
   // 0.35x for ~1 s either side of the first finish, eased in/out over 0.6 s (same clock for every runner)
   function slowFactor(bb) {
@@ -682,12 +709,16 @@ export function createRaceView(container, opts = {}) {
       // cut away trees between a tracking camera and its subject
       const occ = !freeze && marketT == null && TRACK_SHOTS.has(director.shot?.type);
       // the side-on place camera looks across the line: the arch's near leg would fill its foreground
-      if (!freeze) world.anchors.finishArch.visible = !(director.shot?.type === 'placecam' && !replay);
+      // (and the close-finish line camera, which stands on the line's extension like the photo camera)
+      // (and the close-finish line camera and the finish gantry: after the line the arch's legs would fill their frames;
+      // the bunting hangs across the side-on lines of sight)
+      const onLine = ['linecam', 'placecam'].includes(director.shot?.type) && !replay;
+      if (!freeze) { world.anchors.finishArch.visible = !((onLine || director.shot?.cam?.name === 'gantry') && !replay); setBunting(!onLine); }
       world.setOcclusionCorridor(occ ? camera.position : null, occ ? director.cam.look : null);
       // keep spectators out of the sightline: the camera->subject corridor of tracking shots, and the near side of
       // the line for the side-on place / photo cameras
       const stype = director.shot?.type;
-      const kind = freeze > 0 ? `photo${photoSide()}` : replay ? '' : stype === 'placecam' ? `place${director.shot.fside || 0}` : TRACK_SHOTS.has(stype) ? 'corridor' : '';
+      const kind = freeze > 0 || stype === 'linecam' ? `photo${photoSide()}` : replay ? '' : stype === 'placecam' ? `place${director.shot.fside || 0}` : TRACK_SHOTS.has(stype) ? 'corridor' : '';
       if (kind !== maskKind) {
         maskKind = kind;
         const f = world.anchors.finish;

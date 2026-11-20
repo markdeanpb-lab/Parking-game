@@ -54,13 +54,16 @@ test('planHijinks v2: real consequences, real training facts, spaced, the final 
     if (K.fact) assert.ok(trainingFacts(facts[h.who])[K.fact], `${h.kind} without his own ${K.fact} fact`);
     if (h.consequence) {
       // the place really changes hands round the beat
-      const pre = rankAt(plan.runners, h.raceS.beat - 6), post = rankAt(plan.runners, h.raceS.beat + 8);
+      const pre = rankAt(plan.runners, h.raceS.beat - 6), post = rankAt(plan.runners, h.raceS.beat + 20);
       const other = h.consequence.other;
       if (h.consequence.type === 'lose') { assert.ok(pre.indexOf(h.who) < pre.indexOf(other) && post.indexOf(h.who) > post.indexOf(other), `${h.id} lose`); }
       else { assert.ok(pre.indexOf(h.who) > pre.indexOf(other) && post.indexOf(h.who) < post.indexOf(other), `${h.id} gain`); }
-      if (h.raceS.beat > tFinal) { const top = rankAt(plan.runners, h.raceS.beat - 2).slice(0, 2); assert.ok(!top.includes(h.who) && !top.includes(other), 'final lead battle stays clean'); }
+      // the final km: only THE moment (the deciding lead change, a backed runner in it)
+      if (h.raceS.beat > tFinal) { assert.ok(h.finale && h.kind === 'lasso_reel', 'only the finale gag in the final km'); assert.ok(backedBy[h.who] || backedBy[other]); assert.equal(post[0], h.who); }
+      assert.equal(h.consequence.from, pre.indexOf(h.who) + 1); assert.equal(h.consequence.to, post.indexOf(h.who) + 1);
     }
     if (backedBy[h.who] && h.consequence) assert.ok(h.after?.text.includes(backedBy[h.who][0]), 'a money line for the backer');
+    if (h.consequence) assert.ok(h.retort?.text && h.retort.speaker !== h.line.speaker, 'a retort from the other commentator');
   }
   // after easing the clock: telegraph -> gag -> beat -> end, in order, never overlapping, beats at 1x
   const np = applyHijinks(plan, hj);

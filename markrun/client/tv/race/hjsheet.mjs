@@ -1,5 +1,5 @@
-// Harness for the standalone hijinks preview (release/hijinks-preview.html; build: node tools/build_hijinks_preview.mjs).
-//   node client/tv/race/hjsheet.mjs <name> [--every=2.5] [--shots] [--tags] [--page=release/hijinks-preview.html]
+// Harness for the standalone hijinks preview (release/hijinks-preview-v2.html; build: node tools/build_hijinks_preview.mjs).
+//   node client/tv/race/hjsheet.mjs <name> [--every=2.5] [--shots] [--tags] [--page=release/hijinks-preview-v2.html]
 // --every  contact sheet, one frame every N broadcast seconds (tests/out/3d4/<name>-sheet.jpg)
 // --shots  the shot list + the share of race time per camera family
 // --tags   plays the race frame by frame (small viewport) and counts name-tag show/hide toggles per runner
@@ -14,7 +14,7 @@ const name = args.find((a) => !a.startsWith('--')) || 'hj';
 const val = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split('=')[1];
 const has = (k) => args.some((a) => a === `--${k}` || a.startsWith(`--${k}=`));
 const out = root + (process.env.OUT || 'tests/out/3d4/'); fs.mkdirSync(out, { recursive: true });
-const page0 = root + (val('page') || 'release/hijinks-preview.html');
+const page0 = root + (val('page') || 'release/hijinks-preview-v2.html');
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--allow-file-access-from-files'] });
 const small = has('tags') && !has('every');
 const page = await browser.newPage({ viewport: small ? { width: 640, height: 360 } : { width: Number(process.env.W || 1280), height: Number(process.env.H || 720) } });
@@ -56,6 +56,54 @@ if (has('tags')) {
   }
   const r = await page.evaluate(() => { const T = window.__T; return { frames: T.n, toggles: Object.fromEntries(T.ids.map((id, i) => [id, T.tog[i]])), visibleShare: Object.fromEntries(T.ids.map((id, i) => [id, +(T.visT[i] / T.n).toFixed(2)])), hijinkTagShown: Object.values(T.hjVis).map((x) => ({ ...x, share: +(x.shown / x.frames).toFixed(2) })) }; });
   console.log(JSON.stringify(r));
+}
+if (has('finish')) {
+  // the finish set-piece as it plays (frame by frame on the wall clock: slow-mo, photo freeze, replay, place camera)
+  await page.evaluate(() => { const d = window.view._debug; d.seek(d.sim.firstFinishB - Number(window.__pre || 7), 1.5); d.unpause(); });
+  const files = [], labels = [];
+  for (let i = 0, wall = 0; i < 64; i++) {
+    const L = await page.evaluate(() => {
+      const d = window.view._debug; for (let k = 0; k < 15; k++) d.step(1 / 30, k < 14);
+      const s = d.director?.shot, root = window.view.hudRoot, ph = root.querySelector('.mr-photo');
+      return { b: d.b, mode: d.mode, shot: s ? s.type + (s.cam ? ':' + s.cam.name : '') : '', photo: ph?.classList.contains('on') ? root.querySelector('.mr-pf').textContent + ' ' + root.querySelector('.mr-pcap').textContent : '', replay: root.classList.contains('mr-inreplay'), end: d.b > d.sim.lastFinishB + 3 };
+    });
+    wall += 0.5;
+    const f = `${name}-fin${String(i).padStart(2, '0')}.jpg`;
+    await page.waitForTimeout(120); await page.screenshot({ path: out + f, type: "jpeg", quality: 80, timeout: 120000 });
+    files.push(f); labels.push(`w${wall.toFixed(1)} b${L.b.toFixed(1)} ${L.replay ? 'REPLAY' : L.photo ? 'PHOTO' : L.shot}`); console.log(f, labels.at(-1), L.photo);
+    if (L.end) break;
+  }
+  execFileSync('montage', [...files.map((f, i) => ['-label', labels[i], out + f]).flat(), '-tile', '6x', '-geometry', '384x216+2+2', '-pointsize', '13', '-fill', 'white', '-background', '#111', '-font', 'DejaVu-Sans-Mono', out + `${name}-finish.jpg`]);
+}
+if (has('banners')) {
+  // how long each event banner stays up (broadcast clock, frame-stepped; the HUD updates every 0.2 s)
+  const r = await page.evaluate(() => {
+    const d = window.view._debug, el = window.view.hudRoot.querySelector('.mr-banner'); d.seek(0.2, 0.5); d.unpause();
+    const out = []; let on = null;
+    while (d.b < d.sim.firstFinishB - 0.5) {
+      for (let k = 0; k < 6; k++) d.step(1 / 30, true); d.render();
+      const txt = el.classList.contains('on') ? el.textContent : null;
+      if (txt !== (on?.txt ?? null)) { if (on) out.push({ txt: on.txt, at: +on.at.toFixed(1), secs: +(d.b - on.at).toFixed(1) }); on = txt ? { txt, at: d.b } : null; }
+    }
+    return out;
+  });
+  for (const x of r) console.log(x.at.toFixed(1).padStart(6), (x.secs.toFixed(1) + 's').padStart(5), x.txt);
+  console.log(JSON.stringify({ banners: r.length, maxSecs: Math.max(...r.map((x) => x.secs)) }));
+}
+if (val('at')) {
+  // spot frames: --at=12.5,40,fin-2,fin+3,photo (fin = the first finish; photo = the photo-finish freeze)
+  const fin = await page.evaluate(() => window.view._debug.sim.firstFinishB);
+  const files = [], labels = [];
+  for (const [i, tok] of val('at').split(',').entries()) {
+    const t = tok === 'photo' ? null : tok.startsWith('fin') ? fin + Number(tok.slice(3) || 0) : Number(tok);
+    await page.evaluate((t) => { const d = window.view._debug; if (t == null) d.photoAt(); else d.seek(t, 2.5); }, t);
+    await page.waitForTimeout(350);
+    const f = `${name}-at${String(i).padStart(2, '0')}.jpg`;
+    await page.screenshot({ path: out + f, type: 'jpeg', quality: 85, timeout: 120000 });
+    const L = await page.evaluate(() => { const d = window.view._debug, s = d.director?.shot; return { b: d.b, shot: s ? s.type + (s.cam ? ':' + s.cam.name : '') : d.mode, reason: s?.reason || '', frac: d.runnerFrac() }; });
+    files.push(f); labels.push(`${tok} b${L.b.toFixed(1)} ${L.shot} h=${Math.round(L.frac * 100)}%`); console.log(f, labels.at(-1), L.reason.slice(0, 120));
+  }
+  execFileSync('montage', [...files.map((f, i) => ['-label', labels[i], out + f]).flat(), '-tile', '4x', '-geometry', '480x270+2+2', '-pointsize', '13', '-fill', 'white', '-background', '#111', '-font', 'DejaVu-Sans-Mono', out + `${name}-at.jpg`]);
 }
 const every = Number(val('every')) || 0;
 if (every) {

@@ -17,6 +17,9 @@ const CSS = `.mrh-chip{position:absolute;left:50%;bottom:calc(${u0}*4.6);transfo
   font-family:var(--font-display,"Lilita One","Arial Black",sans-serif);font-size:calc(${u0}*2.3);box-shadow:0 calc(${u0}*.45) 0 #14183c;pointer-events:none;z-index:4;white-space:nowrap}
 .mrh-chip.on{opacity:1;transform:translateX(-50%) skewX(-8deg) scale(1)}
 .mrh-chip.lose{background:#ff3d5a;color:#fff}.mrh-chip.gain{background:#2fd16b;color:#fff}
+.mrh-chip b{display:inline-flex;align-items:center;justify-content:center;width:1.25em;height:1.25em;border-radius:50%;margin-right:.35em;border:calc(${u0}*.2) solid #14183c;vertical-align:-.2em;font-size:.85em;animation:mrhflash .4s steps(2) 5}
+.mrh-chip small{font-size:.62em;opacity:.95;margin-left:.45em}
+@keyframes mrhflash{50%{transform:scale(1.35)}}
 .mrh-warn{position:absolute;left:50%;top:calc(${u0}*1.2);transform:translateX(-50%) translateY(-140%);transition:transform .3s cubic-bezier(.3,1.5,.5,1);display:flex;align-items:center;gap:calc(${u0}*.7);
   background:#14183c;color:#ffd23f;border:calc(${u0}*.25) solid #ffd23f;border-radius:calc(${u0}*1);padding:calc(${u0}*.3) calc(${u0}*1.2) calc(${u0}*.35) calc(${u0}*.6);
   font-family:var(--font-display,"Lilita One","Arial Black",sans-serif);font-size:calc(${u0}*2.1);pointer-events:none;z-index:5;white-space:nowrap;box-shadow:0 calc(${u0}*.4) 0 rgba(0,0,0,.35)}
@@ -36,13 +39,33 @@ export function createHijinks(ctx) {
   const warn = document.createElement('div'); warn.className = 'mrh-warn'; ctx.container.appendChild(warn);
   let chipKey = '', warnKey = '';
 
-  function sync() { const p = ctx.getPlan(); if (p === planRef) return; clearAll(); planRef = p; list = (p?.hijinks || []).filter((h) => KINDS[h.kind]); }
-  function clearAll() { for (const inst of live.values()) inst.dispose(); live.clear(); }
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const avatarOf = (name) => { const p = (ctx.getPlayers?.() || []).find((x) => x.name === name); return p?.avatar ? { emoji: p.avatar.emoji || '★', colour: p.avatar.colour || '#ffd23f' } : null; };
+  let micro = [];
+  const mlive = new Map(), mskip = new Set();
+  function sync() { const p = ctx.getPlan(); if (p === planRef) return; clearAll(); planRef = p; list = (p?.hijinks || []).filter((h) => KINDS[h.kind]); micro = (p?.microGags || []).filter((m) => MICRO[m.kind]); }
+  function clearAll() { for (const inst of live.values()) inst.dispose(); live.clear(); for (const inst of mlive.values()) inst.dispose(); mlive.clear(); mskip.clear(); }
+  const proj = new THREE.Vector3();
+  const onScreen = (id) => { const r = ctx.runners[id]; if (!r) return false; ctx.camera.updateMatrixWorld(); proj.copy(r.root.position).add(V(0, 1.2, 0)); if (proj.distanceTo(ctx.camera.position) > 45) return false; proj.project(ctx.camera); return proj.z < 1 && Math.abs(proj.x) < 0.8 && Math.abs(proj.y) < 0.85; };
+  // 1.5 s micro-gags: only on a runner who is already in the shot (no cut is ever made for one)
+  function microFrame(dt, b) {
+    for (const m of micro) {
+      const on = b >= m.atBroadcastS && b < m.untilBroadcastS + 0.4;
+      let inst = mlive.get(m.id);
+      if (on && !inst && !mskip.has(m.id)) {
+        if (b > m.atBroadcastS + 0.25 || !onScreen(m.who)) { mskip.add(m.id); continue; }
+        try { inst = MICRO[m.kind](K(), m); mlive.set(m.id, inst); } catch (e) { console.error('[hijinks micro]', m.kind, e); mskip.add(m.id); continue; }
+      }
+      if (!on && inst) { inst.dispose(); mlive.delete(m.id); continue; }
+      if (inst) { try { inst.update(b - m.atBroadcastS, dt, b); } catch (e) { console.error('[hijinks micro]', e); } }
+    }
+  }
   const tel = (h) => h.telegraphAtBroadcastS ?? h.atBroadcastS - 1.5;
   const beat = (h) => h.beatBroadcastS ?? h.params?.passB ?? (h.atBroadcastS + h.untilBroadcastS) / 2;
 
   function frame(dt, b) {
     sync();
+    if (micro.length) microFrame(dt, b);
     if (!list.length) return;
     let cap = null, wn = null;
     for (const h of list) {
@@ -52,27 +75,34 @@ export function createHijinks(ctx) {
       if (!on && inst) { inst.dispose(); live.delete(h.id); continue; }
       if (!inst) continue;
       const u = b - h.atBroadcastS, bt = beat(h) - h.atBroadcastS;
+      { const s = ctx.getSim()?.stateAt(Math.max(0, b)).byId[h.who]; if (s) FWD.set(s.tx, 0, s.tz).normalize(); }
       try { inst.update(u, dt, b); } catch (e) { console.error('[hijinks]', h.kind, e); }
       // the consequence badge over the runner: -1 / +1 just after the real pass
       if (inst.badge) { const r = ctx.runners[h.who]; const f = u - bt - 0.6; inst.badge.visible = !!h.consequence && f > 0 && f < 2.6 && !!r; if (inst.badge.visible) { inst.badge.position.copy(r.root.position).add(V(0, r.height + 1.9 + Math.sin(f * 5) * 0.08, 0)); popScale(inst.badge, f, 0, 0.25); } }
       // DOM: uh-oh (telegraph), caption (gag), consequence (after the pass)
       if (b >= tel(h) && b < beat(h) - 0.3) wn = h;
-      if (u >= 0 && u < bt + 0.6) cap = { key: `${h.id}c`, text: h.caption, cls: '' };
+      const nm = String(h.name || ctx.pubById[h.who]?.shortName || ctx.pubById[h.who]?.nickname || '').toUpperCase();
+      if (u >= 0 && u < bt + 0.6) cap = { key: `${h.id}c`, html: `${esc(h.caption)} · ${esc(nm)}`, cls: '' };
       if (h.consequence && u >= bt + 0.6 && u < h.untilBroadcastS - h.atBroadcastS + 1.4) {
-        const nm = String(ctx.pubById[h.who]?.shortName || ctx.pubById[h.who]?.nickname || '').toUpperCase();
-        cap = { key: `${h.id}q`, text: `${nm} ${h.consequence.type === 'lose' ? '−1' : '+1'} PLACE`, cls: h.consequence.type };
+        const q = h.consequence, lose = q.type === 'lose';
+        const av = (h.backers || []).map((n) => avatarOf(n)).filter(Boolean)[0];
+        const places = q.fromText && q.toText && q.fromText !== q.toText ? `${lose ? '▼' : '▲'} ${q.fromText}→${q.toText}` : `${lose ? '−1' : '+1'} PLACE`;
+        const dt = q.deltaS != null && Math.abs(q.deltaS) >= 0.5 && (lose ? q.deltaS > 0 : q.deltaS < 0) ? `<small>${lose ? 'LOST' : 'GAINED'} ${Math.abs(q.deltaS).toFixed(1)} s</small>` : '';
+        cap = { key: `${h.id}q`, html: `${av ? `<b style="background:${av.colour}">${esc(av.emoji)}</b>` : ''}${esc(nm)} ${places}${dt}`, cls: q.type };
       }
       if (u >= 0.3 && !said.has(h.id) && h.line?.text) { said.add(h.id); ctx.emit?.({ kind: 'commentary', text: h.line.text, speaker: h.line.speaker, priority: 3, hijink: h.id, broadcastS: b }); }
       if (u >= bt + 0.9 && !said.has(`${h.id}a`) && h.after?.text) { said.add(`${h.id}a`); ctx.emit?.({ kind: 'commentary', text: h.after.text, speaker: h.after.speaker, priority: 3, hijink: h.id, broadcastS: b }); }
+      const rt = h.after?.text ? bt + 3.0 : bt + 0.9;
+      if (u >= rt && !said.has(`${h.id}r`) && h.retort?.text) { said.add(`${h.id}r`); ctx.emit?.({ kind: 'commentary', text: h.retort.text, speaker: h.retort.speaker, priority: 3, hijink: h.id, broadcastS: b }); }
     }
     const ck = cap ? cap.key : '';
-    if (ck !== chipKey) { chipKey = ck; if (cap) { chip.textContent = cap.text; chip.className = `mrh-chip on ${cap.cls}`; } else chip.className = 'mrh-chip'; }
+    if (ck !== chipKey) { chipKey = ck; if (cap) { chip.innerHTML = cap.html; chip.className = `mrh-chip on ${cap.cls}`; } else chip.className = 'mrh-chip'; }
     const wk = wn ? wn.id : '';
     if (wk !== warnKey) { warnKey = wk; if (wn) { warn.innerHTML = `<i>!</i><span></span>`; warn.lastChild.textContent = wn.warn || wn.caption; warn.className = `mrh-warn on${/'s pick/.test(wn.warn || '') ? ' backed' : ''}`; } else warn.className = 'mrh-warn'; }
   }
   function seek(b) {
     sync(); clearAll(); said.clear();
-    for (const h of list) { if (h.atBroadcastS + 0.3 < b) said.add(h.id); if (beat(h) + 0.9 < b) said.add(`${h.id}a`); }
+    for (const h of list) { if (h.atBroadcastS + 0.3 < b) said.add(h.id); if (beat(h) + 0.9 < b) said.add(`${h.id}a`); if (beat(h) + 3.0 < b) said.add(`${h.id}r`); }
     chip.className = 'mrh-chip'; chipKey = ''; warn.className = 'mrh-warn'; warnKey = '';
   }
   function reset() { seek(-1e9); said.clear(); }
@@ -110,7 +140,8 @@ const base = (k) => { const bag = new Bag(k.scene); return { bag, root: bag.grou
 const ease = (x) => x * x * (3 - 2 * x);
 const env = (u, a, b, r = 0.3) => smooth(a, a + r, u) * (1 - smooth(b - r, b, u)); // 0..1 envelope over [a, b]
 const label = (I, text, opts = {}, scale = 0.9) => { const w = opts.w || 560, h = opts.h || 300; const s = sprite(I.bag, bubbleTexture(I.bag, text, { burst: true, size: 120, ...opts, w, h }), scale, w / h); I.root.add(s); s.visible = false; return s; };
-const showAt = (s, p, t, t0, t1, up = 3.0) => { s.visible = t >= t0 && t < t1; if (s.visible) { s.position.copy(p).add(V(0, up, 0)); popScale(s, t, t0, 0.2); } };
+const FWD = V(0, 0, 1); // the current hijink runner's heading (set per frame): bursts sit ahead of him, off his face
+const showAt = (s, p, t, t0, t1, up = 3.0) => { s.visible = t >= t0 && t < t1; if (s.visible) { s.position.copy(p).add(V(0, up + 0.1, 0)).addScaledVector(FWD, 1.6); popScale(s, t, t0, 0.2); } };
 // a hazard waiting up the course: at its real spot once he's within `max` metres of it, until then held `max` m ahead of
 // him (at the fast clock he closes 50 m a second; this keeps the threat in the shot while he runs at it)
 function ahead(spot, pos, fwd, max = 7) { const d = (spot.x - pos.x) * fwd.x + (spot.z - pos.z) * fwd.z; if (d <= max) return spot.clone(); const p = spot.clone().addScaledVector(fwd, max - d); p.y = spot.y; return p; }
@@ -286,7 +317,6 @@ KINDS.rocket_shoes = (k, h, { T, B, D }) => {
     smoke.forEach((p, i) => { const f = ((u * 2.2 + i / smoke.length) % 1); p.root.position.copy(pos).addScaledVector(fwd, -1.2 - f * 9).add(V(0, 0.35, 0)); p.root.scale.setScalar(0.5); p.update(f, 0.9, 0); p.root.visible = k2 > 0.05; });
     lines(u, pos, fwd, right, k2);
     showAt(fizz, pos, u, -T + 0.3, ign, 0.9);
-    showAt(whoosh, pos, u, ign, ign + 1.2, 3.2);
     if (rig && k2 > 0) { rig.torso.rotation.x += 0.45 * k2; for (const [i, a] of rig.arms.entries()) { a.sh.rotation.set(1.3 * k2, 0, (i ? 0.35 : -0.35) * k2); a.el.rotation.x = -0.2; } }
   };
   const d0 = I.dispose; I.dispose = () => { for (const f of flames) f.parent?.remove(f); d0(); };
@@ -443,7 +473,6 @@ KINDS.pedal_legs = (k, h, { T, B, D }) => {
     const k2 = env(u, 0, D, 0.4), boost = env(u, B - 1.4, B + 0.8, 0.3);
     lines(u, pos, fwd, right, boost);
     showAt(ding, pos, u, -T + 0.2, 0.4, 3.2);
-    showAt(pedal, pos, u, B - 1.2, B + 0.6, 3.3);
     if (rig && k2 > 0) {
       const ph = u * (14 + 10 * boost);
       for (const [i, l] of rig.legs.entries()) { const a = ph + i * Math.PI; l.hp.rotation.x = (-0.9 + Math.sin(a) * 0.75) * k2 + l.hp.rotation.x * (1 - k2); l.kn.rotation.x = (1.1 + Math.cos(a) * 0.6) * k2 + l.kn.rotation.x * (1 - k2); }
@@ -470,7 +499,6 @@ KINDS.front_crawl = (k, h, { T, B, D }) => {
     ripples.forEach((m, i) => { const f = (u * 0.9 + i / 3) % 1; m.position.copy(at).add(V(0, 0.02, 0)); m.scale.setScalar(0.6 + f * 2.2); m.material.opacity = 0.8 * (1 - f); m.visible = puddle.visible; });
     mark.g.visible = u < 0; mark.g.position.copy(at); mark.update(u);
     splash.forEach((p, i) => { const f = (u * 2 + i / 4) % 1; p.root.position.copy(pos).addScaledVector(fwd, -0.4 - f * 2).add(V((i % 2 ? 0.6 : -0.6), 0.6, 0)); p.root.scale.setScalar(0.35); p.update(f, 1.3, 0); p.root.visible = u > 0 && u < D; });
-    showAt(lbl, pos, u, B - 1.2, B + 0.6, 3.1);
     if (rig && u > 0 && u < D) {
       const k2 = env(u, 0, D, 0.35), ph = u * 9;
       rig.torso.rotation.x += 0.75 * k2; rig.head.rotation.set(-0.5 * k2, Math.sin(ph) * 0.6 * k2, 0); // breathing to the side
@@ -519,7 +547,6 @@ KINDS.flex_hill = (k, h, { T, B, D }) => {
     showAt(think, pos, u, -T + 0.2, 0.2, 3.0);
     const k2 = env(u, 0.2, D, 0.3), pump = 0.5 + 0.5 * Math.sin(u * 6);
     stars.forEach((s, i) => { const a = u * 3 + i * 1.05; s.visible = k2 > 0.3; s.position.copy(pos).add(V(Math.cos(a) * 1.3, 1.8 + Math.sin(a * 1.3) * 0.5, Math.sin(a) * 1.3)); });
-    showAt(flex, pos, u, B - 1.2, B + 0.6, 3.3);
     if (rig && k2 > 0) {
       // double biceps: upper arms out and up, forearms up, pumping
       rig.arms[0].sh.rotation.set(0, 0, -1.55 * k2); rig.arms[1].sh.rotation.set(0, 0, 1.55 * k2);
@@ -587,7 +614,6 @@ KINDS.foil_cape = (k, h, { T, B, D }) => {
     }
     wind(u, pos.clone().addScaledVector(fwd, 6), fwd.clone().negate(), right, u < D ? 0.8 : 0);
     showAt(flap, pos, u, 0.1, B - 1.3, 3.4);
-    showAt(drag, pos, u, B - 1.2, B + 0.6, 3.4);
     if (rig && u > 0 && u < D) { const k2 = env(u, 0, D, 0.4); rig.torso.rotation.x += 0.55 * k2; rig.head.rotation.x = -0.3 * k2; for (const a of rig.arms) { a.sh.rotation.x += 0.6 * k2; } r.root.position.y -= 0.05 * k2; }
   };
   return I;
@@ -625,7 +651,6 @@ KINDS.bubble_wrap = (k, h, { T, B, D }) => {
     }
     bub.instanceMatrix.needsUpdate = true;
     pops.forEach((s, i) => { const t0 = 0.4 + i * 0.9; showAt(s, pos.clone().add(V(Math.sin(i * 2) * 0.9, 0, Math.cos(i * 2) * 0.9)), u % 3, t0, t0 + 0.5, 2.2 + i * 0.2); if (u < 0 || u > D) s.visible = false; });
-    showAt(careful, pos, u, B - 1.2, B + 0.6, 3.4);
     if (rig && u > 0 && u < D) { const k2 = env(u, 0, D, 0.3); rig.arms[0].sh.rotation.set(0, 0, -1.2 * k2); rig.arms[1].sh.rotation.set(0, 0, 1.2 * k2); for (const l of rig.legs) l.hp.rotation.x *= 1 - 0.6 * k2; r.root.position.y += Math.abs(Math.sin(u * 14)) * 0.08 * k2; r.setPop?.('!'); }
     void fwd;
   };
@@ -633,3 +658,93 @@ KINDS.bubble_wrap = (k, h, { T, B, D }) => {
 };
 
 void backOut;
+
+// ---- THE MOMENT (the deciding lead change in the final km): he lassoes the leader and reels himself in ----
+KINDS.lasso_reel = (k, h, { T, B, D }) => {
+  const I = base(k);
+  const ropeM = '#d9a441';
+  const loop = I.bag.M(new THREE.TorusGeometry(0.8, 0.08, 8, 36), '#ffb03a', 2.5); I.root.add(loop);
+  const rope = I.bag.M(new THREE.CylinderGeometry(0.06, 0.06, 1, 6).rotateX(Math.PI / 2), '#ffb03a', 1.5); void ropeM; I.root.add(rope);
+  const yee = label(I, 'YEE-HAW!', { bg: '#ffd23f', w: 640 }, 1.1), gotcha = label(I, 'GOTCHA!', { bg: '#ff9a1f', fg: '#ffffff', w: 600 }, 1.0), oi = label(I, 'OI!!', { bg: '#ffffff' }, 0.9);
+  const hand = V(), tgt = V();
+  const THROW = B - 3.2, CATCH = B - 2.5, LET = B + 0.4;
+  I.update = (u, dt, b) => {
+    const A = k.runner(h.who), L = k.runner(h.other); const ra = k.rig(h.who), rl = k.rig(h.other);
+    if (!A || !L || !ra) return;
+    A.root.updateMatrixWorld(true); L.root.updateMatrixWorld(true);
+    ra.arms[1].hand.getWorldPosition(hand);
+    const over = A.root.position.clone().add(V(0, A.height + 0.55, 0));
+    const waist = L.root.position.clone().add(V(0, L.hipH + 0.25, 0));
+    loop.visible = u < LET + 1.5; rope.visible = u < LET;
+    if (u < THROW) { // swinging it round his head
+      const a = u * 9; tgt.copy(over).add(V(Math.cos(a) * 0.55, Math.sin(a * 0.5) * 0.08, Math.sin(a) * 0.55)); loop.position.copy(tgt); loop.rotation.set(Math.PI / 2 + Math.sin(a) * 0.2, 0, 0);
+      ra.arms[1].sh.rotation.set(-2.9, 0, 0.35 + Math.sin(a) * 0.3); ra.arms[1].el.rotation.x = -0.3;
+    } else if (u < CATCH) { // the throw
+      const f = ease((u - THROW) / (CATCH - THROW)); loop.position.copy(over).lerp(waist, f).add(V(0, Math.sin(Math.PI * f) * 1.2, 0)); loop.rotation.set(Math.PI / 2, 0, 0); ra.arms[1].sh.rotation.set(-1.6, 0, 0.2);
+    } else if (u < LET) { // caught round the waist: reel, reel, reel
+      loop.position.copy(waist); loop.rotation.set(Math.PI / 2, 0, 0); loop.scale.setScalar(0.7);
+      const pull = Math.sin(u * 9);
+      ra.arms[0].sh.rotation.set(-1.4 + pull * 0.5, 0, -0.1); ra.arms[1].sh.rotation.set(-1.4 - pull * 0.5, 0, 0.1); ra.torso.rotation.x -= 0.25;
+      if (rl) { rl.torso.rotation.x -= 0.35; rl.head.rotation.y = 1.4; for (const a of rl.arms) a.sh.rotation.set(-0.5, 0, (a === rl.arms[0] ? -1 : 1) * 1.4); }
+    } else { // let go: the loop drops off him
+      const f = clamp01((u - LET) / 0.8); loop.position.copy(waist).add(V(0, -f * (L.hipH + 0.2), 0)); loop.scale.setScalar(0.7 + f * 0.4);
+      if (rl && u > B + 0.9 && u < B + 2.6) { rl.arms[1].sh.rotation.set(-2.6, 0, 0.3); rl.arms[1].el.rotation.x = -1.0 + Math.sin(u * 22) * 0.4; }
+    }
+    if (rope.visible) { const from = hand.clone(); rope.position.copy(from).lerp(loop.position, 0.5); rope.lookAt(loop.position); rope.scale.set(1, 1, Math.max(0.1, from.distanceTo(loop.position))); }
+    showAt(yee, A.root.position, u, -T + 0.3, THROW, 3.0);
+    showAt(gotcha, L.root.position, u, CATCH, CATCH + 1.2, 3.0);
+    showAt(oi, L.root.position, u, B + 0.9, B + 2.6, 3.0);
+  };
+  return I;
+};
+
+// ======================================================================================================
+// MICRO-GAGS (1.5 s, on whoever is already in the shot): MICRO[kind](k, m) -> { update(u), dispose() }
+const MICRO = {};
+MICRO.stitch = (k, m) => {
+  const I = base(k); const oof = label(I, 'OOF!', { bg: '#ffffff', w: 360, h: 240 }, 0.6);
+  I.update = (u, dt, b) => { const { pos } = k.frameOf(m.who, b); const r = k.runner(m.who), rig = k.rig(m.who); const k2 = env(u, 0, 1.8, 0.25);
+    showAt(oof, pos, u, 0.1, 1.5, 2.6);
+    if (rig && k2 > 0) { rig.arms[0].sh.rotation.set(-0.2 * k2, 0, -0.55 * k2); rig.arms[0].el.rotation.x = -2.1 * k2; rig.torso.rotation.z = -0.25 * k2; rig.head.rotation.z = -0.2 * k2; r.root.position.y -= 0.05 * k2; } };
+  return I;
+};
+MICRO.shoelace = (k, m) => {
+  const I = base(k);
+  const lace = I.bag.M(new THREE.CylinderGeometry(0.025, 0.025, 0.7, 5).translate(0, -0.35, 0), '#ffffff', 1); I.root.add(lace);
+  I.update = (u, dt, b) => { const r = k.runner(m.who), rig = k.rig(m.who); const k2 = env(u, 0, 1.8, 0.2);
+    lace.visible = k2 > 0.05 && !!rig; if (lace.visible) { rig.legs[0].an.getWorldPosition(lace.position); lace.rotation.set(Math.PI / 2 + Math.sin(u * 25) * 0.6, 0, Math.sin(u * 17) * 0.5); lace.rotation.y = r.root.rotation.y; }
+    if (rig && k2 > 0) { rig.head.rotation.x = 0.7 * k2; r.setPop?.('!'); } };
+  return I;
+};
+function makeDog(bag) {
+  const g = new THREE.Group(), c = '#b8763a';
+  const body = bag.M(new THREE.CapsuleGeometry(0.17, 0.42, 4, 10).rotateX(Math.PI / 2), c, 2); body.position.y = 0.42; g.add(body);
+  const head = bag.M(new THREE.SphereGeometry(0.17, 12, 10), c, 2); head.position.set(0, 0.62, 0.36); g.add(head);
+  const snout = bag.M(new THREE.SphereGeometry(0.08, 8, 6), '#1a1420', 0); snout.position.set(0, 0.6, 0.53); g.add(snout);
+  for (const s of [-1, 1]) { const e = bag.M(new THREE.ConeGeometry(0.06, 0.16, 6), '#5a3418', 1.5); e.position.set(s * 0.1, 0.8, 0.33); g.add(e); }
+  const legs = [-1, 1].flatMap((s) => [-0.2, 0.2].map((z) => { const l = bag.M(new THREE.CylinderGeometry(0.04, 0.04, 0.3, 6).translate(0, -0.15, 0), c, 1.5); l.position.set(s * 0.1, 0.32, z); g.add(l); return l; }));
+  const tail = bag.M(new THREE.CylinderGeometry(0.03, 0.02, 0.25, 6).translate(0, 0.12, 0), c, 1.5); tail.position.set(0, 0.5, -0.32); tail.rotation.x = -0.6; g.add(tail);
+  g.scale.setScalar(1.4); g.userData = { legs, tail }; return g;
+}
+MICRO.dog_yap = (k, m) => {
+  const I = base(k); const dog = makeDog(I.bag); I.root.add(dog); const yap = label(I, 'YAP!', { bg: '#ffffff', w: 340, h: 240 }, 0.55);
+  let side = 0;
+  I.update = (u, dt, b) => { const { pos, fwd, right } = k.frameOf(m.who, b); const rig = k.rig(m.who);
+    if (!side) side = k.camSide(pos, right);
+    const inK = ease(clamp01(u / 0.4)), outK = ease(clamp01((u - 1.4) / 0.5));
+    dog.position.copy(pos).addScaledVector(right, side * 1.3).addScaledVector(fwd, 0.6 - outK * 4 - (1 - inK) * 3); k.ground(dog.position); dog.position.y += Math.abs(Math.sin(u * 18)) * 0.12;
+    dog.rotation.y = Math.atan2(fwd.x, fwd.z); dog.userData.legs.forEach((l, i) => { l.rotation.x = Math.sin(u * 22 + i * 1.6) * 0.8; }); dog.userData.tail.rotation.z = Math.sin(u * 30) * 0.6;
+    showAt(yap, dog.position, Math.floor(u * 2.5) % 2 ? u : -1, 0, 1.9, 0.6);
+    if (rig) rig.head.rotation.y = side * 0.9 * env(u, 0.1, 1.6, 0.25); };
+  return I;
+};
+MICRO.hat_off = (k, m) => {
+  const I = base(k);
+  const cap = new THREE.Group(); const dome = I.bag.M(new THREE.SphereGeometry(0.22, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), '#ff3d5a', 2); cap.add(dome);
+  const brim = I.bag.M(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 12).scale(1, 1, 1.4).translate(0, 0, 0.18), '#ff3d5a', 1.5); cap.add(brim); I.root.add(cap);
+  I.update = (u, dt, b) => { const { pos, fwd } = k.frameOf(m.who, b); const r = k.runner(m.who), rig = k.rig(m.who);
+    const f = clamp01(u / 1.6); cap.visible = u < 1.8;
+    cap.position.copy(pos).add(V(0, (r?.height || 2.4) + 0.1 + Math.sin(Math.PI * f) * 1.6, 0)).addScaledVector(fwd, -f * 5); cap.rotation.set(u * 8, u * 5, 0);
+    if (rig) { const k2 = env(u, 0.1, 1.5, 0.2); rig.arms[1].sh.rotation.set(-2.7 * k2, 0, 0.3); rig.head.rotation.x = -0.4 * k2; } };
+  return I;
+};

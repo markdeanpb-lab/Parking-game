@@ -33,8 +33,10 @@ export const HIJINK_KINDS = {
   // a pass with no pace story: show-off passes
   leapfrog: { cause: 'pass', caption: 'LEAPFROG!', warn: 'COMING THROUGH', angles: ['gagside', 'gag3q'], line: [{ speaker: 'jeff', text: 'He\'s gone straight OVER the top of him!' }, { speaker: 'pam', text: 'Cheeky.' }] },
   cartwheel: { cause: 'pass', caption: 'SHOW-OFF!', warn: 'SHOW-OFF ALERT', angles: ['gagside', 'gag3q'], line: [{ speaker: 'pam', text: 'Oh, he is NOT cartwheeling past him.' }, { speaker: 'jeff', text: 'A CARTWHEEL! At this stage!' }] },
+  // THE moment: the deciding lead change between backed runners in the final km
+  lasso_reel: { cause: 'finale', caption: 'YEE-HAW!', warn: 'LASSO OUT', angles: ['gagside', 'gag3q'], lookAhead: 1.5, line: [{ speaker: 'jeff', text: 'He\'s LASSOED him! He\'s reeling himself in!' }, { speaker: 'jeff', text: 'A LASSO! He is reeling in the leader!' }] },
   // the Hill
-  hill_rope: { cause: 'hill', caption: 'HEAVE!', warn: 'THE HILL', angles: ['gagrear', 'gagside'], lookAhead: 3, line: [{ speaker: 'pam', text: 'Maureen\'s giving him a hand.' }, { speaker: 'jeff', text: 'HEAVE! HEAVE!' }] },
+  hill_rope: { cause: 'hill', caption: 'TOW!', warn: 'THE HILL', angles: ['gagrear', 'gagside'], lookAhead: 3, line: [{ speaker: 'pam', text: 'Maureen\'s giving him a hand.' }, { speaker: 'jeff', text: 'HEAVE! HEAVE!' }] },
   // training life (his own week before this run)
   pedal_legs: { cause: 'surge', fact: 'ride', caption: 'PEDAL POWER!', warn: 'BIKE LEGS', angles: ['gagside', 'gag3q'], line: [{ speaker: 'jeff', text: 'He\'s been on the BIKE all week! Look at those legs go!' }, { speaker: 'pam', text: 'Somebody check his shoes for pedals.' }] },
   front_crawl: { cause: 'surge', fact: 'swim', caption: 'SPLASH!', warn: 'PUDDLE AHEAD', angles: ['gagside', 'gag3q'], line: [{ speaker: 'pam', text: 'He\'s been swimming this week. It shows.' }, { speaker: 'jeff', text: 'FRONT CRAWL! Straight through the puddle!' }] },
@@ -46,6 +48,11 @@ export const HIJINK_KINDS = {
   bubble_wrap: { cause: 'slow', fact: 'raceTomorrow', caption: 'CAREFUL!', warn: 'BIG RACE TOMORROW', angles: ['gagside', 'gag3q'], line: [{ speaker: 'pam', text: 'He\'s racing again tomorrow. Wrapped himself up.' }, { speaker: 'jeff', text: 'Bubble wrap! He\'s tiptoeing!' }] },
 };
 const GAIN_POOL = ['rocket_shoes', 'wasps', 'ice_cream'], LOSE_POOL = ['goose_chase', 'banana', 'raincloud'];
+// the other commentator's retort, after the gag (one per kind)
+const RETORT = { goose_chase: 'Never make eye contact with a goose.', banana: 'Who eats a banana on a parkrun?', raincloud: 'Only over him. Typical.', rocket_shoes: 'I want a pair.',
+  wasps: 'Not the time to wave your arms about.', ice_cream: 'Ninety-nine reasons to run.', leapfrog: 'Bit rude, that.', cartwheel: 'Ten for presentation.', hill_rope: 'That is NOT in the marshal handbook.',
+  pedal_legs: 'Wrong sport. Right result.', front_crawl: 'Lovely technique, wrong venue.', lap_counter: 'Beep. And he\'s off.', flex_hill: 'Never skips arm day.', incline_button: 'Press harder, love.',
+  foil_cape: 'He should have handed that back.', marathon_legs: 'Bless those knees.', bubble_wrap: 'Saving himself for Sunday.', lasso_reel: 'Is that allowed?! Is that ALLOWED?!' };
 const FLAVOUR = { goose_chase: 1.0, banana: 0.8, raincloud: 0.4, rocket_shoes: 0.6, wasps: 0.5, ice_cream: 0.9, leapfrog: 0.7, cartwheel: 0.3, hill_rope: 0.2 };
 
 // training facts for one runner's morning: { ride, swim, weights, treadmill, intervals, half, marathon, raceTomorrow }
@@ -91,7 +98,10 @@ export function planHijinks({ racePlan, runners = [], facts = {}, backedBy = {},
     if (e.type !== 'overtake' || e.atM < 350) continue;
     const tp = e.raceS;
     if (tp >= tLast300) continue;
-    if (tp >= tFinalKm && (top2(tp - 2).includes(e.by) || top2(tp - 2).includes(e.on))) continue; // the final lead battle stays clean
+    // the final km belongs to the lead battle: only a lead change there, and it gets THE gag if a backed runner is in it
+    const lastLC = (racePlan.events || []).filter((x) => x.type === 'lead_change').at(-1);
+    const finale = tp >= tFinalKm && lastLC && Math.abs(lastLC.raceS - tp) < 3 && lastLC.to === e.by; // the lead change that decided it
+    if (tp >= tFinalKm && !(finale && (isB(e.by) || isB(e.on)))) continue;
     if (seen.some((s) => Math.abs(s.t - tp) < 8 && s.ids.includes(e.by) && s.ids.includes(e.on))) continue; // back-and-forth counts once
     seen.push({ t: tp, ids: [e.by, e.on] });
     { const hold = rankAt(PR, tp + 20); if (hold.indexOf(e.by) > hold.indexOf(e.on)) continue; } // a place given straight back isn't a consequence
@@ -100,6 +110,11 @@ export function planHijinks({ racePlan, runners = [], facts = {}, backedBy = {},
     const pa = pace(A, mA - 150, mA + 50), pb = pace(Bq, mB - 150, mB + 50);
     const lead = (racePlan.events || []).some((x) => x.type === 'lead_change' && Math.abs(x.raceS - tp) < 3 && x.to === e.by);
     const base = { t: tp, atM: Math.round(mA), lead, early: mA < 700 };
+    if (finale) {
+      C.push({ ...base, kind: 'lasso_reel', who: A.id, other: Bq.id, type: 'gain', finale: true, ratio: pa, strength: 20,
+        truth: `${name(A.id)} really did take the lead from ${name(Bq.id)} at ${km(mA)} in the last kilometre. No rope was involved.` });
+      continue;
+    }
     if (pb >= RULES.slow) {
       // he slowed and was passed: a "lose" gag on him
       const tf = TF[Bq.id];
@@ -147,13 +162,15 @@ export function planHijinks({ racePlan, runners = [], facts = {}, backedBy = {},
     // race-second timeline: telegraph -> gag -> beat (1x) -> consequence
     const r = rate(c.t);
     c.beat = c.t + 0.5;
-    c.at = c.beat - RULES.beatBefore - RULES.ramp - Math.min(20, 1.6 * r);
+    c.b0 = c.finale ? 4.5 : RULES.beatBefore; c.b1 = c.finale ? 3.5 : RULES.beatAfter;
+    c.at = c.beat - c.b0 - RULES.ramp - Math.min(20, 1.6 * r);
     c.tel = c.at - Math.min(26, 2.2 * r);
-    c.until = c.beat + RULES.beatAfter + RULES.ramp * 0.6;
+    c.until = c.beat + c.b1 + RULES.ramp * 0.6;
   }
   // ---- choose: best first, spread out, one of each kind, nothing overlapping (telegraph to until), >= gapB apart ----
   const out = [];
-  const pool = C.filter((c) => c.tel > 50 && c.at > 0 && (c.type !== 'none' || c.t < tFinalKm || !top2(c.t).includes(c.who)) && c.until < tLast300);
+  const pool = C.filter((c) => c.tel > 50 && c.at > 0 && (c.t < tFinalKm || c.finale) && (c.until < tLast300 || c.finale));
+  { const f = pool.filter((c) => c.finale).at(-1); if (f) out.push(f); } // THE moment goes in first
   while (out.length < max) {
     let best = null, bestS = -1e9;
     for (const c of pool) {
@@ -171,19 +188,30 @@ export function planHijinks({ racePlan, runners = [], facts = {}, backedBy = {},
   return out.map((c, i) => {
     const K = HIJINK_KINDS[c.kind];
     const subj = UP(name(c.who)), money = backers(c.who), moneyO = c.other ? backers(c.other) : [];
-    const consequence = c.type === 'none' ? null : { type: c.type, places: 1, other: c.other };
+    const ord = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th'}`;
+    let consequence = null;
+    if (c.type !== 'none') {
+      const pre = rankAt(PR, c.beat - 6).indexOf(c.who) + 1, post = rankAt(PR, c.beat + 20).indexOf(c.who) + 1;
+      // seconds he lost / gained over the 200 m round the beat against his own average pace
+      const r = byId[c.who], m = distanceAt(r.progress, c.beat);
+      const dS = r2((timeAtDistance(r.progress, Math.min(5000, m + 50)) - timeAtDistance(r.progress, Math.max(0, m - 150))) - 200 * r.officialS / 5000);
+      consequence = { type: c.type, places: Math.max(1, Math.abs(post - pre)), other: c.other, from: pre, to: post, fromText: ord(pre), toText: ord(post), deltaS: dS };
+    }
     const warn = `${subj}${money.length ? ` (${money.join(' & ')}'s pick)` : ''}: ${K.warn}`;
     const after = !consequence ? null
-      : money.length ? (c.type === 'lose' ? pickLine(R, [`There goes ${money[0]}'s place!`, `Uh oh. That's a place gone for ${money[0]}.`, `${money[0]} won't like that one bit.`]) : pickLine(R, [`${money[0]} will like THAT!`, `Up a place! ${money[0]} is out of the seat!`, `Good news for ${money[0]}!`]))
+      : money.length && moneyO.length ? (c.type === 'gain' ? `${money[0]} is off the sofa! ${moneyO[0]} can't look!` : `${moneyO[0]} is off the sofa! ${money[0]} can't look!`)
+      : money.length ? (c.type === 'lose' ? pickLine(R, [`There goes ${money[0]}'s place!`, `${money[0]}'s money is wobbling!`, `Uh oh, ${money[0]}. That's a place gone.`]) : pickLine(R, [`${money[0]} will like THAT!`, `Up a place! ${money[0]} is out of the seat!`, `Kerching for ${money[0]}!`]))
         : moneyO.length ? (c.type === 'lose' ? pickLine(R, [`And that's good news for ${moneyO[0]}.`, `${moneyO[0]} gratefully accepts.`]) : pickLine(R, [`Bad news for ${moneyO[0]}.`, `Sorry, ${moneyO[0]}.`]))
           : null;
     return {
       id: `hj${i + 1}`, kind: c.kind, who: c.who, ...(c.other ? { other: c.other } : {}),
-      raceS: { telegraph: r2(c.tel), at: r2(c.at), beat: r2(c.beat), until: r2(c.until), slow0: r2(c.beat - RULES.beatBefore), slow1: r2(c.beat + RULES.beatAfter) },
+      raceS: { telegraph: r2(c.tel), at: r2(c.at), beat: r2(c.beat), until: r2(c.until), slow0: r2(c.beat - c.b0), slow1: r2(c.beat + c.b1) },
       telegraphAtBroadcastS: r2(B(c.tel)), atBroadcastS: r2(B(c.at)), beatBroadcastS: r2(B(c.beat)), untilBroadcastS: r2(B(c.until)),
       params: { atM: c.atM, ...(c.ratio ? { ratio: r2(c.ratio) } : {}), passB: r2(B(c.beat)) },
-      consequence, warn, caption: K.caption, line: K.line[Math.floor(R() * K.line.length)],
-      ...(after ? { after: { speaker: R() < 0.5 ? 'jeff' : 'pam', text: after } } : {}),
+      consequence, warn, caption: K.caption, name: name(c.who), backers: money, ...(c.finale ? { finale: true } : {}),
+      line: K.line.find((l) => l.speaker === 'jeff') || K.line[0],
+      ...(RETORT[c.kind] ? { retort: { speaker: 'pam', text: RETORT[c.kind] } } : {}),
+      ...(after ? { after: { speaker: 'jeff', text: after } } : {}),
       ...(c.fact ? { fact: c.fact } : {}),
       angles: K.angles, ...(K.lookAhead ? { lookAhead: K.lookAhead } : {}), prio: 2.8,
       truth: c.fact ? `${c.truth} His week: ${c.fact}.` : c.truth,
@@ -213,4 +241,40 @@ export function applyHijinks(racePlan, hijinks, { maxDurationS = RULES.maxDurati
     return { ...h, telegraphAtBroadcastS: r2(tel), atBroadcastS: r2(Math.min(at, beat - 1.5)), beatBroadcastS: beat, untilBroadcastS: r2(until), params: { ...h.params, passB: beat } };
   });
   return np;
+}
+
+// ---- micro-gags: 1.5 s, no camera cut (the TV plays one only if its runner is already in the shot) ----
+// stitch / shoelace on a real 100 m dip (>= 4.5% slower), a yapping dog / a hat blowing off on a real 100 m kick (>= 4.5% quicker).
+export const MICRO_KINDS = { stitch: 'slow', shoelace: 'slow', dog_yap: 'fast', hat_off: 'fast' };
+export function planMicroGags({ racePlan, hijinks = racePlan?.hijinks || [], backedBy = {}, rng = 7, max = 8, gapB = 6 } = {}) {
+  if (!racePlan?.runners?.length) return [];
+  const R = typeof rng === 'function' ? rng : mulberry(typeof rng === 'number' ? rng : 7);
+  const tm = racePlan.timeMap, PR = racePlan.runners;
+  const B = (t) => raceToBroadcast(tm, t);
+  const pace = (r, m0, m1) => (timeAtDistance(r.progress, m1) - timeAtDistance(r.progress, m0)) / (m1 - m0) / (r.officialS / 5000);
+  const tFinal = Math.min(...PR.map((r) => timeAtDistance(r.progress, 4000)));
+  const C = [];
+  for (const r of PR) for (let m0 = 450; m0 + 100 <= 4700; m0 += 50) {
+    if (HILLS.some(([a, b]) => m0 < b && m0 + 100 > a)) continue;
+    const p = pace(r, m0, m0 + 100), t = timeAtDistance(r.progress, m0 + 50);
+    if (t >= tFinal && !rankAt(PR, t).slice(0, 2).includes(r.id)) continue; // the final km: lead battle only
+    if (p >= 1.045) C.push({ who: r.id, t, kinds: ['stitch', 'shoelace'], s: (p - 1) * 20 });
+    if (p <= 0.955) C.push({ who: r.id, t, kinds: ['dog_yap', 'hat_off'], s: (1 - p) * 20 });
+  }
+  for (const c of C) c.s += R() + (backedBy[c.who]?.length ? 1.5 : 0);
+  C.sort((a, b) => b.s - a.s);
+  const busy = hijinks.map((h) => [(h.telegraphAtBroadcastS ?? h.atBroadcastS) - 2, h.untilBroadcastS + 2]);
+  const out = [], used = {};
+  for (const c of C) {
+    if (out.length >= max) break;
+    const b = B(c.t);
+    if (b < 14 || busy.some(([a, z]) => b > a - 1.6 && b < z)) continue;
+    if (out.some((o) => Math.abs(o.atBroadcastS - b) < gapB)) continue;
+    const kind = c.kinds.find((k) => !used[k]) || c.kinds[Math.floor(R() * 2)];
+    used[kind] = (used[kind] || 0) + 1;
+    out.push({ id: '', kind, who: c.who, atBroadcastS: r2(b), untilBroadcastS: r2(b + 1.8), raceS: { at: r2(c.t) } });
+  }
+  out.sort((a, b) => a.atBroadcastS - b.atBroadcastS);
+  out.forEach((m, i) => { m.id = `mg${i + 1}`; });
+  return out;
 }

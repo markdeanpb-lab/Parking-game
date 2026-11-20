@@ -38,12 +38,25 @@ const onEvent = (e) => {
 // ---- flow: title card -> race (flyover, countdown) -> podium ----
 let state = 'title', finished = false;
 function startRace() {
-  $('title').classList.add('gone'); $('end').classList.remove('on');
+  $('title').classList.add('gone'); $('end').classList.remove('on'); clearTimeout(truthTimer); $('truth').classList.remove('on');
   state = 'race'; finished = false; subs.innerHTML = ''; sub = null;
   view.setPaused(false, { market: false });
-  view.playRace(onEvent, () => { finished = true; setTimeout(() => { if (finished) { view.showPodium(null); $('end').classList.add('on'); } }, 1500); });
+  view.playRace(onEvent, () => { finished = true; setTimeout(() => { if (finished) { view.showPodium(null); $('end').classList.add('on'); truthCards(); } }, 1500); });
   setPlayBtn();
 }
+// after the race: "what really happened", one card per gag (the second laugh)
+let truthTimer = null;
+function showTruth(i) {
+  const H = (D.plan.hijinks || []).filter((h) => h.truth), el = $('truth');
+  if (i >= H.length) { el.classList.remove('on'); return; }
+  const h = H[i];
+  el.querySelector('.h').textContent = `WHAT REALLY HAPPENED \u00b7 ${i + 1}/${H.length}`;
+  el.querySelector('.c').textContent = `${h.caption} \u00b7 ${String(h.name || '').toUpperCase()}`;
+  el.querySelector('.t').textContent = h.truth;
+  el.classList.add('on');
+}
+function truthCards() { clearTimeout(truthTimer); let i = 0; const step = () => { showTruth(i++); if (i <= (D.plan.hijinks || []).length) truthTimer = setTimeout(step, 3200); }; step(); }
+window.__truth = showTruth;
 function restart() { view.setSpeed(speed); startRace(); }
 let paused = false, speed = 1;
 function setPlayBtn() { $('bPlay').textContent = paused ? 'Play' : 'Pause'; }

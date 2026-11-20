@@ -36,13 +36,23 @@ if (what === 'hijinks' || what === 'all') {
     if (only && !only.split(',').includes(h.id)) continue;
     const L = h.untilBroadcastS - h.atBroadcastS;
     const bt = h.beatBroadcastS ?? h.params.passB;
-    const ts = h.telegraphAtBroadcastS != null ? [h.telegraphAtBroadcastS + 1.4, bt - 0.7, bt + 1.2] : h.params.passB != null ? [bt - 0.9, bt, bt + 1.4] : [h.atBroadcastS + 0.9, h.atBroadcastS + L * 0.5, h.untilBroadcastS - 0.6];
+    const ts = h.finale ? [h.telegraphAtBroadcastS + 1.4, bt - 3.0, bt - 1.5, bt - 0.2, bt + 1.2, bt + 2.4] : h.telegraphAtBroadcastS != null ? [h.telegraphAtBroadcastS + 1.4, bt - 0.7, bt + 1.2] : h.params.passB != null ? [bt - 0.9, bt, bt + 1.4] : [h.atBroadcastS + 0.9, h.atBroadcastS + L * 0.5, h.untilBroadcastS - 0.6];
     await page.evaluate((b0) => { window.view._debug.seek(b0, 1.2); window.view._debug.unpause(); }, (h.telegraphAtBroadcastS ?? h.atBroadcastS) - 3);
     for (const [i, t] of ts.entries()) {
       await stepTo(t);
       await shoot(`${h.id}_${h.kind}_${i + 1}`);
       console.log(h.id, h.kind, i + 1, JSON.stringify(await info()));
     }
+  }
+}
+if (what === 'hijinks' || what === 'all') {
+  const mg = await page.evaluate(() => window.__data.plan.microGags || []);
+  for (const m of mg) {
+    await page.evaluate((b0) => { window.view._debug.seek(b0, 1.2); window.view._debug.unpause(); }, m.atBroadcastS - 2.5);
+    await stepTo(m.atBroadcastS + 0.8);
+    const played = await page.evaluate((id) => !!document && window.view._debug.hij && true, m.id);
+    await shoot(`${m.id}_${m.kind}`);
+    console.log(m.id, m.kind, played, JSON.stringify(await info()));
   }
 }
 if (what === 'race' || what === 'all') {
@@ -56,6 +66,9 @@ if (what === 'race' || what === 'all') {
     console.log('race', n, JSON.stringify(i));
     if (b < t - 1) { console.log('clock held (photo / replay) at', b); }
   }
+}
+if (what === 'race' || what === 'all') {
+  for (const i of [0, 7]) { await page.evaluate((i) => window.__truth(i), i); await page.waitForTimeout(400); await shoot(`truth_${i + 1}`); }
 }
 console.log('NETWORK REQUESTS:', net.length ? net : 'none');
 await browser.close();
