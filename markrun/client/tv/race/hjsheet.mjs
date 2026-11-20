@@ -96,6 +96,18 @@ if (has('banners')) {
   for (const x of r) console.log(x.at.toFixed(1).padStart(6), (x.secs.toFixed(1) + 's').padStart(5), x.txt);
   console.log(JSON.stringify({ banners: r.length, maxSecs: Math.max(...r.map((x) => x.secs)) }));
 }
+if (has('minh')) {
+  // the smallest runner height (tallest on-screen runner, fraction of the frame height) at the start, middle and end of each race shot
+  const shots = await page.evaluate(() => { const d = window.view._debug; return d.shots.filter((s) => s.a >= 0.2 && s.a < d.sim.firstFinishB).map((s) => ({ a: s.a, b: Math.min(s.b, d.sim.firstFinishB), type: s.type + (s.cam ? ':' + s.cam.name : '') })); });
+  let worst = 1;
+  for (const sh of shots) {
+    const hs = [];
+    for (const t of [sh.a + 0.3, (sh.a + sh.b) / 2, sh.b - 0.25]) hs.push(await page.evaluate((t) => { const d = window.view._debug; d.seek(t, 1.5); return d.runnerFrac(); }, t));
+    const m = Math.min(...hs); worst = Math.min(worst, m);
+    console.log(`${sh.a.toFixed(1).padStart(6)} ${sh.type.padEnd(18)} min h=${Math.round(m * 100)}%  (${hs.map((x) => Math.round(x * 100)).join('/')})`);
+  }
+  console.log(JSON.stringify({ shots: shots.length, worstMinH: +worst.toFixed(2) }));
+}
 if (val('at')) {
   // spot frames: --at=12.5,40,fin-2,fin+3,photo (fin = the first finish; photo = the photo-finish freeze)
   const fin = await page.evaluate(() => window.view._debug.sim.firstFinishB);

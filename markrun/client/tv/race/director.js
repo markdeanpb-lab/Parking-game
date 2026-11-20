@@ -207,7 +207,10 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       if (only && f !== only) continue;
       const r0 = front(S(t)); if (!r0) return null;
       const g0 = C.geoOf(r0.m); if (g0 < f.cover[0] - 25 || g0 > f.cover[1]) continue;
-      let u = t; for (; u < t + 14; u += 0.25) { const r = front(S(u)); if (!r) break; const g = C.geoOf(r.m); if (g > f.cover[1] || g < f.cover[0] - 30) break; }
+      // ... and within its useful range (a runner >= ~12% of the frame at the camera's tightest zoom; the Hill cameras keep
+      // some slope in shot, so they reach less far)
+      const range = f.hill ? 80 : 320;
+      let u = t; for (; u < t + 14; u += 0.25) { const r = front(S(u)); if (!r) break; const g = C.geoOf(r.m); if (g > f.cover[1] || g < f.cover[0] - 30 || Math.hypot(r.x - f.x, r.z - f.z) > range) break; }
       if (u - t >= need && (!best || u - t > best[1] - t)) best = [f, Math.min(u, t + 10)];
     }
     return best;
@@ -313,7 +316,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     const { hard: _h, ...rest } = extra;
     const shot = { type, a, b: a + 4, ids: c.ids, key: c.key, kind: c.kind, prio: c.prio, phase: c.phase, hjPhase: c.hjPhase, lap: c.lap, reason: why, fair: c.kind === 'fair', ...(c.lookAhead ? { lookAhead: c.lookAhead } : {}), ...rest, hard: !glide };
     if (type === 'fixed' && cc._fixed) { shot.cam = cc._fixed[0]; shot.until = cc._fixed[1]; shot.reason += ` [set cam: ${shot.cam.look}]`; shot.hard = true; if (shot.cam.hill) hillDone[S(a).byId[c.ids?.[0]]?.m > 2500 ? 1 : 0] = true; }
-    if (c.kind === 'establish') { estDone[c.lap] = true; shot.until = a + 5.5; shot.hard = true; }
+    if (c.kind === 'establish') { estDone[c.lap] = true; shot.until = a + 3; shot.hard = true; }
     out.push(shot); cur = shot; prevT = type;
     for (const id of c.ids || []) lastSeen[id] = a;
     return shot;
@@ -481,9 +484,9 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
         break;
       }
       case 'wide': {
-        // the establishing wide: high, far, the whole field and the shape of the course around it
-        const slant = Math.hypot(60, 36, 62);
-        s.fov = THREE.MathUtils.clamp(deg(2 * Math.atan((Math.min(spread, 260) * 0.7 + 45) / (2 * ASPECT * slant))), 24, 55);
+        // the establishing wide: high above the lead group (the course curving away around them), still framed on the
+        // runners: >= ~12% of the frame height, the group inside the central 60%
+        aerialFit(s, Math.hypot(40, 20, 34), 0.16, 37);
         break;
       }
       case 'high3q': { s.dist = 12; s.fov = THREE.MathUtils.clamp(Math.min(fovFor(15 + spread * 0.3, 0.3), Math.max(fovFor(15, 0.4), deg(2 * Math.atan((spread + 5) / (2 * ASPECT * 15))))), 8, 40); break; }
@@ -497,8 +500,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       case 'breakaway': { s.dist = 20; s.fov = 24; break; }
       case 'drone': {
         // high aerial tracking behind-and-above the group: the course shape around them, runners still readable (tags)
-        s.dist = 42; const slant = Math.hypot(42, 18, 30);
-        s.fov = THREE.MathUtils.clamp(Math.max(fovFor(slant, 0.17), deg(2 * Math.atan((spread * 0.55 + 14) / (2 * ASPECT * slant))), s.rate > 6 ? 22 : 0), 12, 40);
+        s.dist = 42; aerialFit(s, Math.hypot(42, 18, 30), 0.15, 33);
         break;
       }
       // live hijinks: close on the gag's runner(s), front three-quarter / side / rear three-quarter
@@ -542,6 +544,21 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       for (const id of st.order) { const r = st.byId[id]; if (!ids.includes(id) && !r.finished && r.m < rear + 0.5) g = Math.min(g, rear - r.m); }
     }
     return g;
+  }
+  // aerial framing: zoomed so a runner is >= ~12% of the frame height (nominal frac allows for the downward angle), and
+  // only as many of the group as fit in the central 60% of the frame (the gag's runners / the front of the group first)
+  function aerialFit(s, slant, frac, elevDeg) {
+    const fov = fovFor(slant, frac), fit = 0.6 * 2 * slant * Math.tan(THREE.MathUtils.degToRad(fov) / 2) * ASPECT;
+    let ids = s.ids || leadGroupAt(sim, (s.a + s.b) / 2);
+    const spreadIds = (l) => { let sp = 0; for (let k = 0; k <= 6; k++) { const st = S(s.a + ((s.b - s.a) * k) / 6); const ms = l.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m); if (ms.length) sp = Math.max(sp, Math.max(...ms) - Math.min(...ms)); } return sp; };
+    if (ids.length > 1 && spreadIds(ids) > fit - 3) {
+      const st = S((s.a + s.b) / 2), keep = s.kind === 'hijink' ? (s.ids || []).slice(0, 2) : [];
+      const order = ids.slice().sort((x, y) => (keep.includes(y) - keep.includes(x)) || ((st.byId[y]?.m ?? 0) - (st.byId[x]?.m ?? 0)));
+      let sub = [order[0]]; for (const id of order.slice(1)) if (spreadIds([...sub, id]) <= fit - 3) sub.push(id);
+      ids = sub;
+    }
+    s.ids = ids; s.spread = spreadIds(ids); s.elev = elevDeg;
+    s.fov = THREE.MathUtils.clamp(Math.max(fov * 0.8, deg(2 * Math.atan((s.spread + 4) / (0.6 * 2 * ASPECT * slant)))), 10, fov);
   }
   // the camera's ground position for a lateral / high shot (course-metre approximation of the runtime formulas)
   function wetCost(s, ids, sg) {
@@ -788,8 +805,8 @@ export function createDirector({ camera, C, sim, world, funfair }) {
       case 'wide': {
         // establishing wide: high behind-and-beside the whole field, the course shape around it
         const { c, h, r } = smooth(groupOf(s), b, 3);
-        pos = c.clone().addScaledVector(h, -60).addScaledVector(r, (s.side || 1) * 36).add(up.clone().multiplyScalar(62));
-        look = c.clone().addScaledVector(h, 22); fov = s.fov; s.smoothLook = true; break;
+        pos = c.clone().addScaledVector(h, -40).addScaledVector(r, (s.side || 1) * 20).add(up.clone().multiplyScalar(34));
+        look = c.clone().add(up.clone().multiplyScalar(0.9)); fov = s.fov; break;
       }
       case 'linecam': {
         // close finish: low side-on on the line's extension (the photo-finish camera's side), panning with the leading
@@ -822,7 +839,7 @@ export function createDirector({ camera, C, sim, world, funfair }) {
       case 'drone': {
         const { c, h, r } = smooth(groupOf(s), b, 2.4);
         pos = c.clone().addScaledVector(h, -s.dist).addScaledVector(r, (s.side || 1) * 18).add(up.clone().multiplyScalar(30));
-        look = c.clone().addScaledVector(h, 6).add(up.clone().multiplyScalar(0.8)); fov = s.fov; break;
+        look = c.clone().addScaledVector(h, 2).add(up.clone().multiplyScalar(0.9)); fov = s.fov; break;
       }
       case 'cutaway': {
         // locked-off camera across the path from the feature (crowd / lap board), the runners about to run through
