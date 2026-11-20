@@ -55,6 +55,7 @@ import { buildWeather, themeVisual, crowdStyleFor } from './weather.js';
 import { createRunner, disposeRunnerGeometry } from './runner.js';
 import { createSim, fmtTime } from './sim.js';
 import { buildShotList, createDirector, easeInOut, WIDE_SHOTS, TRACK_SHOTS } from './director.js';
+import { createHijinks } from './hijinks/index.js';
 import { timeAtDistance, raceToBroadcast } from '../../../server/game/raceplan.mjs';
 import { createHud, ordText, shortOf, backerInfo } from './hud.js';
 import { buildFunfair } from './funfair.js';
@@ -125,6 +126,9 @@ export function createRaceView(container, opts = {}) {
   const cuts = createCutscenePlayer({ scene, camera, renderer, canvas, container, hudRoot: hud.root, C, world, runners, pubById, ids,
     getPlan: () => plan, getSim: () => sim, getFunfair: () => funfair, updateSun: (v, sz) => updateSun(v, sz),
     emit: (e) => { try { raceCb?.onEvent?.(e); } catch (err) { console.error(err); } } });
+  // live hijinks (hijinks/index.js): plan.hijinks played ON the running race (props + animation only; nothing pauses)
+  const hij = createHijinks({ scene, camera, C, world, runners, pubById, container, getPlan: () => plan, getSim: () => sim,
+    emit: (e) => { try { raceCb?.onEvent?.(e); } catch (err) { console.error(err); } } });
 
   // ---------- plan-dependent parts (rebuilt by loadPlan) ----------
   let sim = null, shots = [], director = null, timeline = [], hadDiversion = false;
@@ -147,7 +151,7 @@ export function createRaceView(container, opts = {}) {
     timeline = [];
     if (plan) {
       sim = createSim(plan, C, runnersPub);
-      shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair });
+      shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair, hijinks: plan.hijinks || [] });
       director = createDirector({ camera, C, sim, world, funfair }); director.setBacked(backedIds);
       for (const e of plan.events || []) timeline.push({ at: e.broadcastS, evt: { ...e, kind: 'event' } });
       for (const c of plan.commentary || []) timeline.push({ at: c.broadcastS, evt: { ...c, kind: 'commentary' } });
@@ -366,8 +370,9 @@ export function createRaceView(container, opts = {}) {
   const sight = { ax: 0, az: 0, bx: 0, bz: 0 };
   function corridorMask(x, z) {
     const vx = sight.bx - sight.ax, vz = sight.bz - sight.az, L2 = vx * vx + vz * vz || 1;
+    if (sight.near && (x - sight.ax) ** 2 + (z - sight.az) ** 2 < 144) return true; // close hijink cameras: nobody right in the lens
     const u = ((x - sight.ax) * vx + (z - sight.az) * vz) / L2; if (u < 0.03 || u > 0.92) return false;
-    const px = sight.ax + vx * u - x, pz = sight.az + vz * u - z; return px * px + pz * pz < 2.2 * 2.2;
+    const px = sight.ax + vx * u - x, pz = sight.az + vz * u - z; return px * px + pz * pz < (sight.near ? 16 : 2.2 * 2.2);
   }
   function setBunting(on) { const T = world.theme; for (const o of [T.flags, T.poles, T.rope]) if (o) o.visible = on; }
   // the photo-finish camera stands on the park side of the line
@@ -455,7 +460,7 @@ export function createRaceView(container, opts = {}) {
     raceCb = { onEvent, onDone };
     placeAtStart('idle');
     director.reset();
-    cuts.reset();
+    cuts.reset(); hij.reset();
   }
   const countdowns = [[-3, '3'], [-2, '2'], [-1, '1'], [0, 'GO!']];
   // short stingers (UI_SPEC: <= 1.5 s, upper third, one at a time)
@@ -570,7 +575,7 @@ export function createRaceView(container, opts = {}) {
     countdownIdx = countdowns.findIndex((c) => c[0] > b); if (countdownIdx < 0) countdownIdx = countdowns.length;
     photoDone = b >= sim.firstFinishB; raceDone = b >= sim.lastFinishB + 3.5; freeze = 0;
     replay = null; replayDone = b >= sim.firstFinishB + 1.1; curSlow = 1; hud.replay(false);
-    cuts.seek(b);
+    cuts.seek(b); hij.seek(b);
   }
   function seekIntro(t) {
     const I = introState; if (!I) return;
@@ -666,13 +671,14 @@ export function createRaceView(container, opts = {}) {
         } else if (kind === 'corridor') crowd.setMask(corridorMask);
         else crowd.setMask(null);
       }
-      if (kind === 'corridor') { sight.ax = camera.position.x; sight.az = camera.position.z; sight.bx = director.cam.look.x; sight.bz = director.cam.look.z; }
+      if (kind === 'corridor') { sight.near = stype?.startsWith('gag'); sight.ax = camera.position.x; sight.az = camera.position.z; sight.bx = director.cam.look.x; sight.bz = director.cam.look.z; }
       if (b < 0) { for (const id of ids) runners[id].update(ddt, {}); }
       else if (replay) { const u = Math.min(1, replay.t / REPLAY_S); curSlow = Math.max(0.2, (replay.b1 - replay.b0) / REPLAY_S * 1.7 * Math.pow(1 - u, 0.7)); applyRace(replayB(), ddt); }
       else applyRace(b, freeze > 0 ? 0 : ddt);
       const shotType = director.shot?.type;
       updateSun(director.cam.look, WIDE_SHOTS.has(shotType) ? 160 : 70);
       cuts.frame(ddt, b);
+      if (!replay && b >= 0) hij.frame(ddt, b);
     } else if (mode === 'podium' && podium) {
       world.setOcclusionCorridor(null);
       podium.update(ddt, wall);
@@ -722,7 +728,7 @@ export function createRaceView(container, opts = {}) {
     for (const id in rings) for (const c of rings[id].children) c.material.dispose(); ringGeo.dispose();
     clearPodium();
     for (const id of ids) { scene.remove(runners[id].root); runners[id].dispose(); }
-    cuts.dispose(); crowd.dispose(); weather.dispose(); funfair?.dispose(); dressing.dispose(); world.dispose(); hud.dispose();
+    cuts.dispose(); hij.dispose(); crowd.dispose(); weather.dispose(); funfair?.dispose(); dressing.dispose(); world.dispose(); hud.dispose();
     scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     disposeRunnerGeometry(); disposeMaterialCache();
     renderer.dispose(); renderer.forceContextLoss?.(); canvas.remove();
@@ -751,7 +757,7 @@ export function createRaceView(container, opts = {}) {
     },
     lookFrom(px, py, pz, lx, ly, lz, fov = 45) { mode = 'debugcam'; camera.position.set(px, py, pz); camera.lookAt(lx, ly, lz); setFov(fov); hud.setDim(true); renderer.render(scene, camera); },
     step(dt, render = true) { frame(dt, !render); },
-    cuts,
+    cuts, hij,
     get mode() { return mode; },
     visual, get b() { return b; }, get shots() { return shots; }, get sim() { return sim; }, C, get director() { return director; }, renderer, scene, camera, info: () => renderer.info, fps: () => frameStats.fps,
   };
@@ -778,7 +784,7 @@ export function createRaceView(container, opts = {}) {
     setBackedBy(bb) {
       applyBackedBy(bb);
       // re-plan the camera (backed-runner preference) unless a race is mid-broadcast
-      if (sim && mode !== 'race') { shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair }); }
+      if (sim && mode !== 'race') { shots = buildShotList({ plan, sim, backedIds, hasDiversion, C, world, funfair, hijinks: plan.hijinks || [] }); }
     },
     dispose,
     /** extras */

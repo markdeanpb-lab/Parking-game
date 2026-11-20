@@ -144,6 +144,12 @@ Ownership this iteration (new agents). Keep to your area, and use a small hook (
       `cutsceneTruths(racePlan) -> [{ cutsceneId, kind, label, runnerId, text }]` (one card per gag) is ready for the results reveal.
   - **TV events:** the race view's `onEvent` also receives `{ kind: 'cutscene', phase: 'start'|'end', id, cutscene, mode, who, durationS }` (no `text`)
     and each cutscene line as `{ kind: 'commentary', text, speaker, priority: 3, cutscene: id }`. Shell: pause/duck live calls while a pausing cutscene plays.
+- **Live hijinks (preview, not yet wired into round.mjs):** `racePlan.hijinks = planHijinks({ racePlan, runners, rng, backedIds? })` from `server/game/hijinks.mjs`
+  -> `[{ id, kind, who, other?, atBroadcastS, untilBroadcastS, params: { m0, m1, ratio?, passB? }, line: { speaker, text }, caption, angles, lookAhead?, prio, truth }]`.
+  Comedy played ON the running race (client/tv/race/hijinks/): nothing pauses, every runner stays where the plan puts him; each gag is the visible
+  cause of a real slowdown, surge, overtake or slow Hill climb. The director treats an active hijink as a subject (close `gag3q`/`gagside`/`gagrear`
+  cameras). The TV emits each gag's line as `{ kind: 'commentary', text, speaker, priority: 3, hijink: id }`. Absent `plan.hijinks` = no change.
+  Standalone one-race preview: `node tools/build_hijinks_preview.mjs` -> `release/hijinks-preview.html`; proof shots: `node tools/shoot_hijinks_preview.mjs`.
 - **Commentary voice (phase 3):** commentary lines are known when the race starts. The TV pre-renders them with Kokoro neural voices while bets are placed, and falls back to speechSynthesis if not ready.
 
 ### Phase 3 additions (audio + reveal; 2026-11-18)

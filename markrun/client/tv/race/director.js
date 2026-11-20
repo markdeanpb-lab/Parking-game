@@ -26,8 +26,9 @@ const deg = (r) => (r * 180) / Math.PI;
 const fovFor = (dist, frac = TARGET_FRAC) => deg(2 * Math.atan(RUNNER_H / (2 * frac * dist)));
 const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
+export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hijinks = [] }) {
   const out = [];
+  let _signs = null; // gagSide(): sign boards to keep the hijink camera away from
   const tm = plan.timeMap;
   const S = (t) => sim.stateAt(Math.max(0, t));
   const leaderAtB = (m) => raceToBroadcast(tm, Math.min(...plan.runners.map((r) => timeAtDistance(r.progress, m))));
@@ -64,6 +65,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     const dup = ovs.find((o) => Math.abs(o.at - e.broadcastS) < 0.3 && o.by === by);
     if (dup) { dup.lead = dup.lead || lead; continue; }
     if (ovs.some((o) => e.broadcastS - o.at < 6 && [o.by, o.on].includes(by) && [o.by, o.on].includes(on))) continue;
+    if (hijinks.some((h) => h.params?.passB != null && Math.abs(h.params.passB - e.broadcastS) < 0.5)) continue; // a live hijink is filming this pass
     ovs.push({ at: e.broadcastS, by, on, lead });
   }
   const hillWin = HILL_M.map((m) => [leaderAtB(m - 30), leaderAtB(m + 240)]);
@@ -71,12 +73,17 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
   const divWin = divR.flatMap((r) => r.diversions.map((d) => ({ id: r.id, a: raceToBroadcast(tm, timeAtDistance(r.progress, d.fromM)) - 0.5, b: raceToBroadcast(tm, timeAtDistance(r.progress, d.toM)) + 0.8 })));
   const lastSeen = {}; for (const r of plan.runners) lastSeen[r.id] = gunEnd;
   let hillShown = false;
+  // a hijink may take the screen from a final-km lead battle only while no lead is changing hands (+-3 s)
+  const leadB = (plan.events || []).filter((e) => e.type === 'lead_change').map((e) => e.broadcastS);
+  const hjPrio = (h) => (leadB.some((x) => x > h.atBroadcastS - 3 && x < h.untilBroadcastS + 3) ? (h.prio ?? 2.8) : Math.min(1.9, h.prio ?? 2.8));
   function cands(t) {
     const st = S(t); const live = st.order.filter((id) => !st.byId[id].finished);
     if (!live.length) return [];
     const c = [];
     const L = st.byId[live[0]];
     const near = (core, within = 6) => { const ms = core.map((id) => st.byId[id].m); return [...core, ...live.filter((id) => !core.includes(id) && st.byId[id].m > Math.min(...ms) - within && st.byId[id].m < Math.max(...ms) + within)]; };
+    // 2.8: a live hijink (hijinks/: the visible cause of a real slowdown / surge / pass / climb); cut in just before it starts
+    for (const h of hijinks) if (t >= h.atBroadcastS - 1.2 && t < h.untilBroadcastS && !st.byId[h.who]?.finished) c.push({ prio: hjPrio(h), key: `hj:${h.id}`, ids: [h.who, h.other].filter(Boolean), kind: 'hijink', angles: h.angles, lookAhead: h.lookAhead || 0, reason: `hijink: ${h.kind} (${short(h.who)})` });
     // 2: lead battle in the final km
     if (live.length > 1 && L.m >= 4000 && gapS(st, live[0], live[1]) <= 2) c.push({ prio: 2, key: `lb:${live[0]}|${live[1]}`, ids: near([live[0], live[1]]), kind: 'battle', reason: `lead battle in the final km (${gapS(st, live[0], live[1]).toFixed(1)} s)` });
     // 3 / 4: a pass about to happen (pre-positioned), then the passer coming at us
@@ -116,7 +123,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
   }
 
   // ---- B: angle grammar ----
-  const FRONT = new Set(['headon', 'high3q', 'breakaway', 'hilltop']), REAR = new Set(['chase', 'shoulder', 'pack', 'hill']);
+  const FRONT = new Set(['headon', 'high3q', 'breakaway', 'hilltop', 'gag3q']), REAR = new Set(['chase', 'shoulder', 'pack', 'hill', 'gagrear']);
   const used = {};
   function angleFor(c, prevType, r) {
     const slow = r <= 6;
@@ -128,13 +135,14 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
       case 'break': list = slow ? ['breakaway', 'high3q', 'headon'] : ['breakaway', 'headon', 'chase']; break;
       case 'checkin': list = ['shoulder', 'chase']; break;
       case 'fair': list = ['side']; break;
+      case 'hijink': list = c.angles?.length ? c.angles : ['gag3q', 'gagside']; break;
       case 'solo': list = slow ? ['headon', 'side', 'chase'] : ['headon', 'chase']; break;
       default: list = (c.ids?.length || 0) < 2 || (c.spread ?? 0) > 9 ? (slow ? ['headon', 'side', 'chase'] : ['headon', 'chase']) : slow ? ['pack', 'high3q', 'headon', 'side'] : ['pack', 'chase', 'headon'];
     }
     // never the same angle twice in a row; among the rest, the grammar's order, nudged towards the least used
     const ok = list.filter((x) => x !== prevType);
     if (!ok.length) return list.find((x) => x !== prevType) || (prevType === 'headon' ? 'chase' : 'headon');
-    if (c.kind === 'overtake' || c.kind === 'hill' || c.kind === 'fair') return ok[0];
+    if (c.kind === 'overtake' || c.kind === 'hill' || c.kind === 'fair' || c.kind === 'hijink') return ok[0];
     return ok.map((x, i) => [x, i + (used[x] || 0) * 0.6]).sort((p, q) => p[1] - q[1])[0][0];
   }
 
@@ -166,7 +174,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     const pt = out.at(-1)?.type;
     const glide = same && !extra.hard && !(FRONT.has(pt) && REAR.has(type)) && !(REAR.has(pt) && FRONT.has(type)) && extra.type !== 'cutaway';
     const { hard: _h, ...rest } = extra;
-    const shot = { type, a, b: a + 4, ids: c.ids, key: c.key, kind: c.kind, prio: c.prio, phase: c.phase, lap: c.lap, reason: why, fair: c.kind === 'fair', ...rest, hard: !glide };
+    const shot = { type, a, b: a + 4, ids: c.ids, key: c.key, kind: c.kind, prio: c.prio, phase: c.phase, lap: c.lap, reason: why, fair: c.kind === 'fair', ...(c.lookAhead ? { lookAhead: c.lookAhead } : {}), ...rest, hard: !glide };
     out.push(shot); cur = shot; prevT = type;
     for (const id of c.ids || []) lastSeen[id] = a;
     return shot;
@@ -191,12 +199,14 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     let next = null, why = '', hard = false;
     // only a lead change or a backed pass may interrupt before 4 s (never before 3 s); the Hill runs its course unless a lead changes
     const canInterrupt = (c) => c.key !== cur.key && c.prio < cur.prio - 0.5 && (holdHill ? c.kind === 'overtake' && c.prio <= 3 : len >= (c.kind === 'overtake' ? 3 : 4)) && !(holdCheck && c.kind !== 'overtake');
-    const intr = cs.find(canInterrupt);
+    // a live hijink is always a motivated cut (after >= 2.5 s; >= 3 s off a pass), never over another hijink (or a lead changing hands)
+    const hjCut = (c) => c.kind === 'hijink' && c.key !== cur.key && cur.kind !== 'hijink' && c.prio < cur.prio && len >= (cur.kind === 'overtake' ? 3 : 2.5);
+    const intr = cs.find((c) => hjCut(c) || canInterrupt(c));
     if (still && cur.kind === 'overtake' && still.phase !== cur.phase && len >= 3) { next = still; why = `the pass: ${still.reason.split(': ')[1]} - cut to the front`; hard = true; }
     else if (intr) { next = intr; why = intr.reason; hard = true; }
-    else if (!still && len >= minL) { next = best; why = `${best.reason} (previous story over)`; }
+    else if (!still && (len >= minL || (cur.kind === 'hijink' && len >= 4))) { next = best; why = `${best.reason} (previous story over)`; }
     else if (cur.kind === 'checkin' && len >= 4) { next = cs.find((c) => c.key !== cur.key && c.kind !== 'checkin') || best; why = `back to the action: ${next.reason}`; hard = true; }
-    else if (len >= maxL) {
+    else if (len >= maxL && !(cur.kind === 'hijink' && live)) { // a live gag holds its angle to the end
       const alt = cs.find((c) => c.key !== cur.key && c.kind !== 'checkin');
       if (t - keyStart > 26 && alt) { next = alt; why = `fresh subject after ${Math.round(t - keyStart)} s: ${alt.reason}`; hard = true; }
       else { next = live || best; why = live ? `${maxL} s max: new angle on the same story` : `${best.reason} (previous story over)`; }
@@ -207,7 +217,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     }
     if (next) {
       // the same runners in a new story (e.g. a battle that becomes 'the pack'): keep rolling, just relabel
-      if (next.key !== cur.key && sameSet(next.ids, cur.ids) && next.kind !== 'overtake' && cur.kind !== 'overtake' && cur.kind !== 'checkin' && len < maxL && next.kind !== 'hill') {
+      if (next.key !== cur.key && sameSet(next.ids, cur.ids) && next.kind !== 'overtake' && cur.kind !== 'overtake' && cur.kind !== 'checkin' && len < maxL && next.kind !== 'hill' && next.kind !== 'hijink' && cur.kind !== 'hijink') {
         cur.key = next.key; cur.kind = next.kind; cur.prio = next.prio; cur.reason += ` -> ${next.reason}`; continue;
       }
       cur.b = t; push(next, t, why, { hard });
@@ -296,6 +306,14 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
         break;
       }
       case 'breakaway': { s.dist = 20; s.fov = 24; break; }
+      // live hijinks: close on the gag's runner(s), front three-quarter / side / rear three-quarter
+      case 'gag3q': case 'gagside': case 'gagrear': {
+        const two = (s.ids || []).length > 1;
+        s.dist = s.type === 'gagside' ? 11 : 10;
+        s.fov = THREE.MathUtils.clamp(Math.max(fovFor(s.dist, 0.4), two ? deg(2 * Math.atan((spread + 5) / (2 * ASPECT * s.dist))) : 0), 8, 40);
+        s.side = gagSide(s);
+        break;
+      }
       case 'hilltop': { s.dist = THREE.MathUtils.clamp(Math.min(24, aheadGap(s, ids) - 5), 12, 24); s.fov = THREE.MathUtils.clamp(fovFor(s.dist, 0.36), 8, 30); break; }
       default: break;
     }
@@ -344,6 +362,34 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
     const ok = (sg) => world.inPark ? world.inPark(p1[0] + r[0] * d * sg, p1[1] + r[1] * d * sg) : true;
     if (!ok(side) && ok(-side)) side = -side;
     return side;
+  }
+  function signsXZ() { return _signs ||= [1000, 2000, 3000, 4000].map((m) => { const q = C.sample(C.geoOf(m)); return [q.x - q.rx * (PATH_W_HALF + 2.4), q.z - q.rz * (PATH_W_HALF + 2.4)]; })
+    .concat([world.anchors?.hillSign, world.anchors?.lapBoard].filter(Boolean).map((g) => [g.position.x, g.position.z]))
+      // the chevron A-frames on the outside of each bend (world.js)
+      .concat((world.anchors?.corners || []).flatMap((c) => [-10, 0, 10].map((k) => { const q = C.sample(c.m + k), sd = c.d > 0 ? -1 : 1, o = PATH_W_HALF + 1.6; return [q.x + q.rx * o * sd, q.z + q.rz * o * sd, 12]; }))); } // (low A-frames: the sightline corridor can hide them)
+  // the side for a close hijink camera: not inside a tree / crowd, not on the uphill bank, no other runner in between
+  function gagSide(s) {
+    const along = s.type === 'gag3q' ? 0.8 : s.type === 'gagrear' ? -0.8 : 0.08, across = s.type === 'gagside' ? 1 : 0.6, d = s.dist;
+    const cost = (sg) => {
+      let c = 0;
+      const n = Math.max(6, Math.ceil((s.b - s.a) / 0.2)); // fine steps: at the fast clock he covers ~10 m per step
+      for (let k = 0; k <= n; k++) {
+        const st = S(s.a + ((s.b - s.a) * k) / n), me = st.byId[s.ids[0]]; if (!me || me.finished) continue;
+        const x = me.x + me.tx * d * along - me.tz * sg * d * across, z = me.z + me.tz * d * along + me.tx * sg * d * across;
+        if (world.anchors?.clearOf && !world.anchors.clearOf(x, z, 0.6)) c += 3; // a tree / stall (the path's own reservation is ~5 m wide)
+        for (const q of signsXZ()) { // km boards / the Hill / the lap board: not beside the lens, not in the sightline
+          const vx = me.x - x, vz = me.z - z, L2 = vx * vx + vz * vz || 1, u = Math.max(0, Math.min(1, ((q[0] - x) * vx + (q[1] - z) * vz) / L2));
+          if ((x + vx * u - q[0]) ** 2 + (z + vz * u - q[1]) ** 2 < 9 || (q[0] - x) ** 2 + (q[1] - z) ** 2 < 36) c += q[2] || 60; // a board can't be hidden: never film through one
+        }
+        if (world.inPark && !world.inPark(x, z)) c += 2;
+        const g = C.geoOf(me.m); if ((world.anchors?.crowdZones || []).some((q) => q.side === sg && g > q.m0 - 12 && g < q.m1 + 12)) c += 3; // not among the spectators
+        c += Math.max(0, C.heightAt(x, z) - me.y - 0.5) * 1.5;
+        for (const id of st.order) { if (s.ids.includes(id)) continue; const o = st.byId[id]; if (o.finished) continue; const al = (o.x - me.x) * me.tx + (o.z - me.z) * me.tz, la = ((o.x - me.x) * -me.tz + (o.z - me.z) * me.tx) * sg; if (Math.abs(al - d * along * 0.5) < Math.max(2.5, Math.abs(d * along) * 0.6) && la > 0.4) c += 6 / n; }
+      }
+      return c;
+    };
+    const cp = cost(1), cm = cost(-1);
+    return cp === cm ? (s.side || 1) : cp < cm ? 1 : -1;
   }
   function chooseLat(s, ids) {
     const st = S((s.a + s.b) / 2); const l = ids.map((id) => st.byId[id]).filter(Boolean);
@@ -480,6 +526,12 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         pos = new THREE.Vector3(sm.x + sm.rx * 6 * s.side, sm.y + 8, sm.z + sm.rz * 6 * s.side);
         look = new THREE.Vector3(c.x, c.y + 0.9, c.z); fov = s.fov; break;
       }
+      case 'gag3q': case 'gagside': case 'gagrear': {
+        const { c, h, r } = smooth(s.ids, b, Math.min(w, 2.4 / Math.max(1, s.rate || 1))); const d = s.dist; // heading over ~+-3 race s: stays square to him through bends
+        const along = s.type === 'gag3q' ? 0.8 : s.type === 'gagrear' ? -0.8 : 0.08, across = s.type === 'gagside' ? 1 : 0.6;
+        pos = c.clone().addScaledVector(h, d * along).addScaledVector(r, s.side * d * across).add(up.clone().multiplyScalar(1.45 + d * 0.04));
+        look = c.clone().addScaledVector(h, s.lookAhead || 0).add(up.clone().multiplyScalar(1.15)); fov = s.fov; break;
+      }
       case 'cutaway': {
         // locked-off camera across the path from the feature (crowd / lap board), the runners about to run through
         const f = s.feat; const sm = C.sample(f.m - 9, undefined, tmpS);
@@ -608,4 +660,4 @@ export function createDirector({ camera, C, sim, world, funfair }) {
 export function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 export const WIDE_SHOTS = new Set(['drone', 'heli']);
 // tracking shots in which runners are framed big (name tags + PiP map apply)
-export const TRACK_SHOTS = new Set(['side', 'headon', 'chase', 'shoulder', 'hill', 'hilltop', 'high3q', 'breakaway', 'pack', 'finishcam', 'placecam']);
+export const TRACK_SHOTS = new Set(['gag3q', 'gagside', 'gagrear', 'side', 'headon', 'chase', 'shoulder', 'hill', 'hilltop', 'high3q', 'breakaway', 'pack', 'finishcam', 'placecam']);
