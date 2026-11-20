@@ -376,7 +376,9 @@ export function createRunner(info, opts = {}) {
       const v = Math.max(0.5, p.speed ?? 3.5);
       const rate = Math.max(0.2, p.rate ?? 1);
       const walk = state === 'trudge';
-      const cad = walk ? 1.7 : (2.55 + 0.14 * (v - 3.5)) * Math.pow(rate, 0.3) * (state === 'jog' ? 0.8 : 1);
+      // climbing: shorter, heavier, slower strides, a deep lean into the slope, big arm drive, head down
+      const climb = walk ? 0 : Math.max(0, Math.min(1, ((p.slope ?? 0) - 0.04) * 6));
+      const cad = (walk ? 1.7 : (2.55 + 0.14 * (v - 3.5)) * Math.pow(rate, 0.3) * (state === 'jog' ? 0.8 : 1)) * (1 - 0.3 * climb);
       st.phase += dt * Math.PI * cad;
       const ph = st.phase, s = Math.sin(ph), c = Math.cos(ph);
       const A = walk ? 0.4 : Math.max(0.45, Math.min(1.0, 0.62 + 0.13 * (v - 3.5)));
@@ -388,11 +390,16 @@ export function createRunner(info, opts = {}) {
       target.elL = walk ? -0.5 : -1.5; target.elR = walk ? -0.5 : -1.5;
       target.twist = 0.16 * s; target.roll = 0.05 * s;
       target.bob = (walk ? 0.03 : 0.11) * (Math.abs(c) - 0.4);
-      target.lean = (walk ? 0.05 : 0.16) + Math.max(-0.25, Math.min(0.45, (p.slope ?? 0) * 1.6));
-      target.headX = -target.lean * 0.6;
+      target.lean = (walk ? 0.05 : 0.16) + Math.max(-0.25, Math.min(0.45, (p.slope ?? 0) * 1.6)) + 0.22 * climb;
+      target.headX = -target.lean * 0.6 + 0.25 * climb;
+      if (climb > 0) {
+        target.kneeL += 0.35 * climb * Math.max(0, c); target.kneeR += 0.35 * climb * Math.max(0, -c);
+        target.shLx *= 1 + 0.5 * climb; target.shRx *= 1 + 0.5 * climb; target.elL -= 0.3 * climb; target.elR -= 0.3 * climb;
+        target.bob -= 0.06 * climb; target.twist *= 1 + 0.6 * climb;
+      }
       target.headY = -0.08 * s;
       k = 18;
-      expr = p.effort > 0.6 ? 'effort' : p.effort > 0.3 ? 'pant' : 'normal';
+      expr = p.effort > 0.6 || climb > 0.5 ? 'effort' : p.effort > 0.3 ? 'pant' : 'normal';
       if (walk) { target.headX = 0.35; target.lean = 0.25; expr = 'sad'; }
       if (state === 'distracted') {
         target.headY = (p.lookYaw ?? 0.9); target.headX = -0.15; target.twist += (p.lookYaw ?? 0.9) * 0.3; expr = 'love';

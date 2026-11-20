@@ -248,42 +248,68 @@ export function createRaceView(container, opts = {}) {
         }
         return { left: r.left - cr.left, right: right - cr.left, top: r.top - cr.top, bottom: bottom - cr.top };
       }); _rectsAt = wall; } return _rects; };
+  const tagState = {}; let lastTagShot = null;
   function hudState(st, showTags = true) {
     camera.updateMatrixWorld(); // project with this frame's camera (not last frame's)
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const focal = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
     const tags = [];
     const track = mode === 'race' && TRACK_SHOTS.has(director?.shot?.type);
+    // runners a live hijink is happening to: their tag always shows (it must be clear who it's happening to)
+    const hjIds = new Set(); for (const hj of plan?.hijinks || []) if (b >= hj.atBroadcastS - 0.6 && b < (hj.untilBroadcastS ?? hj.endBroadcastS ?? hj.atBroadcastS + 4) + 1.5) { hjIds.add(hj.who); if (hj.other) hjIds.add(hj.other); }
+    const cutNow = director?.shot !== lastTagShot; lastTagShot = director?.shot;
     for (const id of ids) {
       const r = runners[id];
       proj.set(r.root.position.x, r.root.position.y + r.height + (r.popping ? 1.4 : 0.5), r.root.position.z); // above any emote bubble
       const dist = proj.distanceTo(camera.position);
       proj.project(camera);
       const pxTall = (r.height / Math.max(0.1, dist)) * focal;
-      // on screen, in front, not a dot in the distance, not a close-up (the face is enough there)
-      let vis = showTags && track && proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.92 && proj.y < 0.86 && proj.y > -0.5 && pxTall > h * 0.12 && pxTall < h * 0.62;
+      const S0 = tagState[id];
+      const hj = hjIds.has(id);
+      // the body's vertical extent on screen (the tag may sit at the top edge when the head is above the frame)
+      const fy = new THREE.Vector3(r.root.position.x, r.root.position.y + 0.3, r.root.position.z).project(camera).y;
+      const onScreen = proj.z < 1 && proj.z > -1 && Math.abs(proj.x) < 0.95 && fy < 0.95 && proj.y > -0.75;
+      // size hysteresis: appears above ~9% of the frame height, stays down to ~7%
+      const bigEnough = pxTall > h * (S0?.on ? 0.07 : 0.09) || hj;
       const sx = (proj.x * 0.5 + 0.5) * w, sy = (-proj.y * 0.5 + 0.5) * h;
-      tags.push({ id, x: sx, y: sy - 4, visible: vis, pos: st ? st.order.indexOf(id) + 1 : 0, scale: THREE.MathUtils.clamp(0.75 + pxTall / h * 0.6, 0.8, 1.05), dist, mini: false,
+      const close = pxTall > h * 0.55; // close-up: a small tag above the head instead of none
+      tags.push({ id, x: sx, y: sy - 4, want: showTags && track && onScreen && bigEnough, hard: !showTags || !track || !onScreen, hj, pos: st ? st.order.indexOf(id) + 1 : 0,
+        scale: close ? 0.72 : THREE.MathUtils.clamp(0.75 + pxTall / h * 0.6, 0.8, 1.05), dist, mini: false,
         body: { l: sx - pxTall * 0.24, r: sx + pxTall * 0.24, t: sy, b: sy + pxTall * 1.05 } });
     }
-    // a runner hidden behind a nearer one gets no tag (no '3rd' floating over the 2nd placed runner)
-    for (const t of tags) if (t.visible && tags.some((o) => o !== t && o.dist < t.dist - 1 && t.x > o.body.l && t.x < o.body.r && t.y + 10 > o.body.t && t.y < o.body.b)) t.visible = false;
-    // never stacked: by position, each tag takes its spot; a clash shrinks it to the position badge, then hides it
+    // a runner hidden behind a nearer one gets no tag (unless a hijink is happening to them)
+    for (const t of tags) if (t.want && !t.hj && tags.some((o) => o !== t && o.dist < t.dist - 1 && t.x > o.body.l && t.x < o.body.r && t.y + 10 > o.body.t && t.y < o.body.b)) t.want = false;
+    // never stacked: hijink runners, then backed runners, then by position; a clash shrinks a tag to its position badge
+    // (hijink tags never shrink or hide), then hides it
     const orderNow = st ? st.order : ids;
-    tags.sort((a, b) => (backedIds.includes(b.id) - backedIds.includes(a.id)) || (orderNow.indexOf(a.id) - orderNow.indexOf(b.id)));
+    tags.sort((a, b) => (b.hj - a.hj) || (backedIds.includes(b.id) - backedIds.includes(a.id)) || (orderNow.indexOf(a.id) - orderNow.indexOf(b.id)));
     const placed = [];
     const rects = hudRects();
     for (const t of tags) {
-      if (!t.visible) continue;
+      if (!t.want) continue;
+      const [, th0] = hud.tagSize(t.id);
+      t.y = Math.max(t.y, th0 * t.scale + 12); // keep a close-up's tag inside the frame
       let ok = false;
-      for (const mini of [false, true]) {
-        const [tw0, th0] = hud.tagSize(t.id); const tw = (mini ? th0 * 1.5 : tw0) * t.scale, th = th0 * t.scale, pad = 8;
+      const prevMini = tagState[t.id]?.mini;
+      for (const mini of t.hj ? [false] : prevMini ? [true, false] : [false, true]) {
+        const [tw0] = hud.tagSize(t.id); const tw = (mini ? th0 * 1.5 : tw0) * t.scale, th = th0 * t.scale, pad = 8;
         const box = { l: t.x - tw / 2, r: t.x + tw / 2, t: t.y - th - 6, b: t.y + 4 };
-        if (placed.some((p) => box.l < p.r + 4 && box.r > p.l - 4 && box.t < p.b + 2 && box.b > p.t - 2)) continue;
-        if (rects.some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) continue;
+        if (!t.hj && placed.some((p) => box.l < p.r + 4 && box.r > p.l - 4 && box.t < p.b + 2 && box.b > p.t - 2)) continue;
+        if (!t.hj && rects.some((rc) => box.l < rc.right + pad && box.r > rc.left - pad && box.t < rc.bottom + pad && box.b > rc.top - pad)) continue;
         placed.push(box); t.mini = mini; ok = true; break;
       }
-      if (!ok) t.visible = false;
+      if (!ok) t.want = false;
+    }
+    // stability: show after 0.2 s of wanting (at once for a hijink / right after a cut), stay up >= 1.2 s, hide after
+    // 0.45 s of not wanting (at once when off screen); badge <-> full name only after 0.5 s; CSS fades both ways
+    for (const t of tags) {
+      const S1 = tagState[t.id] ||= { on: false, chg: -1e9, wantT: null, unwantT: null, mini: false, miniT: null };
+      if (t.want) { S1.unwantT = null; S1.wantT ??= wall; } else { S1.wantT = null; S1.unwantT ??= wall; }
+      if (!S1.on && t.want && (t.hj || cutNow || wall - S1.wantT >= 0.2)) { S1.on = true; S1.chg = wall; S1.mini = t.mini; }
+      else if (S1.on && !t.want && !t.hj && (t.hard || (wall - S1.unwantT >= 0.45 && wall - S1.chg >= 1.2))) { S1.on = false; S1.chg = wall; }
+      if (S1.on && t.mini !== S1.mini) { S1.miniT ??= wall; if (wall - S1.miniT >= 0.5 || t.hj) { S1.mini = t.mini; S1.miniT = null; } } else S1.miniT = null;
+      t.visible = S1.on && !(t.hard && !t.hj && !t.want); t.mini = S1.mini && !t.hj;
+      if (t.hard && t.hj && !t.want) t.visible = false; // a hijink runner off the screen: nothing to point at
     }
     if (!st) {
       if (mode !== 'race') return { tags, closing: null };

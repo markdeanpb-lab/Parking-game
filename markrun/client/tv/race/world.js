@@ -548,6 +548,30 @@ ${THREE.ShaderChunk.fog_fragment}
     outlinedText(c, 'HILL', 370, h * 0.66, 120, '#ff3d8b', '#1b1b3a', 0.16);
   }, { postH: 1.4 });
   anchors.hillM = hillM;
+  // the Hill's set dressing: a (joke) gradient sign, a summit banner across the path and a summit flag
+  anchors.gradientSign = board(C.sample(hillM + 55), -1, 3.2, 2.4, (c, w, h) => {
+    c.fillStyle = '#ffffff'; roundRect(c, 0, 0, w, h, 36); c.fill(); c.lineWidth = 22; c.strokeStyle = '#e8313f'; roundRect(c, 14, 14, w - 28, h - 28, 30); c.stroke();
+    c.fillStyle = '#1b1b3a'; c.beginPath(); c.moveTo(70, h - 70); c.lineTo(w - 70, h - 70); c.lineTo(w - 70, 90); c.closePath(); c.fill();
+    outlinedText(c, '1 in 3!', w / 2 - 20, h * 0.38, 110, '#e8313f', '#ffffff', 0.12);
+  }, { postH: 1.3 });
+  {
+    const s = C.sample(1985), g = new THREE.Group(); const half = PATH_W / 2 + 1.2;
+    const tex = textTexture(1024, 192, (c, w, h) => {
+      c.fillStyle = '#1b1b3a'; roundRect(c, 0, 0, w, h, 40); c.fill(); c.fillStyle = '#ffd23f'; roundRect(c, 10, 10, w - 20, h - 20, 32); c.fill();
+      outlinedText(c, 'SUMMIT! (ish)', w / 2, h / 2 + 6, 120, '#ff3d8b', '#1b1b3a', 0.16);
+    }, disposables);
+    const pole = new THREE.CylinderGeometry(0.16, 0.2, 5.4, 8); pole.translate(0, 2.7, 0);
+    for (const sx of [-1, 1]) { const p = mesh(pole, toon(0xffffff), { ol: 2 }); p.position.set(sx * half, 0, 0); g.add(p); }
+    const ban = mesh(new RoundedBoxGeometry(half * 2, 1.3, 0.2, 2, 0.08), [toon(0x1b1b3a), toon(0x1b1b3a), toon(0x1b1b3a), toon(0x1b1b3a), toon(0xffffff, { map: tex }), toon(0xffffff, { map: tex })], { ol: 3 });
+    ban.position.y = 4.6; g.add(ban);
+    g.position.set(s.x, C.heightAt(s.x, s.z) - 0.05, s.z); g.rotation.y = Math.atan2(-s.rz, s.rx); signs.add(g); anchors.summitBanner = g;
+    // the summit flag, planted on the top
+    const f = C.sample(2000), fx = f.x - f.rx * (PATH_W / 2 + 5), fz = f.z - f.rz * (PATH_W / 2 + 5);
+    const fg = new THREE.Group(); const fp = mesh(new THREE.CylinderGeometry(0.1, 0.12, 7, 8).translate(0, 3.5, 0), toon(0xdddddd), { ol: 2 }); fg.add(fp);
+    const flag = mesh(new THREE.BoxGeometry(2.4, 1.5, 0.05).translate(1.2, 6.1, 0), toon(0xff3d8b), { ol: 2 }); fg.add(flag);
+    const stripe = mesh(new THREE.BoxGeometry(2.42, 0.4, 0.06).translate(1.2, 6.1, 0), toon(0xffd23f), { cast: false }); fg.add(stripe);
+    fg.position.set(fx, C.heightAt(fx, fz) - 0.1, fz); signs.add(fg); anchors.summitFlag = fg;
+  }
   for (const km of [1, 2, 3, 4]) {
     const m = km * 1000; const s = C.sample(C.geoOf(m));
     board(s, -1, 1.6, 1.3, (c, w, h) => { c.fillStyle = '#ffffff'; roundRect(c, 0, 0, w, h, 50); c.fill(); c.fillStyle = '#ff3d8b'; roundRect(c, 20, 20, w - 40, h - 40, 36); c.fill(); outlinedText(c, `${km}K`, w / 2, h / 2 + 8, 230, '#ffffff', '#1b1b3a', 0.14); }, { postH: 0.7 });
@@ -626,6 +650,7 @@ ${THREE.ShaderChunk.fog_fragment}
   zone(2440, 2490, -1, 3, 0.7); // lap board
   zone(hillM - 70, hillM + 10, 1, 3, 0.5); // foot of the climb (hill-cam background)
   zone(hillM - 70, hillM - 20, -1, 3, 0.45);
+  zone(hillM + 50, hillM + 210, 1, 3, 0.55); zone(hillM + 70, hillM + 200, -1, 3, 0.5); // supporters lining the climb
   zone(2080, 2160, 1, 4, 0.75); zone(2080, 2160, -1, 4, 0.75); // by the boating lake
   zone(800, 860, 1, 3, 0.6); zone(1250, 1310, -1, 3, 0.6); // tree avenue + far end
   anchors.crowdZones = crowdZones;
@@ -636,6 +661,7 @@ ${THREE.ShaderChunk.fog_fragment}
     const bg = mergeGeometries([new THREE.BoxGeometry(1.8, 0.12, 0.5).translate(0, 0.5, 0), new THREE.BoxGeometry(1.8, 0.4, 0.1).translate(0, 0.8, -0.22), new THREE.BoxGeometry(0.1, 0.5, 0.45).translate(-0.8, 0.25, 0), new THREE.BoxGeometry(0.1, 0.5, 0.45).translate(0.8, 0.25, 0)]);
     instanced(bg, toon(0xb5753f), benches, { ol: 1.5 });
     const cafes = park.pois.filter((p) => p.kind === 'cafe' && inPark(p.pos[0], p.pos[1]) && clearOf(p.pos[0], p.pos[1], 4));
+    anchors.cafes = cafes.map((c) => ({ x: c.pos[0], z: c.pos[1] }));
     for (const c of cafes) {
       const g = new THREE.Group();
       g.add(mesh(new RoundedBoxGeometry(5, 3, 4, 2, 0.2), toon(0xfff3dc), { ol: 2.5 })).position.y = 1.5;

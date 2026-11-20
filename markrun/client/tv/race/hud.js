@@ -60,7 +60,7 @@ const CSS = `
 .mr-banner .mr-b2{display:block;margin-top:calc(var(--u)*.4);font-size:calc(var(--u)*1.9);-webkit-text-stroke:calc(var(--u)*.3) var(--ink);paint-order:stroke fill}
 /* floating name tags */
 .mr-tags{position:absolute;inset:0}
-.mr-tag{position:absolute;left:0;top:0;display:flex;align-items:center;white-space:nowrap;font-size:calc(var(--u)*1.75);line-height:1;will-change:transform;transition:opacity var(--fast) var(--ease);transform-origin:50% 100%}
+.mr-tag{position:absolute;left:0;top:0;display:flex;align-items:center;white-space:nowrap;font-size:calc(var(--u)*1.75);line-height:1;will-change:transform;transition:opacity 260ms var(--ease);transform-origin:50% 100%}
 .mr-tag .mr-tp{position:relative;z-index:1;background:var(--ink);color:var(--yellow);border:calc(var(--u)*.2) solid var(--ink);border-radius:calc(var(--u)*.6);padding:calc(var(--u)*.2) calc(var(--u)*.45);font-size:calc(var(--u)*1.6);margin-right:calc(var(--u)*-.35);transform:skewX(var(--sk))}
 .mr-tag .mr-tn{padding:calc(var(--u)*.22) calc(var(--u)*.75);border:calc(var(--u)*.22) solid var(--ink);border-radius:calc(var(--u)*.6);box-shadow:0 calc(var(--u)*.25) 0 var(--ink);transform:skewX(var(--sk))}
 .mr-tag .mr-tn>span{display:inline-block;transform:skewX(var(--usk));-webkit-text-stroke:calc(var(--u)*.22) var(--ink);paint-order:stroke fill;color:#fff}

@@ -170,3 +170,48 @@ export function buildRacePlan(roundId, runners, opts = {}) {
     summary: { winningMarginS: a.winningMarginS, spreadS: a.spreadS, leadChanges: a.leadChanges, overtakes: a.overtakes, lateLeadChange: a.lateLeadChange },
   };
 }
+
+// ---- live hijinks: ease the SHARED broadcast clock to real time (1x) around chosen moments ----
+// retimeForWindows(plan, windows, { maxDurationS? }) -> a NEW plan (pure; the input is not touched) whose timeMap runs
+// at `rate` race-s per broadcast-s (default 1 = real time) inside each window [t0, t1] (race seconds), blending in and out
+// over `ramp` race seconds either side. Every runner shares the one clock, so positions, order and times are untouched.
+// If the slowed broadcast runs past maxDurationS, the middle of the race (outside the windows, the start and the finale)
+// is sped up evenly to pay for it (never more than 1.8x). Every broadcastS in events / commentary / cutscenes / hijinks is
+// recomputed from its race moment.
+export function retimeForWindows(plan, windows = [], { maxDurationS = null, maxSpeedup = 1.8 } = {}) {
+  const old = plan.timeMap, M = old.map, n = M.length - 1;
+  const W = windows.filter((w) => w && w.t1 > w.t0).map((w) => ({ t0: w.t0, t1: w.t1, inv: 1 / (w.rate || 1), ramp: w.ramp ?? 4 }));
+  const weight = (t) => { let k = 0; for (const w of W) { const x = t < w.t0 ? smoothstep(w.t0 - w.ramp, w.t0, t) : t > w.t1 ? 1 - smoothstep(w.t1, w.t1 + w.ramp, t) : 1; if (x > k) k = x; } return k; };
+  const invOld = (i) => M[i + 1][1] - M[i][1];
+  // the stretch we may speed up: after the start, before the finale (leader at 4500 m - 60 s)
+  const fin = Math.min(...plan.runners.map((r) => timeAtDistance(r.progress, 4500)));
+  const mid = (t) => smoothstep(55, 70, t) * (1 - smoothstep(fin - 75, fin - 60, t));
+  const inv = (i, k) => { const t = i + 0.5, w = weight(t); let iw = 0; for (const x of W) if (t >= x.t0 - x.ramp && t <= x.t1 + x.ramp) iw = Math.max(iw, x.inv); return invOld(i) * (1 - w) * (1 - (1 - k) * mid(t)) + w * Math.max(iw, invOld(i)); };
+  const total = (k) => { let b = 0; for (let i = 0; i < n; i++) b += inv(i, k); return b; };
+  let k = 1;
+  if (maxDurationS && total(1) > maxDurationS) {
+    const a = total(1), c = a - total(0); // c = the part that scales with k
+    k = Math.max(1 / maxSpeedup, Math.min(1, (maxDurationS - (a - c)) / Math.max(1e-6, c)));
+  }
+  const map = [[0, 0]]; let b = 0;
+  for (let i = 0; i < n; i++) { b += inv(i, k); map.push([M[i + 1][0], Math.round(b * 1000) / 1000]); }
+  const timeMap = { ...old, map, durationS: Math.round(b * 10) / 10, retimed: { windows: W.map(({ t0, t1, inv: iv, ramp }) => ({ t0, t1, rate: Math.round(100 / iv) / 100, ramp })), speedup: Math.round(100 / k) / 100 } };
+  const re = (bOld) => (bOld == null ? bOld : Math.round(raceToBroadcast(timeMap, broadcastToRace(old, bOld)) * 100) / 100);
+  const fromRace = (t) => Math.round(raceToBroadcast(timeMap, t) * 100) / 100;
+  const events = (plan.events || []).map((e) => ({ ...e, broadcastS: e.raceS != null ? fromRace(e.raceS) : re(e.broadcastS),
+    ...(e.endBroadcastS != null ? { endBroadcastS: e.endRaceS != null ? fromRace(e.endRaceS) : re(e.endBroadcastS) } : {}) }));
+  const commentary = plan.commentary && plan.commentary.map((c) => ({ ...c, broadcastS: c.eventRef?.raceS != null && Math.abs(re(c.broadcastS) - fromRace(c.eventRef.raceS)) < 0.05 ? fromRace(c.eventRef.raceS) : re(c.broadcastS) }));
+  const cutscenes = plan.cutscenes && plan.cutscenes.map((c) => ({ ...c, atBroadcastS: re(c.atBroadcastS) }));
+  const hijinks = plan.hijinks && plan.hijinks.map((h) => retimeHijink(h, re, fromRace));
+  return { ...plan, timeMap, events, ...(commentary ? { commentary } : {}), ...(cutscenes ? { cutscenes } : {}), ...(hijinks ? { hijinks } : {}) };
+}
+// a hijink's broadcast fields from its race-time fields (raceS: { telegraph, at, beat, until }) when it has them
+function retimeHijink(h, re, fromRace) {
+  const r = h.raceS || {};
+  const f = (k, bk) => (r[k] != null ? fromRace(r[k]) : re(h[bk]));
+  const out = { ...h, atBroadcastS: f('at', 'atBroadcastS'), untilBroadcastS: f('until', 'untilBroadcastS') };
+  if (h.telegraphAtBroadcastS != null || r.telegraph != null) out.telegraphAtBroadcastS = f('telegraph', 'telegraphAtBroadcastS');
+  if (h.beatBroadcastS != null || r.beat != null) out.beatBroadcastS = f('beat', 'beatBroadcastS');
+  if (h.params?.passB != null) out.params = { ...h.params, passB: r.beat != null ? fromRace(r.beat) : re(h.params.passB) };
+  return out;
+}

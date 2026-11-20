@@ -9,8 +9,8 @@ const { chromium } = require(process.env.PLAYWRIGHT || '/opt/node-tools/node_mod
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const what = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'all';
-const HTML = path.resolve(ROOT, arg('html', 'release/hijinks-preview.html'));
-const OUT = path.resolve(ROOT, arg('outdir', 'tests/out/hijinks')); fs.mkdirSync(OUT, { recursive: true });
+const HTML = path.resolve(ROOT, arg('html', 'release/hijinks-preview-v2.html'));
+const OUT = path.resolve(ROOT, arg('outdir', 'tests/out/hijinks-v2')); fs.mkdirSync(OUT, { recursive: true });
 const EVERY = Number(arg('every', 2.5));
 const only = arg('only', '');
 
@@ -28,15 +28,16 @@ const settle = () => page.evaluate(() => { window.__tick(); for (const a of docu
 // step the manual loop to broadcast time `to` (renders only the last frame)
 const stepTo = (to) => page.evaluate((to) => { const d = window.view._debug; let n = 0; while (d.b < to - 1e-4 && n++ < 20000) d.step(1 / 30, false); d.render(); return d.b; }, to);
 const shoot = async (name) => { await settle(); await page.waitForTimeout(120); await page.screenshot({ path: path.join(OUT, `${name}.png`) }); };
-const info = () => page.evaluate(() => { const d = window.view._debug; const s = d.director?.shot; return { b: +d.b.toFixed(2), shot: s ? `${s.type} ${s.kind || ''} ${s.reason || ''}`.slice(0, 90) : '', sub: document.getElementById('subs').textContent, chip: document.querySelector('.mrh-chip.on')?.textContent || '' }; });
+const info = () => page.evaluate(() => { const d = window.view._debug; const s = d.director?.shot; return { b: +d.b.toFixed(2), shot: s ? `${s.type} ${s.kind || ''} ${s.reason || ''}`.slice(0, 90) : '', sub: document.getElementById('subs').textContent, chip: document.querySelector('.mrh-chip.on')?.textContent || '', warn: document.querySelector('.mrh-warn.on')?.textContent || '' }; });
 
 const hj = await page.evaluate(() => window.__data.plan.hijinks);
 if (what === 'hijinks' || what === 'all') {
   for (const h of hj) {
     if (only && !only.split(',').includes(h.id)) continue;
     const L = h.untilBroadcastS - h.atBroadcastS;
-    const ts = h.params.passB != null ? [h.params.passB - 0.9, h.params.passB, h.params.passB + 1.4] : [h.atBroadcastS + 0.9, h.atBroadcastS + L * 0.5, h.untilBroadcastS - 0.6];
-    await page.evaluate((b0) => { window.view._debug.seek(b0, 1.2); window.view._debug.unpause(); }, h.atBroadcastS - 3);
+    const bt = h.beatBroadcastS ?? h.params.passB;
+    const ts = h.telegraphAtBroadcastS != null ? [h.telegraphAtBroadcastS + 1.4, bt - 0.7, bt + 1.2] : h.params.passB != null ? [bt - 0.9, bt, bt + 1.4] : [h.atBroadcastS + 0.9, h.atBroadcastS + L * 0.5, h.untilBroadcastS - 0.6];
+    await page.evaluate((b0) => { window.view._debug.seek(b0, 1.2); window.view._debug.unpause(); }, (h.telegraphAtBroadcastS ?? h.atBroadcastS) - 3);
     for (const [i, t] of ts.entries()) {
       await stepTo(t);
       await shoot(`${h.id}_${h.kind}_${i + 1}`);

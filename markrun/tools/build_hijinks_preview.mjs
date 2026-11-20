@@ -1,7 +1,8 @@
-// Build release/hijinks-preview.html: ONE real round (createRound) with live hijinks, as a single self-contained page.
+// Build release/hijinks-preview-v2.html: ONE real round (createRound) with live hijinks v2 (docs/HIJINKS_V2.md) as a single
+// self-contained page: telegraph -> gag -> the real pass at 1x -> consequence; training-life gags from his own week.
 // Everything is inlined (three.js bundle, course + park data, the race plan, fonts as base64): no server, no fetch,
 // no external requests; runs from file:// and in a sandboxed iframe.
-//   node tools/build_hijinks_preview.mjs [--seed 53] [--mark r2] [--jo r3] [--out release/hijinks-preview.html]
+//   node tools/build_hijinks_preview.mjs [--seed 109] [--mark r1] [--jo r4] [--max 9] [--out release/hijinks-preview-v2.html]
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,22 +10,22 @@ import * as esbuild from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
-const K = Number(arg('seed', 53));
-const OUT = path.resolve(ROOT, arg('out', 'release/hijinks-preview.html'));
+const K = Number(arg('seed', 109)); // the showcase round: The Café Queue Cup
+const OUT = path.resolve(ROOT, arg('out', 'release/hijinks-preview-v2.html'));
 
 const { historyDb } = await import(path.join(ROOT, 'server/db.mjs'));
 const { createRound, gameReady, personaliseCommentary } = await import(path.join(ROOT, 'server/game/round.mjs'));
-const { planHijinks } = await import(path.join(ROOT, 'server/game/hijinks.mjs'));
+const { planHijinks, applyHijinks } = await import(path.join(ROOT, 'server/game/hijinks.mjs'));
 await gameReady?.();
 
 // ---- the round: a real one from the game's own round builder (no funfair detour) ----
 const players = [{ id: 'p1', name: 'Mark' }, { id: 'p2', name: 'Jo' }];
 const round = createRound({ hist: historyDb(), sess: new DatabaseSync(':memory:'), players, roundNumber: 2, settings: { sessionId: `h${K}`, rounds: 6 }, rng: 900 + K });
-const plan = round.racePlan;
+let plan = round.racePlan;
 if (plan.runners.some((r) => r.diversions?.length)) throw new Error('this round has a funfair detour: pick another --seed');
 const pub = round.public;
 const ord = [...plan.runners].sort((a, b) => a.officialS - b.officialS).map((r) => r.id);
-const markId = arg('mark', ord[0]), joId = arg('jo', ord.find((x) => x !== markId));
+const markId = arg('mark', 'r1'), joId = arg('jo', 'r4'); // Mark backs Stallion, Jo backs Gilet
 if (markId === joId) throw new Error('Mark and Jo must back different runners');
 const nameOf = (id) => { const r = pub.runners.find((x) => x.id === id); return r?.shortName || r?.nickname || id; };
 
@@ -32,7 +33,10 @@ const nameOf = (id) => { const r = pub.runners.find((x) => x.id === id); return 
 const bets = { p1: [{ type: 'win', runnerId: markId, stake: 20 }], p2: [{ type: 'win', runnerId: joId, stake: 20 }] };
 try { personaliseCommentary(round, bets, players, plan, 7); } catch (e) { console.warn('personaliseCommentary:', e.message); }
 // the hijinks (the visible causes of real slowdowns, surges, passes and the Hill)
-plan.hijinks = planHijinks({ racePlan: plan, runners: pub.runners, rng: K, backedIds: [markId, joId] });
+const facts = Object.fromEntries(Object.entries(round.hidden.perfs).map(([id, x]) => [id, x.facts || {}]));
+const hijinks = planHijinks({ racePlan: plan, runners: pub.runners, facts, backedBy: { [markId]: ['Mark'], [joId]: ['Jo'] }, rng: K, max: Number(arg('max', 9)) });
+// the shared clock eases to 1x round each beat; every event / commentary time follows its race moment
+plan = applyHijinks(plan, hijinks);
 // a hijink line has the floor: drop the regular commentary lines that would land on top of one
 plan.commentary = (plan.commentary || []).filter((c) => !plan.hijinks.some((h) => c.broadcastS > h.atBroadcastS - 2.5 && c.broadcastS < h.untilBroadcastS + 1.5));
 
@@ -58,7 +62,7 @@ const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MARKRUN hijinks preview</title>
+<title>MARKRUN hijinks v2</title>
 <style>${theme}</style>
 <style>
 html,body{margin:0;height:100%;background:#0d1020;overflow:hidden;font-family:var(--font-body,Nunito,system-ui,sans-serif)}
@@ -89,7 +93,7 @@ body.shot #ctl,body.shot #end{display:none!important}
 <body>
 <div id="stage"></div>
 <div id="subs"></div>
-<div id="title"><div class="logo">MARKRUN</div><div class="tag">Hijinks preview</div>
+<div id="title"><div class="logo">MARKRUN</div><div class="tag">Hijinks preview v2</div>
   <div class="who"><div><span class="av" style="background:#ffb000">🦊</span><span>Mark backs <b id="tMark"></b></span></div><div><span class="av" style="background:#ff6fb5">🐼</span><span>Jo backs <b id="tJo"></b></span></div></div>
   <div class="go">${esc(pub.title || '')}</div></div>
 <div id="ctl"><button id="bPlay">Pause</button><button id="bRestart">Restart</button><button id="bNext">Next hijink</button><button id="bSpeed">1x</button></div>
@@ -103,5 +107,6 @@ fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, html);
 const mb = (fs.statSync(OUT).size / 1048576).toFixed(2);
 console.log(`${path.relative(ROOT, OUT)}: ${mb} MB  round "${pub.title}" (seed ${K}); Mark backs ${nameOf(markId)} (${markId}), Jo backs ${nameOf(joId)} (${joId})`);
-for (const h of plan.hijinks) console.log(`  ${h.id} ${h.kind.padEnd(12)} b ${h.atBroadcastS.toFixed(1)}-${h.untilBroadcastS.toFixed(1)}  ${nameOf(h.who)}${h.other ? ` / ${nameOf(h.other)}` : ''}  ${h.truth}`);
+console.log(`  broadcast ${plan.timeMap.durationS} s (+8.5 s pre-roll), mid-race speed-up x${plan.timeMap.retimed.speedup}`);
+for (const h of plan.hijinks) console.log(`  ${h.id} ${h.kind.padEnd(14)} tel ${h.telegraphAtBroadcastS.toFixed(1)} gag ${h.atBroadcastS.toFixed(1)} beat ${h.beatBroadcastS.toFixed(1)} end ${h.untilBroadcastS.toFixed(1)}  ${nameOf(h.who)}${h.other ? ` / ${nameOf(h.other)}` : ''}  ${h.consequence ? (h.consequence.type === 'lose' ? '-1' : '+1') : '  '}  [${h.warn}]  ${h.truth}${h.after ? `  >> ${h.after.text}` : ''}`);
 console.log('  finish:', ord.map((id) => `${nameOf(id)} ${plan.runners.find((r) => r.id === id).officialS}s`).join(', '));

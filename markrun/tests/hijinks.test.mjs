@@ -1,51 +1,89 @@
-// Live hijinks planner (server/game/hijinks.mjs): every gag sits on something that really happens in the race.
+// Live hijinks v2 (server/game/hijinks.mjs) and the eased broadcast clock (raceplan.retimeForWindows).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { planHijinks, HIJINK_KINDS, RULES } from '../server/game/hijinks.mjs';
-import { timeAtDistance, raceToBroadcast, broadcastToRace, distanceAt } from '../server/game/raceplan.mjs';
+import { planHijinks, applyHijinks, hijinkWindows, trainingFacts, HIJINK_KINDS, RULES } from '../server/game/hijinks.mjs';
+import { timeAtDistance, raceToBroadcast, broadcastToRace, distanceAt, rankAt, retimeForWindows } from '../server/game/raceplan.mjs';
 
 const fx = JSON.parse(fs.readFileSync(new URL('../data/fixtures/round.json', import.meta.url), 'utf8'));
 const plan = fx.racePlan, runners = fx.public.runners;
+const ids = plan.runners.map((r) => r.id);
+// a made-up training week for the fixture's runners (the fixture has no facts)
+const facts = { [ids[0]]: { cross_training_7d: { Ride: { count: 2, minutes: 90 } }, treadmill_7d: 1 }, [ids[1]]: { intervals_7d: 1, cross_training_7d: { Swim: { count: 1, minutes: 30 } } }, [ids[2]]: { race_upcoming: { name: 'x', km: 10, days_after: 1 } } };
+const backedBy = { [ids[0]]: ['Mark'], [ids[1]]: ['Jo'] };
 
-test('planHijinks: deterministic, spaced, one of each kind, clear of the gun and the last 200 m', () => {
-  const a = planHijinks({ racePlan: plan, runners, rng: 3 }), b = planHijinks({ racePlan: plan, runners, rng: 3 });
-  assert.deepEqual(a, b);
-  assert.ok(a.length >= 3 && a.length <= 6, `got ${a.length}`);
-  assert.equal(new Set(a.map((h) => h.kind)).size, a.length);
-  for (let i = 1; i < a.length; i++) assert.ok(a[i].atBroadcastS >= a[i - 1].untilBroadcastS + RULES.gapS - 1e-6);
-  for (const h of a) {
-    assert.ok(HIJINK_KINDS[h.kind], h.kind);
-    assert.ok(h.atBroadcastS >= 16 && h.untilBroadcastS > h.atBroadcastS);
-    const t = broadcastToRace(plan.timeMap, h.untilBroadcastS);
-    assert.ok(Math.max(...plan.runners.map((r) => distanceAt(r.progress, t))) < 4800, `${h.id} runs into the last 200 m`);
-    assert.ok(h.caption && !/\s/.test(h.caption.trim()), 'one-word caption');
-    assert.ok(h.line?.text && ['jeff', 'pam'].includes(h.line.speaker));
-    assert.ok(h.truth && /really|slower|overtake/.test(h.truth));
-  }
+test('retimeForWindows: real time inside the windows, same race, monotone clock, nothing mutated', () => {
+  const before = JSON.stringify(plan);
+  const W = [{ t0: 300, t1: 305, rate: 1, ramp: 4 }, { t0: 700, t1: 704, rate: 1, ramp: 4 }];
+  const np = retimeForWindows(plan, W);
+  assert.equal(JSON.stringify(plan), before, 'input plan untouched');
+  assert.deepEqual(np.runners, plan.runners, 'runners (progress, officialS) untouched');
+  assert.deepEqual(np.finishOrder, plan.finishOrder);
+  const m = np.timeMap.map;
+  for (let i = 1; i < m.length; i++) { assert.equal(m[i][0], plan.timeMap.map[i][0]); assert.ok(m[i][1] > m[i - 1][1], 'monotone'); }
+  for (const w of W) for (let t = w.t0; t < w.t1; t++) assert.ok(Math.abs((m[t + 1][1] - m[t][1]) - 1) < 1e-6, `1x at race ${t}`);
+  assert.ok(np.timeMap.durationS > plan.timeMap.durationS, 'the slowed race is longer');
+  // every event at its own race moment on the new clock, in the same order
+  for (const e of np.events) assert.ok(Math.abs(e.broadcastS - raceToBroadcast(np.timeMap, e.raceS)) < 0.02);
+  assert.deepEqual(np.events.map((e) => e.type + e.raceS), plan.events.map((e) => e.type + e.raceS));
+  // commentary keeps its race moment
+  for (const [i, c] of (np.commentary || []).entries()) assert.ok(Math.abs(broadcastToRace(np.timeMap, c.broadcastS) - broadcastToRace(plan.timeMap, plan.commentary[i].broadcastS)) < 0.6);
 });
 
-test('planHijinks: the trigger is real (slowdown / surge / pass / slow climb)', () => {
-  for (const rng of [1, 2, 3, 4, 5]) for (const h of planHijinks({ racePlan: plan, runners, rng })) {
-    const r = plan.runners.find((x) => x.id === h.who);
-    const pace = (m0, m1) => (timeAtDistance(r.progress, m1) - timeAtDistance(r.progress, m0)) / (m1 - m0) / (r.officialS / 5000);
-    const trig = HIJINK_KINDS[h.kind].trig;
-    if (trig === 'slow') assert.ok(pace(h.params.m0, h.params.m1) >= 1.08, `${h.kind} without a slowdown`);
-    if (trig === 'surge') assert.ok(pace(h.params.m0, h.params.m1) <= 0.91, `${h.kind} without a surge`);
-    if (trig === 'hill') assert.ok(pace(1720, 1960) >= 1.12);
-    if (trig === 'overtake') {
-      const e = plan.events.find((x) => Math.abs(x.broadcastS - h.params.passB) < 0.02 && (x.by || x.to) === h.who && (x.on || x.from) === h.other);
-      assert.ok(e, `${h.kind}: no real pass at ${h.params.passB}`);
-      assert.ok(h.atBroadcastS < h.params.passB && h.untilBroadcastS > h.params.passB);
-    } else {
-      // the gag's window covers (the middle of) the real course window
-      const mid = raceToBroadcast(plan.timeMap, timeAtDistance(r.progress, (h.params.m0 + h.params.m1) / 2));
-      assert.ok(mid > h.atBroadcastS - 1 && mid < h.untilBroadcastS + 1);
+test('retimeForWindows: a duration budget speeds up the middle only (and never past the cap)', () => {
+  const W = Array.from({ length: 8 }, (_, i) => ({ t0: 200 + i * 100, t1: 204 + i * 100, rate: 1, ramp: 4 }));
+  const free = retimeForWindows(plan, W), capped = retimeForWindows(plan, W, { maxDurationS: free.timeMap.durationS - 15 });
+  assert.ok(capped.timeMap.durationS <= free.timeMap.durationS - 15 + 0.2);
+  assert.ok(capped.timeMap.retimed.speedup > 1 && capped.timeMap.retimed.speedup <= 1.8);
+  const m = capped.timeMap.map; for (const w of W) assert.ok(Math.abs((m[w.t0 + 2][1] - m[w.t0 + 1][1]) - 1) < 1e-6, 'still 1x in the windows');
+  const fin = Math.min(...plan.runners.map((r) => timeAtDistance(r.progress, 4500)));
+  const tail = (tm) => tm.map.at(-1)[1] - raceToBroadcast(tm, fin);
+  assert.ok(Math.abs(tail(capped.timeMap) - tail(plan.timeMap)) < 0.05, 'the finale is untouched');
+});
+
+test('planHijinks v2: real consequences, real training facts, spaced, the final battle clean', () => {
+  const hj = planHijinks({ racePlan: plan, runners, facts, backedBy, rng: 3 });
+  assert.deepEqual(hj, planHijinks({ racePlan: plan, runners, facts, backedBy, rng: 3 }), 'deterministic');
+  assert.ok(hj.length >= 4 && hj.length <= RULES.max, `got ${hj.length}`);
+  assert.equal(new Set(hj.map((h) => h.kind)).size, hj.length, 'one of each kind');
+  const tFinal = Math.min(...plan.runners.map((r) => timeAtDistance(r.progress, 4000)));
+  for (const h of hj) {
+    const K = HIJINK_KINDS[h.kind]; assert.ok(K, h.kind);
+    assert.ok(h.raceS.telegraph < h.raceS.at && h.raceS.at < h.raceS.beat && h.raceS.beat < h.raceS.until);
+    assert.ok(h.warn && h.caption && h.line?.text && h.truth);
+    if (K.fact) assert.ok(trainingFacts(facts[h.who])[K.fact], `${h.kind} without his own ${K.fact} fact`);
+    if (h.consequence) {
+      // the place really changes hands round the beat
+      const pre = rankAt(plan.runners, h.raceS.beat - 6), post = rankAt(plan.runners, h.raceS.beat + 8);
+      const other = h.consequence.other;
+      if (h.consequence.type === 'lose') { assert.ok(pre.indexOf(h.who) < pre.indexOf(other) && post.indexOf(h.who) > post.indexOf(other), `${h.id} lose`); }
+      else { assert.ok(pre.indexOf(h.who) > pre.indexOf(other) && post.indexOf(h.who) < post.indexOf(other), `${h.id} gain`); }
+      if (h.raceS.beat > tFinal) { const top = rankAt(plan.runners, h.raceS.beat - 2).slice(0, 2); assert.ok(!top.includes(h.who) && !top.includes(other), 'final lead battle stays clean'); }
     }
+    if (backedBy[h.who] && h.consequence) assert.ok(h.after?.text.includes(backedBy[h.who][0]), 'a money line for the backer');
   }
+  // after easing the clock: telegraph -> gag -> beat -> end, in order, never overlapping, beats at 1x
+  const np = applyHijinks(plan, hj);
+  const H = np.hijinks;
+  for (let i = 0; i < H.length; i++) {
+    const h = H[i];
+    assert.ok(h.telegraphAtBroadcastS < h.atBroadcastS && h.atBroadcastS < h.beatBroadcastS && h.beatBroadcastS < h.untilBroadcastS);
+    if (i) assert.ok(h.telegraphAtBroadcastS >= H[i - 1].untilBroadcastS, 'no overlap');
+    const rate = 1 / (raceToBroadcast(np.timeMap, h.raceS.beat + 0.5) - raceToBroadcast(np.timeMap, h.raceS.beat - 0.5));
+    assert.ok(rate < 1.05, `${h.id} beat at real time (${rate.toFixed(2)}x)`);
+  }
+  assert.ok(np.timeMap.durationS <= RULES.maxDurationS + 10, `broadcast ${np.timeMap.durationS} s`);
+  assert.equal(hijinkWindows(hj).length, hj.filter((h) => h.raceS.slow0 != null).length);
+});
+
+test('trainingFacts reads only the counts / kinds (never names)', () => {
+  const t = trainingFacts({ cross_training_7d: { Ride: { count: 3 } }, race_recent: { name: 'Some Half - 1:30', km: 21.1, days_before: 6 }, race_upcoming: { name: 'Big 10k', km: 10, days_after: 1 } });
+  assert.ok(t.ride && t.half && t.raceTomorrow && !t.swim);
+  assert.ok(!JSON.stringify(t).includes('Some Half') && !JSON.stringify(t).includes('Big 10k'));
 });
 
 test('planHijinks: nothing without a plan', () => {
   assert.deepEqual(planHijinks({}), []);
   assert.deepEqual(planHijinks({ racePlan: { runners: [] } }), []);
 });
+void distanceAt;

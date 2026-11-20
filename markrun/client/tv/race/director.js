@@ -13,6 +13,11 @@
 //    twice in a row; cuts only for a reason (higher priority, beat over, the pass, max length); hard cuts on action,
 //    glides only to reframe the same subject (never front <-> rear); 180-degree rule within a story; while the clock runs
 //    fast only axis-aligned angles (front / rear / high rear), so the background never whips past.
+// D. Camera families, balanced by race time: close tracking ~30% / SET CAMERAS ~30% (fixed broadcast positions around
+//    the real course - finish gantry, avenue, far corner, Hill foot (low hero angle up the climb), Hill top (looking
+//    down it), lake bend, cafe, bend towers, trackside towers - each pans and zooms with the runners through its stretch)
+//    / high DRONE ~25% (aerial tracking that shows the course shape; tags keep runners readable) / chase & other ~15%.
+//    The Hill gets its set camera on BOTH laps (a gag on the Hill is shot from it too).
 // Every shot carries `reason` (see client/tv/race/shotstats.mjs). Positions are analytic in broadcast time: no jitter.
 import * as THREE from 'three';
 import { raceToBroadcast, timeAtDistance, HILL_M } from '../../../server/game/raceplan.mjs';
@@ -68,11 +73,11 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     if (hijinks.some((h) => h.params?.passB != null && Math.abs(h.params.passB - e.broadcastS) < 0.5)) continue; // a live hijink is filming this pass
     ovs.push({ at: e.broadcastS, by, on, lead });
   }
-  const hillWin = HILL_M.map((m) => [leaderAtB(m - 30), leaderAtB(m + 240)]);
+  const hillWin = HILL_M.map((m) => [leaderAtB(m - 90), leaderAtB(m + 250)]);
   const divR = funfair ? plan.runners.filter((r) => r.diversions?.length) : [];
   const divWin = divR.flatMap((r) => r.diversions.map((d) => ({ id: r.id, a: raceToBroadcast(tm, timeAtDistance(r.progress, d.fromM)) - 0.5, b: raceToBroadcast(tm, timeAtDistance(r.progress, d.toM)) + 0.8 })));
   const lastSeen = {}; for (const r of plan.runners) lastSeen[r.id] = gunEnd;
-  let hillShown = false;
+  let hillShown = false; const hillDone = [false, false]; // the Hill gets its set camera on BOTH laps
   // a hijink may take the screen from a final-km lead battle only while no lead is changing hands (+-3 s)
   const leadB = (plan.events || []).filter((e) => e.type === 'lead_change').map((e) => e.broadcastS);
   const hjPrio = (h) => (leadB.some((x) => x > h.atBroadcastS - 3 && x < h.untilBroadcastS + 3) ? (h.prio ?? 2.8) : Math.min(1.9, h.prio ?? 2.8));
@@ -83,7 +88,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     const L = st.byId[live[0]];
     const near = (core, within = 6) => { const ms = core.map((id) => st.byId[id].m); return [...core, ...live.filter((id) => !core.includes(id) && st.byId[id].m > Math.min(...ms) - within && st.byId[id].m < Math.max(...ms) + within)]; };
     // 2.8: a live hijink (hijinks/: the visible cause of a real slowdown / surge / pass / climb); cut in just before it starts
-    for (const h of hijinks) if (t >= h.atBroadcastS - 1.2 && t < h.untilBroadcastS && !st.byId[h.who]?.finished) c.push({ prio: hjPrio(h), key: `hj:${h.id}`, ids: [h.who, h.other].filter(Boolean), kind: 'hijink', angles: h.angles, lookAhead: h.lookAhead || 0, reason: `hijink: ${h.kind} (${short(h.who)})` });
+    for (const h of hijinks) if (t >= (h.telegraphAtBroadcastS ?? h.atBroadcastS - 1.2) && t < h.untilBroadcastS && !st.byId[h.who]?.finished) c.push({ prio: hjPrio(h), key: `hj:${h.id}`, ids: [h.who, h.other].filter(Boolean), kind: 'hijink', angles: h.angles, lookAhead: h.lookAhead || 0, reason: `hijink: ${h.kind} (${short(h.who)})` });
     // 2: lead battle in the final km
     if (live.length > 1 && L.m >= 4000 && gapS(st, live[0], live[1]) <= 2) c.push({ prio: 2, key: `lb:${live[0]}|${live[1]}`, ids: near([live[0], live[1]]), kind: 'battle', reason: `lead battle in the final km (${gapS(st, live[0], live[1]).toFixed(1)} s)` });
     // 3 / 4: a pass about to happen (pre-positioned), then the passer coming at us
@@ -101,7 +106,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       const on = live.filter((id) => { const g = C.geoOf(st.byId[id].m); return g > 1650 && g < 2010; });
       const who = on.find(isB) ?? on[0] ?? live[0];
       // guaranteed slot: if lap 1's Hill was never shown, lap 2's outranks everything but a lead change
-      c.push({ prio: i === 1 && !hillShown ? 3.2 : 5, key: `hill:${i}`, ids: near([who]), kind: 'hill', lap: i, reason: `the Hill, lap ${i + 1}: ${short(who)}` });
+      c.push({ prio: hillDone[i] ? 5 : 3.05, key: `hill:${i}`, ids: near([who]), kind: 'hill', lap: i, reason: `the Hill, lap ${i + 1}: ${short(who)}` });
     }
     // 6: a breakaway leader whose gap is growing
     if (live.length > 1) {
@@ -122,14 +127,76 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     return c.sort((x, y) => x.prio - y.prio);
   }
 
+  // ---- set cameras around the real course (lap-1 geometry metres; lap 2 passes them again) ----
+  // each: where it stands, which stretch it covers (runner's geo metres) and how it frames: it pans and zooms with them
+  const FIXED_DEF = [
+    { name: 'gantry', m: 4905, cover: [4640, 4880], off: 7, h: 8, look: 'down the home straight from the finish gantry' },
+    { name: 'avenue', m: 905, cover: [470, 890], off: 2.6, h: 2.6, look: 'down the tree avenue' },
+    { name: 'farcorner', m: 1335, cover: [920, 1320], off: 10, h: 5, look: 'at the far corner' },
+    { name: 'hillfoot', m: 1640, cover: [1600, 1960], off: 4.5, h: 0.7, hill: true, lap: 0, look: 'up the Hill from its foot (hero low angle)' },
+    { name: 'hilltop', m: 2025, cover: [1560, 2005], off: 4, h: 3.2, hill: true, lap: 1, look: 'down the Hill from the top' },
+    { name: 'lake', m: 2215, cover: [1900, 2200], off: 9, h: 4, look: 'across the lake bend' },
+  ];
+  // the café: the course point nearest a park café, if one is close to the course
+  for (const cf of world.anchors?.cafes || []) {
+    let bm = -1, bd = 1e9; for (let m = 0; m <= 2580; m += 10) { const p = C.baseXZ(m); const d = Math.hypot(p[0] - cf.x, p[1] - cf.z); if (d < bd) { bd = d; bm = m; } }
+    if (bd < 60 && !FIXED_DEF.some((f) => Math.abs(f.m - bm) < 150)) { FIXED_DEF.push({ name: 'cafe', m: bm + 20, cover: [bm - 220, bm + 5], off: Math.min(14, bd), h: 3, look: 'from the café' }); break; }
+  }
+  // trackside towers on the outside of the sharp bends (runners run at them, then turn: little background whip)
+  for (const c of world.anchors?.corners || []) {
+    const g = C.geoOf(c.m); if (g > 2560 || FIXED_DEF.some((f) => Math.abs(f.m - g) < 160)) continue;
+    FIXED_DEF.push({ name: `bend${Math.round(g / 100)}`, m: g + 25, cover: [g - 420, g + 15], off: 9, h: 5.5, side: c.d > 0 ? -1 : 1, look: `the bend at ${(g / 1000).toFixed(1)} km` });
+  }
+  // fill the remaining gaps (lap-1 geometry, so lap 2 too) with trackside towers every ~250 m
+  for (let g = 120; g < 2540; g += 10) {
+    if (FIXED_DEF.some((f) => g >= f.cover[0] && g <= f.cover[1])) continue;
+    let e = g; while (e < 2540 && !FIXED_DEF.some((f) => e >= f.cover[0] && e <= f.cover[1]) && e - g < 380) e += 10;
+    if (e - g >= 100) FIXED_DEF.push({ name: `track${Math.round(e / 100)}`, m: e + 18, cover: [Math.min(g - 10, e - 420), e], off: 8, h: 4.5, look: `trackside at ${(e / 1000).toFixed(1)} km` });
+    g = e;
+  }
+  const FIXED = FIXED_DEF.map((f) => {
+    const q = C.sample(f.m);
+    let best = null;
+    for (const sd of f.side ? [f.side, -f.side] : [1, -1]) for (const o of [f.off, f.off + 3, f.off + 6, Math.max(2.4, f.off - 2)]) {
+      const x = q.x + q.rx * o * sd, z = q.z + q.rz * o * sd;
+      let cost = 0;
+      if (world.inPark && !world.inPark(x, z)) cost += 5;
+      if (world.blocked && world.blocked(x, z, 1)) cost += 8;
+      if (world.anchors?.clearOf && o > PATH_W_HALF + 1.6 && !world.anchors.clearOf(x, z, 1.2)) cost += 3;
+      if (f.side && sd !== f.side) cost += 1;
+      if (!best || cost < best.cost) best = { x, z, cost };
+    }
+    return { ...f, x: best.x, z: best.z, y: C.heightAt(best.x, best.z) + f.h };
+  });
+  // a set camera that has `ids` in its stretch from t for at least `need` s: [cam, until] (else null)
+  function fixedFor(ids, t, need = 3.5, hillOnly = false, lap = null) {
+    const front = (st) => { const l = (ids || []).map((id) => st.byId[id]).filter((r) => r && !r.finished && !(r.div > 0.05)); return l.length ? l.reduce((a, r) => (r.m > a.m ? r : a)) : null; };
+    let best = null;
+    for (const f of FIXED) {
+      if (hillOnly && (!f.hill || (lap != null && f.lap !== lap % 2))) continue;
+      const r0 = front(S(t)); if (!r0) return null;
+      const g0 = C.geoOf(r0.m); if (g0 < f.cover[0] - 25 || g0 > f.cover[1]) continue;
+      let u = t; for (; u < t + 14; u += 0.25) { const r = front(S(u)); if (!r) break; const g = C.geoOf(r.m); if (g > f.cover[1] || g < f.cover[0] - 30) break; }
+      if (u - t >= need && (!best || u - t > best[1] - t)) best = [f, Math.min(u, t + 10)];
+    }
+    return best;
+  }
+
   // ---- B: angle grammar ----
+  // camera families and the target share of race time: close tracking / set cameras / high drone / chase & other
+  const FAMILY = { headon: 'close', side: 'close', high3q: 'close', gag3q: 'close', gagside: 'close', gagrear: 'close', breakaway: 'close', hilltop: 'close',
+    fixed: 'fixed', cutaway: 'fixed', drone: 'drone', pack: 'drone', chase: 'other', shoulder: 'other', hill: 'other' };
+  const TARGET = { close: 0.3, fixed: 0.3, drone: 0.25, other: 0.15 };
+  const famTime = { close: 6, fixed: 6, drone: 5, other: 3 }; // a prior (20 s at the target shares) so early shots don't swing it
+  let hjN = 0;
+  const deficit = (type) => { const f = FAMILY[type] || 'other'; const tot = Object.values(famTime).reduce((a, x) => a + x, 0) + 1e-6; return TARGET[f] - famTime[f] / tot; };
   const FRONT = new Set(['headon', 'high3q', 'breakaway', 'hilltop', 'gag3q']), REAR = new Set(['chase', 'shoulder', 'pack', 'hill', 'gagrear']);
   const used = {};
   function angleFor(c, prevType, r) {
     const slow = r <= 6;
     let list;
     switch (c.kind) {
-      case 'overtake': list = c.phase === 'pre' ? ['chase', 'shoulder'] : slow ? ['headon', 'high3q'] : ['headon', 'chase']; break;
+      case 'overtake': list = c.phase === 'pre' ? ['chase', 'shoulder'] : slow ? ['headon', 'high3q'] : ['headon', 'chase']; { const fx = c.phase === 'post' && fixedFor(c.ids, c.t ?? 0, 3); if (fx) { list = ['fixed', ...list]; c._fixed = fx; } } break;
       case 'battle': { const st = S(c.t ?? 0), ms = (c.ids || []).map((id) => st.byId[id]?.m ?? 0), sp = Math.max(...ms) - Math.min(...ms); list = slow ? ['side', 'headon', 'high3q', 'chase'] : sp > 9 ? ['headon', 'chase'] : ['headon', 'chase', 'pack']; break; }
       case 'hill': list = c.lap % 2 ? ['hilltop', 'hill'] : ['hill', 'hilltop']; break;
       case 'break': list = slow ? ['breakaway', 'high3q', 'headon'] : ['breakaway', 'headon', 'chase']; break;
@@ -139,12 +206,32 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       case 'solo': list = slow ? ['headon', 'side', 'chase'] : ['headon', 'chase']; break;
       default: list = (c.ids?.length || 0) < 2 || (c.spread ?? 0) > 9 ? (slow ? ['headon', 'side', 'chase'] : ['headon', 'chase']) : slow ? ['pack', 'high3q', 'headon', 'side'] : ['pack', 'chase', 'headon'];
     }
-    // never the same angle twice in a row; among the rest, the grammar's order, nudged towards the least used
+    // set cameras and the high drone join every story they can show (not the scripted chase -> front of a pass)
+    if (c.kind !== 'overtake' && c.kind !== 'fair' && c.kind !== 'checkin') {
+      const onHill = (() => { const r = S(c.t ?? 0).byId[c.ids?.[0]]; const g = r ? C.geoOf(r.m) : 0; return g > 1600 && g < 2000; })();
+      const fx = c.kind === 'hill' || (c.kind === 'hijink' && onHill) ? (fixedFor(c.ids, c.t ?? 0, 2.8, true, c.lap ?? (S(c.t ?? 0).leader.m > 2500 ? 1 : 0)) || fixedFor(c.ids, c.t ?? 0, 2.8, true)) : fixedFor(c.ids, c.t ?? 0, c.kind === 'hijink' ? 3 : 3.5);
+      if (fx) { list = c.kind === 'hill' || (c.kind === 'hijink' && fx[0].hill) ? ['fixed', ...list] : [...list, 'fixed']; c._fixed = fx; }
+      if (c.kind !== 'hill' && c.kind !== 'hijink') list = [...list, 'drone'];
+    }
+    // never the same angle twice in a row; among the rest, the grammar's order, nudged towards the camera family
+    // furthest below its share of the race (close ~30%, set cameras ~30%, drone ~25%, chase/other ~15%)
     const ok = list.filter((x) => x !== prevType);
     if (!ok.length) return list.find((x) => x !== prevType) || (prevType === 'headon' ? 'chase' : 'headon');
-    if (c.kind === 'overtake' || c.kind === 'hill' || c.kind === 'fair' || c.kind === 'hijink') return ok[0];
-    return ok.map((x, i) => [x, i + (used[x] || 0) * 0.6]).sort((p, q) => p[1] - q[1])[0][0];
+    if (c.kind === 'overtake' && c.phase === 'post' && ok.includes('fixed') && deficit('fixed') > deficit('close') - 0.05) return 'fixed'; // a set camera ahead of the pass: the passer comes at us
+    if (c.kind === 'hill') return ok[0]; // the Hill's set camera first
+    if (c.kind === 'overtake' || c.kind === 'fair') return ok.filter((x) => x !== 'fixed')[0] ?? ok[0];
+    // a gag on the Hill is shot from the Hill's set camera; elsewhere a set camera that's close enough, else the gag angle
+    if (c.kind === 'hijink') {
+      if (!ok.includes('fixed') || !c._fixed) return ok[0];
+      if (c._fixed[0].hill) return 'fixed';
+      // a set camera when it's near enough to show the gag AND who it's happening to (zoomed), alternating with the close gag angle
+      hjN++;
+      return fixedDist(c._fixed[0], c.ids, (c.t ?? 0) + 2) < 200 && (hjN % 2 === 0 || deficit('fixed') > deficit('close')) ? 'fixed' : ok.filter((x) => x !== 'fixed')[0] ?? 'fixed';
+    }
+    return ok.map((x, i) => [x, i * 0.3 + (used[x] || 0) * 0.2 - deficit(x) * 10]).sort((p, q) => p[1] - q[1])[0][0];
   }
+
+  function fixedDist(f, ids, t) { const st = S(t ?? 0); const r = (ids || []).map((id) => st.byId[id]).find(Boolean); return r ? Math.hypot(r.x - f.x, r.z - f.z) : 1e9; }
 
   // ---- cutaway features (crowd, the lap board / bell, the lake): course metres on lap-1 geometry ----
   const feats = [];
@@ -166,7 +253,9 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
   let cur = null, keyStart = 0, prevT = 'headon';
   const push = (c, a, why, extra = {}) => {
     const r = meanRate(a, a + 4);
-    const type = extra.type || angleFor({ ...c, t: a }, prevT, r);
+    const cc = { ...c, t: a };
+    const type = extra.type || angleFor(cc, prevT, r);
+    if (out.at(-1) && out.at(-1).a >= gunEnd - 0.01) { const p0 = out.at(-1); famTime[FAMILY[p0.type] || 'other'] += Math.max(0, a - p0.a); }
     used[type] = (used[type] || 0) + 1;
     const same = out.at(-1)?.key === c.key;
     if (!same) keyStart = a;
@@ -175,6 +264,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     const glide = same && !extra.hard && !(FRONT.has(pt) && REAR.has(type)) && !(REAR.has(pt) && FRONT.has(type)) && extra.type !== 'cutaway';
     const { hard: _h, ...rest } = extra;
     const shot = { type, a, b: a + 4, ids: c.ids, key: c.key, kind: c.kind, prio: c.prio, phase: c.phase, lap: c.lap, reason: why, fair: c.kind === 'fair', ...(c.lookAhead ? { lookAhead: c.lookAhead } : {}), ...rest, hard: !glide };
+    if (type === 'fixed' && cc._fixed) { shot.cam = cc._fixed[0]; shot.until = cc._fixed[1]; shot.reason += ` [set cam: ${shot.cam.look}]`; shot.hard = true; }
     out.push(shot); cur = shot; prevT = type;
     for (const id of c.ids || []) lastSeen[id] = a;
     return shot;
@@ -189,7 +279,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     const minL = fk ? 4 : 8, maxL = fk ? 5 : 10;
     const cs = cands(t).map((c) => (c.kind === 'overtake' && c.phase === 'pre' && c.at - t < 3 && cur?.key !== c.key ? { ...c, phase: 'post' } : c)); // too late to set up the chase: go straight to the front
     const best = cs[0]; if (!best) continue;
-    if (!cur || cur.type === 'cutaway') { if (!cur || t >= cur.b) { if (cur) cur.b = t; push(best, t, best.reason); if (best.kind === 'hill') hillShown = true; } continue; }
+    if (!cur || cur.type === 'cutaway') { if (!cur || t >= cur.b) { if (cur) cur.b = t; push(best, t, best.reason); if (best.kind === 'hill') { hillShown = true; hillDone[best.lap] = true; } } continue; }
     const len = t - cur.a;
     const holdCheck = cur.kind === 'checkin' && len < 4;
     const holdHill = cur.kind === 'hill' && len < 5;
@@ -206,6 +296,9 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
     else if (intr) { next = intr; why = intr.reason; hard = true; }
     else if (!still && (len >= minL || (cur.kind === 'hijink' && len >= 4))) { next = best; why = `${best.reason} (previous story over)`; }
     else if (cur.kind === 'checkin' && len >= 4) { next = cs.find((c) => c.key !== cur.key && c.kind !== 'checkin') || best; why = `back to the action: ${next.reason}`; hard = true; }
+    else if (cur.until != null && t >= cur.until - 0.01 && len >= 2.5 && !holdHill && !(cur.kind === 'hijink' && live && len < 3)) { // the runners leave the set camera's stretch
+      next = live || best; why = live ? `out of the ${cur.cam?.name} camera's stretch: new angle on the same story` : `${best.reason} (previous story over)`;
+    }
     else if (len >= maxL && !(cur.kind === 'hijink' && live)) { // a live gag holds its angle to the end
       const alt = cs.find((c) => c.key !== cur.key && c.kind !== 'checkin');
       if (t - keyStart > 26 && alt) { next = alt; why = `fresh subject after ${Math.round(t - keyStart)} s: ${alt.reason}`; hard = true; }
@@ -220,8 +313,9 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       if (next.key !== cur.key && sameSet(next.ids, cur.ids) && next.kind !== 'overtake' && cur.kind !== 'overtake' && cur.kind !== 'checkin' && len < maxL && next.kind !== 'hill' && next.kind !== 'hijink' && cur.kind !== 'hijink') {
         cur.key = next.key; cur.kind = next.kind; cur.prio = next.prio; cur.reason += ` -> ${next.reason}`; continue;
       }
-      cur.b = t; push(next, t, why, { hard });
-      if (next.kind === 'hill') hillShown = true;
+      cur.b = t; const sh = push(next, t, why, { hard });
+      if (next.kind === 'hill') { hillShown = true; hillDone[next.lap] = true; }
+      if (sh.cam?.hill) hillDone[S(t).leader.m > 2500 ? 1 : 0] = true;
     }
   }
   if (cur) cur.b = bFin;
@@ -252,7 +346,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
   for (const s of out) {
     s.rate = meanRate(Math.max(0, s.a), Math.max(0.5, s.b));
     s.ids = s.ids || null;
-    if (['heli', 'startgo', 'finishcam', 'placecam', 'celebrate'].includes(s.type)) continue;
+    if (['heli', 'startgo', 'finishcam', 'placecam', 'celebrate', 'fixed'].includes(s.type)) continue;
     const ids = s.ids || leadGroupAt(sim, (s.a + s.b) / 2);
     let spread = 0;
     for (let k = 0; k <= 6; k++) { const st = S(s.a + ((s.b - s.a) * k) / 6); const ms = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m); if (ms.length) spread = Math.max(spread, Math.max(...ms) - Math.min(...ms)); }
@@ -306,6 +400,12 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
         break;
       }
       case 'breakaway': { s.dist = 20; s.fov = 24; break; }
+      case 'drone': {
+        // high aerial tracking behind-and-above the group: the course shape around them, runners still readable (tags)
+        s.dist = 42; const slant = Math.hypot(42, 18, 30);
+        s.fov = THREE.MathUtils.clamp(Math.max(fovFor(slant, 0.17), deg(2 * Math.atan((spread * 0.55 + 14) / (2 * ASPECT * slant))), s.rate > 6 ? 22 : 0), 12, 40);
+        break;
+      }
       // live hijinks: close on the gag's runner(s), front three-quarter / side / rear three-quarter
       case 'gag3q': case 'gagside': case 'gagrear': {
         const two = (s.ids || []).length > 1;
@@ -318,6 +418,7 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair, hi
       default: break;
     }
   }
+  out.fixedCams = FIXED; out.fixedFor = fixedFor; // (debug / stats)
   return out;
 
   // metres from the group's front to the nearest live runner ahead (min over the shot)
@@ -404,7 +505,7 @@ function leadGroupAt(sim, t) { const st = sim.stateAt(Math.max(0, t)); const liv
 export function createDirector({ camera, C, sim, world, funfair }) {
   const cam = { pos: new THREE.Vector3(), look: new THREE.Vector3() };
   const up = new THREE.Vector3(0, 1, 0);
-  let shot = null, glide = null, hardNext = true, smoothLook = null, frozenFrom = false;
+  let shot = null, glide = null, hardNext = true, smoothLook = null, frozenFrom = false, fovS = null;
   const q = new THREE.Quaternion(), m4 = new THREE.Matrix4();
   const tmpS = {};
   // course metres are not world metres (the GPS line is ~5% short, much more in the finish funnel): cumulative world
@@ -532,6 +633,22 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         pos = c.clone().addScaledVector(h, d * along).addScaledVector(r, s.side * d * across).add(up.clone().multiplyScalar(1.45 + d * 0.04));
         look = c.clone().addScaledVector(h, s.lookAhead || 0).add(up.clone().multiplyScalar(1.15)); fov = s.fov; break;
       }
+      case 'fixed': {
+        // a set broadcast camera: stands still, pans and zooms with the runners (subject ~28% of the frame, group fits)
+        const ids = groupOf(s), st = sim.stateAt(Math.max(0, b)); const live = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished);
+        const c = center(ids, b);
+        pos = new THREE.Vector3(s.cam.x, s.cam.y, s.cam.z);
+        look = new THREE.Vector3(c.x, c.y + 1.1, c.z);
+        const d = Math.max(4, pos.distanceTo(look));
+        let sp = 0; if (live.length > 1) { const xs = live.map((r) => r.x), zs = live.map((r) => r.z); sp = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs)); }
+        fov = THREE.MathUtils.clamp(Math.max(fovFor(d, s.cam.hill ? 0.26 : 0.28), deg(2 * Math.atan((sp * 0.7 + 4) / (2 * ASPECT * d)))), 2.4, 46);
+        s.smoothLook = true; s.smoothFov = true; break;
+      }
+      case 'drone': {
+        const { c, h, r } = smooth(groupOf(s), b, 2.4);
+        pos = c.clone().addScaledVector(h, -s.dist).addScaledVector(r, (s.side || 1) * 18).add(up.clone().multiplyScalar(30));
+        look = c.clone().addScaledVector(h, 6).add(up.clone().multiplyScalar(0.8)); fov = s.fov; break;
+      }
       case 'cutaway': {
         // locked-off camera across the path from the feature (crowd / lap board), the runners about to run through
         const f = s.feat; const sm = C.sample(f.m - 9, undefined, tmpS);
@@ -621,10 +738,12 @@ export function createDirector({ camera, C, sim, world, funfair }) {
       const hard = hardNext || !!s.hard;
       // glide between the two LIVE cameras (both keep tracking their subjects), or from a frozen pose after a pause
       glide = hard ? null : { prev: shot && !frozenFrom ? shot : null, from: { pos: camera.position.clone(), look: cam.look.clone(), fov: camera.fov }, t0: b };
-      cut = hard; hardNext = false; shot = s; smoothLook = null; frozenFrom = false;
+      cut = hard; hardNext = false; shot = s; smoothLook = null; frozenFrom = false; fovS = null;
     }
     const T = solve(s, b, dt, cut);
     if (s.smoothLook) { if (!smoothLook) smoothLook = T.look.clone(); smoothLook.lerp(T.look, 1 - Math.exp(-3 * dt)); T.look.copy(smoothLook); }
+    // set cameras zoom smoothly (tan space), like an operator riding the zoom
+    if (s.smoothFov) { const tt = Math.tan(THREE.MathUtils.degToRad(T.fov) / 2); fovS = fovS == null ? tt : fovS + (tt - fovS) * (1 - Math.exp(-2.5 * dt)); T.fov = THREE.MathUtils.radToDeg(2 * Math.atan(fovS)); } else fovS = null;
     m4.lookAt(T.pos, T.look, up); q.setFromRotationMatrix(m4);
     let pos = T.pos, quat = q, fov = T.fov;
     if (glide) {
@@ -660,4 +779,4 @@ export function createDirector({ camera, C, sim, world, funfair }) {
 export function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 export const WIDE_SHOTS = new Set(['drone', 'heli']);
 // tracking shots in which runners are framed big (name tags + PiP map apply)
-export const TRACK_SHOTS = new Set(['gag3q', 'gagside', 'gagrear', 'side', 'headon', 'chase', 'shoulder', 'hill', 'hilltop', 'high3q', 'breakaway', 'pack', 'finishcam', 'placecam']);
+export const TRACK_SHOTS = new Set(['side', 'headon', 'chase', 'shoulder', 'hill', 'hilltop', 'high3q', 'breakaway', 'pack', 'fixed', 'drone', 'gag3q', 'gagside', 'gagrear', 'finishcam', 'placecam']);

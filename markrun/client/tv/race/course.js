@@ -181,6 +181,25 @@ export function buildCourse(course, park, plan) {
     for (let k = 0; k < best.length; k++) if (best[k] < Rr && sw[k] > 0) { const w = 1 - smooth(PATH_W / 2 + 0.5, Rr, best[k]); T.h[k] = T.h[k] * (1 - w) + (shh[k] / sw[k]) * w; }
     T.pathSamples = samples;
   }
+  // ---- the Hill, dramatised: the climb's middle is made steeper (an S-curve on the heights between its foot and
+  // its top, fading out ~100 m either side of the climb). Runners, path, props and cameras all read heightAt(), so
+  // everything stays glued together; only the look of the slope changes.
+  {
+    const hs = []; for (let m = 1640; m <= 2020; m += 5) { const p = baseXZ(m); hs.push(p); }
+    const hAt0 = (x, z) => { const i = Math.round((x - T.x0) / T.cell), j = Math.round((z - T.z0) / T.cell); return T.h[Math.max(0, Math.min(T.nz - 1, j)) * T.nx + Math.max(0, Math.min(T.nx - 1, i))]; };
+    const hB = hAt0(...baseXZ(1650)), hT = hAt0(...baseXZ(2000));
+    if (hT - hB > 8) {
+      const bb = [Math.min(...hs.map((p) => p[0])) - 160, Math.min(...hs.map((p) => p[1])) - 160, Math.max(...hs.map((p) => p[0])) + 160, Math.max(...hs.map((p) => p[1])) + 160];
+      for (let j = 0; j < T.nz; j++) for (let i = 0; i < T.nx; i++) {
+        const x = T.x0 + i * T.cell, z = T.z0 + j * T.cell; if (x < bb[0] || x > bb[2] || z < bb[1] || z > bb[3]) continue;
+        let d = 1e9; for (const p of hs) d = Math.min(d, (p[0] - x) ** 2 + (p[1] - z) ** 2); d = Math.sqrt(d);
+        const w = 1 - smooth(70, 150, d); if (w <= 0) continue;
+        const k = j * T.nx + i, h = T.h[k], u = (h - hB) / (hT - hB); if (u <= 0 || u >= 1) continue;
+        const g = 0.5 - 0.5 * Math.cos(Math.PI * Math.pow(u, 0.9)); // ~1.6x steeper mid-climb
+        T.h[k] = h + w * (hB + (hT - hB) * g - h);
+      }
+    }
+  }
   const lake = flat.filter((f) => f.kind === 'water').sort((a, b) => b.pts.length - a.pts.length)[0];
   function heightAt(x, z) {
     const fx = (x - T.x0) / T.cell, fz = (z - T.z0) / T.cell;
