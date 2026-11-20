@@ -312,6 +312,11 @@ export function createRaceView(container, opts = {}) {
   // ---------- closing-gap bar: the one backed duel that matters most right now ----------
   let closeState = null;
   function closingBar(st) {
+    // breakaway shot: the gap graphic (leader clear of the chaser)
+    if (director?.shot?.type === 'breakaway' && !replay && freeze <= 0 && st.order.length > 1) {
+      const l = st.order[0], c2 = st.order[1];
+      if (!st.byId[l].finished) { const g = st.raceS - timeAtDistance(sim.byId[l].progress, st.byId[c2].m); return { id: l, name: shortOf(pubById[l]), colour: pubById[l].colour.primary, text: `clear by ${g.toFixed(1)} s`, hot: false }; }
+    }
     if (!backedIds.length || replay || freeze > 0 || marketT != null) { closeState = null; return null; }
     const gapS = (aheadId, behindId) => st.raceS - timeAtDistance(sim.byId[aheadId].progress, st.byId[behindId].m);
     const cands = [];

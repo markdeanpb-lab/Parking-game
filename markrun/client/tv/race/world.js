@@ -509,14 +509,14 @@ ${THREE.ShaderChunk.fog_fragment}
       return mergeGeometries([a, b]);
     };
     const pg = panel(); addOutlineNormals(pg);
-    instanced(pg, toon(0xffffff, { map: chev }), aframeR, { ol: 2.5 });
-    instanced(pg, toon(0xffffff, { map: chevL }), aframeL, { ol: 2.5 });
+    instanced(pg, toon(0xffffff, { map: chev }), aframeR, { ol: 2.5, occluder: true });
+    instanced(pg, toon(0xffffff, { map: chevL }), aframeL, { ol: 2.5, occluder: true });
     const coneTex = canvasTexture(16, 64, (c, w, h) => { for (let i = 0; i < 4; i++) { c.fillStyle = i % 2 ? '#ffffff' : '#ff6a2b'; c.fillRect(0, (i * h) / 4, w, h / 4); } });
     disposables.push(coneTex);
     const cg = new THREE.CylinderGeometry(0.06, 0.32, 0.9, 12, 1); cg.translate(0, 0.5, 0);
     const cb = new THREE.BoxGeometry(0.8, 0.08, 0.8); cb.translate(0, 0.04, 0);
-    instanced(cg, toon(0xffffff, { map: coneTex }), cones, { ol: 2 });
-    instanced(cb, toon(0xff6a2b), cones, { ol: 1.5 });
+    instanced(cg, toon(0xffffff, { map: coneTex }), cones, { ol: 2, occluder: true });
+    instanced(cb, toon(0xff6a2b), cones, { ol: 1.5, occluder: true });
     const kg = new THREE.BoxGeometry(0.5, 0.22, 1.75); kg.translate(0, 0.11, 0);
     instanced(kg, toon(0xffffff), kerbs.map((k) => k), { ol: 1.5, colors: kerbs.map((k) => (k.red ? 0xe8313f : 0xffffff)) });
   }

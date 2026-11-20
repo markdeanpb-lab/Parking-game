@@ -1,15 +1,19 @@
-// Calm broadcast camera director (UI_SPEC "Camera: calm broadcast direction", iteration-4 framing pass).
-// - ~12-15 shots per race, 8 s minimum (10-12 s typical) through the middle; 1.3 s glides between shots; hard cuts only
-//   at the start gun, the finish-line camera and the photo finish. No shake, constant FOV within a shot.
-// - Runners are BIG: tracking shots frame the subject at ~42% of the frame height (TARGET_FRAC).
-// - Shot types: 'headon' (long-lens camera on the course ahead of the subject, looking back: calm even when the clock
-//   runs fast, because the background recedes instead of whipping past), 'side' (long-lens side tracking, only while
-//   the clock is slow), 'finishcam' (head-on dolly that parks beyond the line), 'placecam' (battle for the places
-//   after the winner), plus 'heli'/'startgo' pre-roll and 'celebrate'. No mid-race drone: the HUD's picture-in-picture
-//   course map shows the whole field instead.
-// - Subject: the closest duel involving a backed runner, else the closest duel, else the best-placed backed runner (or
-//   the leader). On a runaway (winner > 8 s clear) the finale follows the battle for the places players have money on.
-// Positions are analytic functions of broadcast time (from the plan), so there is no jitter.
+// Broadcast camera director: a SUBJECT HIERARCHY (what matters now) + an ANGLE GRAMMAR (how to shoot it) + editing rules.
+// A. Subject priority, re-evaluated every 0.25 s of broadcast time (lower = more important):
+//    1 the finish (finishcam / placecam set-piece)  2 a lead battle in the final km (top two within 2 s)
+//    3 a lead change about to happen (overtakes are known in advance, so the camera is in place before the pass)
+//    3.5 a funfair detour  4 a battle / pass involving a BACKED runner  5 the Hill (each lap)
+//    6 a breakaway leader whose gap is growing  6.5 a short check-in on a lone backed runner  7 the pack / overview
+// B. Angle grammar: battles = low side tracking (slow clock) / front telephoto / rear chase / high 3/4;
+//    overtakes = rear 3/4 chase BEFORE the pass, hard cut to the front telephoto AFTER it; the Hill = low crane up the
+//    slope or from the top looking down; breakaway = high front looking back down the empty road (+ gap graphic);
+//    pack = high rear 3/4 keeping the group in frame; lone backed runner = 3.5 s over-the-shoulder, then back;
+//    occasional motivated cutaways (crowd / lap board as the runners arrive, <= one per 30 s); the finish set-piece.
+// C. Editing: 5-10 s shots mid-race, 3-6 s in the final km, never under 2.5 s (except cutaways); never the same angle
+//    twice in a row; cuts only for a reason (higher priority, beat over, the pass, max length); hard cuts on action,
+//    glides only to reframe the same subject (never front <-> rear); 180-degree rule within a story; while the clock runs
+//    fast only axis-aligned angles (front / rear / high rear), so the background never whips past.
+// Every shot carries `reason` (see client/tv/race/shotstats.mjs). Positions are analytic in broadcast time: no jitter.
 import * as THREE from 'three';
 import { raceToBroadcast, timeAtDistance, HILL_M } from '../../../server/game/raceplan.mjs';
 
@@ -25,6 +29,7 @@ const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a)
 export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) {
   const out = [];
   const tm = plan.timeMap;
+  const S = (t) => sim.stateAt(Math.max(0, t));
   const leaderAtB = (m) => raceToBroadcast(tm, Math.min(...plan.runners.map((r) => timeAtDistance(r.progress, m))));
   const rate = (b) => (b <= 0 ? 4 : sim.rateAt(b));
   const meanRate = (a, b) => { let s = 0, n = 0; for (let t = a; t <= b; t += Math.max(0.5, (b - a) / 12)) { s += rate(t); n++; } return s / Math.max(1, n); };
@@ -32,101 +37,165 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
   const winnerId = sim.finishOrder[0];
   const margin = sim.finishOrder.length > 1 ? sim.byId[sim.finishOrder[1]].officialS - sim.byId[winnerId].officialS : 99;
   const runaway = margin > 8 && backedIds.some((id) => id !== winnerId);
-
-  // ---- subject choice: point the camera at the money ----
-  const pickSubject = (a, b, { exclude = [], preferBacked = false } = {}) => {
-    const T = []; for (let k = 0; k <= 6; k++) T.push(sim.stateAt(Math.max(0, a + ((b - a) * k) / 6)));
-    const live = T[0].order.filter((id) => !T[0].byId[id].finished && !T.at(-1).byId[id].finished && !exclude.includes(id));
-    if (!live.length) return { ids: null, kind: 'solo', gap: 0 };
-    const pairs = [];
-    for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
-      const x = live[i], y = live[j];
-      let mx = 0; for (const st of T) mx = Math.max(mx, Math.abs(st.byId[x].m - st.byId[y].m));
-      const pos = T[3].order.indexOf(x) + T[3].order.indexOf(y);
-      pairs.push({ ids: [x, y], gap: mx, backed: backedIds.includes(x) || backedIds.includes(y), pos });
-    }
-    const best = (l) => l.sort((p, q) => (p.gap + p.pos * 2) - (q.gap + q.pos * 2))[0];
-    const focusB = live.find((id) => backedIds.includes(id));
-    const pick = best(pairs.filter((p) => p.backed && p.gap <= 30)) || (preferBacked && focusB ? null : best(pairs.filter((p) => p.gap <= 24)));
-    const ride = (core) => { const ids = [...core]; for (const id of live) if (!ids.includes(id) && T.every((st) => { const ms = core.map((q) => st.byId[q].m); return st.byId[id].m > Math.min(...ms) - 5 && st.byId[id].m < Math.max(...ms) + 5; })) ids.push(id); return ids; };
-    const spreadOf = (ids) => { let s = 0; for (const st of T) { const ms = ids.map((q) => st.byId[q].m); s = Math.max(s, Math.max(...ms) - Math.min(...ms)); } return s; };
-    if (pick) { const ids = ride(pick.ids); return { ids, kind: pick.backed ? 'backedPair' : 'pair', gap: spreadOf(ids) }; }
-    // nobody close to anybody: the best-placed backed runner, else the leader (the PiP map shows the rest)
-    const focus = live.find((id) => backedIds.includes(id)) ?? live[0];
-    const ids = ride([focus]);
-    return { ids, kind: backedIds.includes(focus) ? 'backedSolo' : 'solo', gap: spreadOf(ids) };
-  };
-  // side tracking only while the clock is slow and the subject fits a 42% frame; otherwise the calm head-on telephoto
-  const pairType = (subj, prev, r) => (r > 6 || subj.gap > 6 ? 'headon' : prev === 'side' ? 'headon' : 'side');
+  const isB = (id) => backedIds.includes(id);
+  const short = (id) => id;
+  // seconds `behind` trails `ahead` at broadcast time t
+  const gapS = (st, ahead, behind) => st.raceS - timeAtDistance(sim.byId[ahead].progress, st.byId[behind].m);
 
   // ---- fixed beats ----
   let gunEnd = 0.25 + 8;
   for (let t = 0.25; t < 30; t += 0.25) if (rate(t) > 7) { gunEnd = Math.max(gunEnd, t); break; }
-  let bSlow = firstFin - 6;
-  for (let t = firstFin - 12; t > gunEnd; t -= 0.25) if (rate(t) > 6) { bSlow = t; break; }
   // the finish camera locks on for the last ~150 m (only the last ~70 m on a runaway: the money is further back)
-  const bFin = Math.max(bSlow + 4, Math.min(firstFin - 2, leaderAtB(runaway ? 4935 : 4850)));
-  const b4700 = Math.max(bSlow, Math.min(bFin, leaderAtB(4700)));
+  const bFin = Math.max(gunEnd + 8, Math.min(firstFin - 2, leaderAtB(runaway ? 4935 : 4850)));
 
-  out.push({ type: 'heli', a: -8.5, b: -3.2, hard: true });
-  out.push({ type: 'startgo', a: -3.2, b: 0.25 });
-  out.push({ type: 'headon', a: 0.25, b: gunEnd, hard: true, ids: null, start: true });
+  out.push({ type: 'heli', a: -8.5, b: -3.2, hard: true, reason: 'opening flyover' });
+  out.push({ type: 'startgo', a: -3.2, b: 0.25, hard: true, reason: 'on your marks' });
+  out.push({ type: 'headon', a: 0.25, b: gunEnd, hard: true, ids: null, start: true, key: 'start', kind: 'pack', reason: 'the gun: the whole field coming at us' });
 
-  // middle windows: funfair moment, the Hill (lap 1 + 2)
-  const windows = [];
-  const divR = plan.runners.find((r) => r.diversions?.length);
-  if (divR && funfair) {
-    const d = divR.diversions[0];
-    const a = raceToBroadcast(tm, timeAtDistance(divR.progress, d.fromM)) - 0.5;
-    const e = raceToBroadcast(tm, timeAtDistance(divR.progress, d.toM)) + 0.8;
-    windows.push({ type: 'side', tag: 'fair', a, b: Math.max(a + 8, e), ids: [divR.id], fair: true, prio: 3 });
+  // ---- what is worth looking at, at time t (A: subject hierarchy, lower prio = more important) ----
+  // overtakes known in advance: lead changes and passes involving a backed runner (a back-and-forth inside 6 s counts once)
+  const ovs = [];
+  for (const e of plan.events || []) {
+    if (e.broadcastS < gunEnd + 1 || e.broadcastS > bFin - 2) continue;
+    const lead = e.type === 'lead_change';
+    if (e.type !== 'overtake' && !lead) continue;
+    const by = lead ? e.to : e.by, on = lead ? e.from : e.on;
+    if (!lead && !isB(by) && !isB(on)) continue;
+    const dup = ovs.find((o) => Math.abs(o.at - e.broadcastS) < 0.3 && o.by === by);
+    if (dup) { dup.lead = dup.lead || lead; continue; }
+    if (ovs.some((o) => e.broadcastS - o.at < 6 && [o.by, o.on].includes(by) && [o.by, o.on].includes(on))) continue;
+    ovs.push({ at: e.broadcastS, by, on, lead });
   }
-  for (const m of HILL_M) { const hb = leaderAtB(m); windows.push({ type: 'headon', tag: 'hill', a: hb - 1.5, b: hb + 8, prio: 2 }); }
-  windows.sort((x, y) => y.prio - x.prio);
-  const placed = [];
-  for (const w of windows) {
-    const b = Math.min(bSlow, w.b), a = Math.max(gunEnd, Math.min(w.a, b - 8));
-    if (b - a < 6) continue;
-    if (placed.some((p) => a < p.b && b > p.a)) continue;
-    placed.push({ ...w, a, b });
-  }
-  placed.sort((x, y) => x.a - y.a);
-  const fill = (a, b, o = {}) => {
-    const len = b - a; if (len <= 0.01) return;
-    if (len < 8 && out.length >= 3) { out.at(-1).b = b; return; }
-    const n = Math.max(1, Math.round(len / 11));
-    for (let i = 0; i < n; i++) {
-      const s = a + (len * i) / n, e = a + (len * (i + 1)) / n;
-      const subj = pickSubject(s, e, o);
-      out.push({ type: pairType(subj, out.at(-1)?.type, meanRate(s, e)), a: s, b: e, ids: subj.ids, subject: subj.kind, gap: subj.gap });
+  const hillWin = HILL_M.map((m) => [leaderAtB(m - 30), leaderAtB(m + 240)]);
+  const divR = funfair ? plan.runners.filter((r) => r.diversions?.length) : [];
+  const divWin = divR.flatMap((r) => r.diversions.map((d) => ({ id: r.id, a: raceToBroadcast(tm, timeAtDistance(r.progress, d.fromM)) - 0.5, b: raceToBroadcast(tm, timeAtDistance(r.progress, d.toM)) + 0.8 })));
+  const lastSeen = {}; for (const r of plan.runners) lastSeen[r.id] = gunEnd;
+  function cands(t) {
+    const st = S(t); const live = st.order.filter((id) => !st.byId[id].finished);
+    if (!live.length) return [];
+    const c = [];
+    const L = st.byId[live[0]];
+    const near = (core, within = 6) => { const ms = core.map((id) => st.byId[id].m); return [...core, ...live.filter((id) => !core.includes(id) && st.byId[id].m > Math.min(...ms) - within && st.byId[id].m < Math.max(...ms) + within)]; };
+    // 2: lead battle in the final km
+    if (live.length > 1 && L.m >= 4000 && gapS(st, live[0], live[1]) <= 2) c.push({ prio: 2, key: `lb:${live[0]}|${live[1]}`, ids: near([live[0], live[1]]), kind: 'battle', reason: `lead battle in the final km (${gapS(st, live[0], live[1]).toFixed(1)} s)` });
+    // 3 / 4: a pass about to happen (pre-positioned), then the passer coming at us
+    for (const o of ovs) if (t >= o.at - 4.5 && t < o.at + 4) c.push({ prio: o.lead ? 3 : 4, key: `ov:${o.at.toFixed(2)}`, ids: near([o.by, o.on], 3), kind: 'overtake', phase: t < o.at ? 'pre' : 'post', at: o.at, reason: `${o.lead ? 'lead change' : 'backed pass'}: ${short(o.by)} passes ${short(o.on)}` });
+    // funfair detour (the planned gag)
+    for (const w of divWin) if (t >= w.a && t < w.b) c.push({ prio: 3.5, key: `fair:${w.id}`, ids: [w.id], kind: 'fair', reason: `${short(w.id)} detours through the funfair` });
+    // 4: a battle involving a backed runner (tightest first)
+    for (let i = 1; i < live.length; i++) {
+      const a = live[i - 1], bh = live[i]; if (!isB(a) && !isB(bh)) continue;
+      const g = gapS(st, a, bh); if (g > 3 || g < 0) continue;
+      c.push({ prio: 4.2 + g * 0.05, key: `bb:${a}|${bh}`, ids: near([a, bh]), kind: 'battle', reason: `backed battle: ${short(bh)} ${g.toFixed(1)} s behind ${short(a)}` });
     }
+    // 5: the Hill, framed on whoever is most interesting there (a backed runner, else the leader)
+    for (const [i, [h0, h1]] of hillWin.entries()) if (t >= h0 && t < h1) {
+      const on = live.filter((id) => { const g = C.geoOf(st.byId[id].m); return g > 1650 && g < 2010; });
+      const who = on.find(isB) ?? on[0] ?? live[0];
+      c.push({ prio: 5, key: `hill:${i}`, ids: near([who]), kind: 'hill', lap: i, reason: `the Hill, lap ${i + 1}: ${short(who)}` });
+    }
+    // 6: a breakaway leader whose gap is growing
+    if (live.length > 1) {
+      const g = gapS(st, live[0], live[1]), st2 = S(t + 6), g2 = st2.byId[live[0]].finished ? g : gapS(st2, live[0], live[1]);
+      if (g >= 6 && g2 > g + 0.3) c.push({ prio: 6, key: `br:${live[0]}`, ids: [live[0]], kind: 'break', reason: `breakaway: ${short(live[0])} ${g.toFixed(0)} s clear and pulling away` });
+    }
+    // 6.5: a lone backed runner we haven't seen for a while (a short check-in, then back to the action)
+    for (const id of live) if (isB(id) && t - (lastSeen[id] ?? -99) > 35) {
+      const i = live.indexOf(id); const ga = i > 0 ? gapS(st, live[i - 1], id) : 99, gb = i < live.length - 1 ? gapS(st, id, live[i + 1]) : 99;
+      if (ga > 5 && gb > 5) c.push({ prio: 6.5, key: `chk:${id}`, ids: [id], kind: 'checkin', reason: `check-in on backed ${short(id)}, alone` });
+    }
+    // 7: the pack: the biggest group (within 30 m), else the leader
+    let grp = [live[0]];
+    for (const id of live) { const g = live.filter((x) => Math.abs(st.byId[x].m - st.byId[id].m) < 30 && st.byId[x].m <= st.byId[id].m); if (g.length > grp.length) grp = g; }
+    c.push({ prio: 7, key: 'pack', ids: grp, kind: 'pack', reason: grp.length > 1 ? `the pack: ${grp.length} together` : 'overview' });
+    return c.sort((x, y) => x.prio - y.prio);
+  }
+
+  // ---- B: angle grammar ----
+  const FRONT = new Set(['headon', 'high3q', 'breakaway', 'hilltop']), REAR = new Set(['chase', 'shoulder', 'pack', 'hill']);
+  const used = {};
+  function angleFor(c, prevType, r) {
+    const slow = r <= 6;
+    let list;
+    switch (c.kind) {
+      case 'overtake': list = c.phase === 'pre' ? ['chase', 'shoulder'] : slow ? ['headon', 'high3q'] : ['headon', 'chase']; break;
+      case 'battle': list = slow ? ['side', 'headon', 'high3q', 'chase'] : ['headon', 'chase', 'pack']; break;
+      case 'hill': list = c.lap % 2 ? ['hilltop', 'hill'] : ['hill', 'hilltop']; break;
+      case 'break': list = slow ? ['breakaway', 'high3q', 'headon'] : ['breakaway', 'headon', 'chase']; break;
+      case 'checkin': list = ['shoulder', 'chase']; break;
+      case 'fair': list = ['side']; break;
+      default: list = (c.ids?.length || 0) < 2 ? (slow ? ['headon', 'side', 'chase'] : ['headon', 'chase']) : slow ? ['pack', 'high3q', 'headon', 'side'] : ['pack', 'chase', 'headon'];
+    }
+    // never the same angle twice in a row; among the rest, the grammar's order, nudged towards the least used
+    const ok = list.filter((x) => x !== prevType);
+    if (!ok.length) return list.find((x) => x !== prevType) || (prevType === 'headon' ? 'chase' : 'headon');
+    if (c.kind === 'overtake' || c.kind === 'hill' || c.kind === 'fair') return ok[0];
+    return ok.map((x, i) => [x, i + (used[x] || 0) * 0.6]).sort((p, q) => p[1] - q[1])[0][0];
+  }
+
+  // ---- cutaway features (crowd, the lap board / bell, the lake): course metres on lap-1 geometry ----
+  const feats = [];
+  for (const z of world.anchors?.crowdZones || []) if (z.m0 > 300 && z.m1 < 2560) feats.push({ m: (z.m0 + z.m1) / 2, side: z.side, kind: z.m0 > 1900 && z.m1 < 2020 ? 'hilltop crowd' : z.m0 > 2050 && z.m1 < 2200 ? 'lakeside crowd' : z.m0 > 2400 && z.m1 < 2500 ? 'lap-board crowd' : 'crowd', off: z.off + z.depth / 2 });
+  if (world.anchors?.lapM) feats.push({ m: 2475, side: 1, kind: 'the lap board (bell lap)', off: PATH_W_HALF + 3.6 });
+  let lastCut = -1e9;
+  function cutawayAt(t, front) {
+    if (t - lastCut < 30 || t > bFin - 12) return null;
+    for (let tau = 1.4; tau <= 2.2; tau += 0.2) {
+      const st = S(t + tau); const r = st.byId[front]; if (!r || r.finished) return null;
+      const g = C.geoOf(r.m);
+      const f = feats.find((q) => Math.abs(q.m - g) < 10);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  // ---- C: editing: walk the race, cutting only for a reason ----
+  let cur = null, keyStart = 0, prevT = 'headon';
+  const push = (c, a, why, extra = {}) => {
+    const r = meanRate(a, a + 4);
+    const type = extra.type || angleFor(c, prevT, r);
+    used[type] = (used[type] || 0) + 1;
+    const same = out.at(-1)?.key === c.key;
+    if (!same) keyStart = a;
+    // glide only to reframe the same subject (never through it: front <-> rear is a cut); hard cuts on action
+    const pt = out.at(-1)?.type;
+    const glide = same && !extra.hard && !(FRONT.has(pt) && REAR.has(type)) && !(REAR.has(pt) && FRONT.has(type)) && extra.type !== 'cutaway';
+    const { hard: _h, ...rest } = extra;
+    const shot = { type, a, b: a + 4, ids: c.ids, key: c.key, kind: c.kind, prio: c.prio, phase: c.phase, lap: c.lap, reason: why, fair: c.kind === 'fair', ...rest, hard: !glide };
+    out.push(shot); cur = shot; prevT = type;
+    for (const id of c.ids || []) lastSeen[id] = a;
+    return shot;
   };
-  let t = gunEnd;
-  for (const p of placed) {
-    fill(t, p.a);
-    if (p.tag === 'hill') { const subj = pickSubject(p.a, p.b); p.ids = subj.ids; p.subject = subj.kind; }
-    out.push(p); t = p.b;
-  }
-  fill(t, bSlow);
-  // finale (slow clock): ~11 s shots of the best duel (on a runaway: the backed battle for the places), head-on for the
-  // last stretch, then the finish camera
-  {
-    const ex = runaway ? [winnerId] : [];
-    const fo = { exclude: ex, preferBacked: true };
-    const len = b4700 - bSlow;
-    if (len >= 8) { const n = Math.max(1, Math.round(len / 11)); for (let i = 0; i < n; i++) { const a = bSlow + (len * i) / n, e = bSlow + (len * (i + 1)) / n, subj = pickSubject(a, e, fo); out.push({ type: pairType(subj, out.at(-1)?.type, meanRate(a, e)), a, b: e, ids: subj.ids, subject: subj.kind, gap: subj.gap }); } }
-    const a0 = Math.max(bSlow, out.at(-1).b), n2 = Math.max(1, Math.round((bFin - a0) / 11));
-    for (let i = 0; i < n2; i++) {
-      const a = a0 + ((bFin - a0) * i) / n2, e = a0 + ((bFin - a0) * (i + 1)) / n2, subj = pickSubject(a, e, fo);
-      const last = { type: i < n2 - 1 ? pairType(subj, out.at(-1)?.type, meanRate(a, e)) : 'headon', a, b: e, ids: subj.ids, subject: subj.kind, gap: subj.gap };
-      if (out.at(-1).type === last.type && out.at(-1).a >= bSlow && String(out.at(-1).ids) === String(last.ids) && e - out.at(-1).a <= 14) out.at(-1).b = e;
-      else out.push(last);
+  for (let t = gunEnd; t < bFin - 0.01; t += 0.25) {
+    const st = S(t);
+    const fk = st.leader.m >= 4000;
+    const minL = fk ? 3 : 5, maxL = fk ? 6 : 10;
+    const cs = cands(t).map((c) => (c.kind === 'overtake' && c.phase === 'pre' && c.at - t < 2.5 && cur?.key !== c.key ? { ...c, phase: 'post' } : c)); // too late to set up the chase: go straight to the front
+    const best = cs[0]; if (!best) continue;
+    if (!cur || cur.type === 'cutaway') { if (!cur || t >= cur.b) { if (cur) cur.b = t; push(best, t, best.reason); } continue; }
+    const len = t - cur.a;
+    // a check-in runs its 3.5 s even though its subject now counts as 'seen'
+    const still = cs.find((c) => c.key === cur.key) || (cur.kind === 'checkin' && len < 3.5 ? cur : null);
+    if (bFin - t < 2.5) continue; // no stub shot before the finish camera
+    let next = null, why = '', hard = false;
+    if (still && cur.kind === 'overtake' && still.phase !== cur.phase && len >= 2.5) { next = still; why = `the pass: ${still.reason.split(': ')[1]} - cut to the front`; hard = true; }
+    else if (best.key !== cur.key && best.prio < cur.prio - 0.5 && len >= 2.5) { next = best; why = best.reason; hard = true; }
+    else if (!still && len >= minL) { next = best; why = `${best.reason} (previous beat over)`; }
+    else if (cur.kind === 'checkin' && len >= 3.5) { next = cs.find((c) => c.key !== cur.key) || best; why = `back to the action: ${next.reason}`; hard = true; }
+    else if (len >= maxL) {
+      const alt = cs.find((c) => c.key !== cur.key && c.kind !== 'checkin');
+      if (t - keyStart > 24 && alt) { next = alt; why = `fresh subject after ${Math.round(t - keyStart)} s: ${alt.reason}`; hard = true; }
+      else { next = still || best; why = `${fk ? 6 : 10} s max: new angle on the same story`; }
+    } else if (cur.prio >= 6 && len >= 4) {
+      // motivated cutaway: the subject is about to reach a crowd / the lap board
+      const f = cutawayAt(t, cur.ids?.[0]);
+      if (f) { cur.b = t; lastCut = t; push({ ...cur, key: `cut:${t}` }, t, `cutaway: ${f.kind} as ${short(cur.ids[0])} arrives`, { type: 'cutaway', feat: f, b: t + 2.5, hard: true, ids: cur.ids }); out.at(-1).b = t + 2.5; prevT = 'cutaway'; continue; }
     }
+    if (next) { cur.b = t; push(next, t, why, { hard }); }
   }
-  if (out.at(-1).b - out.at(-1).a < 6 && out.length > 4) { const l = out.pop(); out.at(-1).b = l.b; }
-  // the finish camera covers the winner's crossing; the place camera takes over after the winner's replay
-  out.push({ type: 'finishcam', a: bFin, b: firstFin + 1.15, hard: true, winner: winnerId });
-  // one place-camera shot per later finisher (finishers within 3 s share a shot), gliding from one to the next
+  if (cur) cur.b = bFin;
+  // runaway: the finish camera covers the winner's crossing; the place camera takes over after the winner's replay
+  out.push({ type: 'finishcam', a: bFin, b: firstFin + 1.15, hard: true, winner: winnerId, reason: 'the finish: the winner\'s last metres', ids: [winnerId], key: 'finish' });
   {
     let a = firstFin + 1.15, hard = true;
     const rest = sim.finishOrder.slice(1);
@@ -134,69 +203,66 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
       const grp = [rest[i]]; let fb = sim.byId[rest[i]].finishB; i++;
       while (i < rest.length && sim.byId[rest[i]].finishB - fb < 3) { grp.push(rest[i]); fb = sim.byId[rest[i]].finishB; i++; }
       const e = i < rest.length ? Math.max(fb + 2.2, a + 4) : lastFin + 2.5;
-      if (e > a + 0.5) { out.push({ type: 'placecam', a, b: e, hard, ids: grp }); hard = false; a = e; }
+      if (e > a + 0.5) { out.push({ type: 'placecam', a, b: e, hard, ids: grp, key: `place:${grp}`, reason: `finishers: ${grp.join(' & ')}` }); hard = false; a = e; }
     }
   }
-  out.push({ type: 'celebrate', a: Math.max(firstFin + 1.2, lastFin + 2.5), b: lastFin + 90 });
+  out.push({ type: 'celebrate', a: Math.max(firstFin + 1.2, lastFin + 2.5), b: lastFin + 90, hard: true, reason: 'celebrations' });
 
-  // priority interrupts (one at a time, 12 s apart): lead change, or an overtake involving a backed runner
-  const pri = (plan.events || []).filter((e) => (e.type === 'lead_change' || (e.type === 'overtake' && (backedIds.includes(e.by) || backedIds.includes(e.on)))) && e.broadcastS > gunEnd + 2 && e.broadcastS < bSlow - 3);
-  let lastI = -1e9;
-  for (const e of pri) {
-    const pair = e.type === 'lead_change' ? [e.to, e.from] : [e.by, e.on];
-    if (e.broadcastS - lastI < 12) continue;
-    const i = out.findIndex((s) => e.broadcastS >= s.a && e.broadcastS < s.b);
-    if (i < 0) continue;
-    const s = out[i];
-    if (['heli', 'startgo', 'finishcam', 'placecam', 'celebrate'].includes(s.type) || s.interrupt || s.tag || s.hard || s.subject === 'backedPair') continue; // a backed duel keeps priority
-    if (s.ids && pair.every((id) => s.ids.includes(id))) continue; // already in frame
-    if (e.broadcastS - s.a < 8 || s.b - e.broadcastS < 8) {
-      Object.assign(s, { type: rate(e.broadcastS) > 6 ? 'headon' : 'side', ids: pair, interrupt: e.type, subject: 'pair', gap: 6 });
-    } else {
-      const ia = e.broadcastS - 1.8;
-      out.splice(i, 1, { ...s, b: ia }, { type: 'headon', a: ia, b: s.b, ids: pair, interrupt: e.type, subject: 'pair', gap: 6 });
-    }
-    lastI = e.broadcastS;
-  }
-
-  // a runner on a funfair detour is filmed side-on from the course side (a head-on camera would sit among the rides)
-  const divWin = plan.runners.flatMap((r) => (r.diversions || []).map((d) => ({ id: r.id, a: raceToBroadcast(tm, timeAtDistance(r.progress, d.fromM)), b: raceToBroadcast(tm, timeAtDistance(r.progress, d.toM)) })));
+  // a detouring runner is filmed side-on from the course side (a front/rear camera would sit among the rides)
   if (funfair) for (const s of out) {
-    if (s.type !== 'headon' || s.start) continue;
+    if (!['headon', 'chase', 'shoulder', 'pack', 'high3q', 'breakaway', 'hill', 'hilltop'].includes(s.type) || s.start) continue;
     const ids = s.ids || leadGroupAt(sim, (s.a + s.b) / 2);
     const hit = divWin.find((w) => ids.includes(w.id) && w.a < s.b && w.b > s.a);
     if (hit) Object.assign(s, { type: 'side', fair: true, ids: [hit.id] });
   }
 
-  // per-shot constants (rate, side, distances, FOV) so nothing pumps inside a shot
+  // ---- per-shot constants (distances, FOV, screen side) so nothing pumps inside a shot ----
+  let seqSide = 0, seqKey = null;
   for (const s of out) {
     s.rate = meanRate(Math.max(0, s.a), Math.max(0.5, s.b));
     s.ids = s.ids || null;
-    if (s.type === 'side' || s.type === 'headon') {
-      const ids = s.ids || leadGroupAt(sim, (s.a + s.b) / 2);
-      let spread = 0;
-      for (let k = 0; k <= 6; k++) { const st = sim.stateAt(Math.max(0, s.a + ((s.b - s.a) * k) / 6)); const ms = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m); if (ms.length) spread = Math.max(spread, Math.max(...ms) - Math.min(...ms)); }
-      s.spread = spread;
-      if (s.type === 'side') {
+    if (['heli', 'startgo', 'finishcam', 'placecam', 'celebrate'].includes(s.type)) continue;
+    const ids = s.ids || leadGroupAt(sim, (s.a + s.b) / 2);
+    let spread = 0;
+    for (let k = 0; k <= 6; k++) { const st = S(s.a + ((s.b - s.a) * k) / 6); const ms = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m); if (ms.length) spread = Math.max(spread, Math.max(...ms) - Math.min(...ms)); }
+    s.spread = spread;
+    // 180-degree rule: lateral cameras stay on one side of the runners' line within a sequence (same story)
+    if (s.key !== seqKey || !seqSide) { seqKey = s.key; seqSide = chooseSide({ ...s, dist: 20 }, ids); }
+    s.side = s.fair ? chooseSide({ ...s, dist: 20 }, ids) : seqSide;
+    switch (s.type) {
+      case 'side': {
         s.dist = THREE.MathUtils.clamp(14 + 1.2 * s.rate, 17, 30);
-        const fitFov = deg(2 * Math.atan((spread + 3.5) / (2 * ASPECT * s.dist)));
-        s.fov = THREE.MathUtils.clamp(Math.max(fovFor(s.dist), fitFov), 5, 34);
-        s.side = chooseSide(s, ids);
-      } else {
-        // camera on the course ahead of the group's centre; FOV for ~42% at the centre distance. Nobody may stand
-        // between the camera and its subject: a runner close ahead joins the shot, a further one caps the distance.
+        const fitFov = deg(2 * Math.atan((spread + 4) / (2 * ASPECT * s.dist)));
+        s.fov = THREE.MathUtils.clamp(Math.max(fovFor(s.dist, 0.36), fitFov), 5, 34);
+        if (!s.fair && !world.inPark?.(0, 0) && false) s.side = -s.side;
+        break;
+      }
+      case 'headon': {
         let want = s.start ? 30 : THREE.MathUtils.clamp(18 + 1.25 * s.rate, 20, 40);
         let gap = aheadGap(s, ids);
         if (gap < 16 && !s.start) {
-          const st = sim.stateAt(Math.max(0, (s.a + s.b) / 2)); const front = Math.max(...ids.map((id) => st.byId[id].m));
+          const st = S((s.a + s.b) / 2); const front = Math.max(...ids.map((id) => st.byId[id].m));
           const nxt = st.order.filter((id) => !ids.includes(id) && !st.byId[id].finished && st.byId[id].m > front).sort((x, y) => st.byId[x].m - st.byId[y].m)[0];
           if (nxt) { s.ids = [...ids, nxt]; spread = spreadOf(s); s.spread = spread; gap = aheadGap(s, s.ids); }
         }
-        // s.dist = camera to the FRONT runner (who is framed at ~42-52%; a chaser further back stays >= ~28%)
         s.dist = Math.max(12, Math.min(want, gap - 6));
         s.fov = THREE.MathUtils.clamp(fovFor(s.dist, TARGET_FRAC - 0.02), 4, 30);
         s.lat = chooseLat(s, s.ids || ids);
+        break;
       }
+      case 'chase': case 'shoulder': case 'hill': {
+        // behind the rearmost subject; nobody between the camera and them
+        const back = behindGap(s, ids);
+        const want = s.type === 'shoulder' ? 6.5 : s.type === 'hill' ? 13 : THREE.MathUtils.clamp(13 + 0.4 * s.rate, 13, 22);
+        s.dist = Math.max(s.type === 'shoulder' ? 4 : 8, Math.min(want, back - 4));
+        s.fov = s.type === 'shoulder' ? 40 : s.type === 'hill' ? 34 : THREE.MathUtils.clamp(fovFor(s.dist + spread * 0.4, 0.34), 6, 30);
+        break;
+      }
+      case 'high3q': { s.dist = 12; s.fov = THREE.MathUtils.clamp(Math.max(fovFor(15, 0.32), deg(2 * Math.atan((spread + 5) / (2 * ASPECT * 15)))), 8, 40); break; }
+      case 'pack': { s.dist = 18; s.fov = THREE.MathUtils.clamp(Math.max(fovFor(21 + spread * 0.5, 0.26), deg(2 * Math.atan((spread * 0.4 + 6) / (2 * (21 + spread * 0.5))))), 10, 38); break; }
+      case 'breakaway': { s.dist = 20; s.fov = 24; break; }
+      case 'hilltop': { s.dist = THREE.MathUtils.clamp(Math.min(24, aheadGap(s, ids) - 5), 12, 24); s.fov = THREE.MathUtils.clamp(fovFor(s.dist, 0.36), 8, 30); break; }
+      default: break;
     }
   }
   return out;
@@ -205,42 +271,52 @@ export function buildShotList({ plan, sim, backedIds = [], C, world, funfair }) 
   function aheadGap(s, ids) {
     let g = 1e9;
     for (let k = 0; k <= 6; k++) {
-      const st = sim.stateAt(Math.max(0, s.a + ((s.b - s.a) * k) / 6));
+      const st = S(s.a + ((s.b - s.a) * k) / 6);
       const live = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished); if (!live.length) continue;
       const front = Math.max(...live.map((r) => r.m));
       for (const id of st.order) { const r = st.byId[id]; if (!ids.includes(id) && !r.finished && r.m > front - 0.5) g = Math.min(g, r.m - front); }
     }
     return g;
   }
+  // metres from the group's rearmost runner back to the nearest live runner behind (min over the shot)
+  function behindGap(s, ids) {
+    let g = 1e9;
+    for (let k = 0; k <= 6; k++) {
+      const st = S(s.a + ((s.b - s.a) * k) / 6);
+      const live = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished); if (!live.length) continue;
+      const rear = Math.min(...live.map((r) => r.m));
+      for (const id of st.order) { const r = st.byId[id]; if (!ids.includes(id) && !r.finished && r.m < rear + 0.5) g = Math.min(g, rear - r.m); }
+    }
+    return g;
+  }
   function spreadOf(s) {
     let spread = 0;
-    for (let k = 0; k <= 6; k++) { const st = sim.stateAt(Math.max(0, s.a + ((s.b - s.a) * k) / 6)); const ms = s.ids.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m); if (ms.length) spread = Math.max(spread, Math.max(...ms) - Math.min(...ms)); }
+    for (let k = 0; k <= 6; k++) { const st = S(s.a + ((s.b - s.a) * k) / 6); const ms = s.ids.map((id) => st.byId[id]).filter((r) => r && !r.finished).map((r) => r.m); if (ms.length) spread = Math.max(spread, Math.max(...ms) - Math.min(...ms)); }
     return spread;
   }
   // camera on the inside of the bend (shorter camera path -> calmer), and inside the park
   function chooseSide(s, ids) {
-    const at = (t) => { const st = sim.stateAt(Math.max(0, t)); const l = ids.map((id) => st.byId[id]).filter(Boolean); const x = l.reduce((a, r) => a + r.x, 0) / l.length, z = l.reduce((a, r) => a + r.z, 0) / l.length; return [x, z]; };
+    const at = (t) => { const st = S(t); const l = ids.map((id) => st.byId[id]).filter(Boolean); const x = l.reduce((a, r) => a + r.x, 0) / l.length, z = l.reduce((a, r) => a + r.z, 0) / l.length; return [x, z]; };
     const p0 = at(s.a), p1 = at((s.a + s.b) / 2), p2 = at(s.b);
     const cross = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
     let side = cross > 0 ? 1 : -1;
     const h = [p2[0] - p0[0], p2[1] - p0[1]]; const L = Math.hypot(...h) || 1; const r = [-h[1] / L, h[0] / L];
     if (s.fair && funfair) {
-      // look across the runner at the rides: camera on the side away from the fair
       const c = funfair.anchors.center;
       return ((c.x - p1[0]) * r[0] + (c.z - p1[1]) * r[1]) > 0 ? -1 : 1;
     }
     const d = s.dist || 30;
-    const ok = (sg) => world.inPark(p1[0] + r[0] * d * sg, p1[1] + r[1] * d * sg);
+    const ok = (sg) => world.inPark ? world.inPark(p1[0] + r[0] * d * sg, p1[1] + r[1] * d * sg) : true;
     if (!ok(side) && ok(-side)) side = -side;
     return side;
   }
-  // head-on camera: a small lateral offset towards the side the group runs on
   function chooseLat(s, ids) {
-    const st = sim.stateAt(Math.max(0, (s.a + s.b) / 2)); const l = ids.map((id) => st.byId[id]).filter(Boolean);
+    const st = S((s.a + s.b) / 2); const l = ids.map((id) => st.byId[id]).filter(Boolean);
     const lat = l.reduce((a, r) => a + (r.lat || 0), 0) / Math.max(1, l.length);
     return THREE.MathUtils.clamp(lat * 0.6, -1.8, 1.8) + (lat >= 0 ? 0.7 : -0.7);
   }
 }
+const PATH_W_HALF = 3.6;
 function leadGroupAt(sim, t) { const st = sim.stateAt(Math.max(0, t)); const live = st.order.filter((id) => !st.byId[id].finished); const l = live[0] ?? st.order[0]; return (live.length ? live : st.order).filter((id) => Math.abs(st.byId[id].m - st.byId[l].m) < 20); }
 
 // ---- runtime ----
@@ -256,8 +332,9 @@ export function createDirector({ camera, C, sim, world, funfair }) {
   { let prev = C.baseXZ(0); for (let m = WSTEP; m <= 5120; m += WSTEP) { const p = C.baseXZ(m); WL.push(WL.at(-1) + Math.hypot(p[0] - prev[0], p[1] - prev[1])); prev = p; } }
   const wlAt = (m) => { const x = Math.max(0, Math.min(WL.length - 1.001, m / WSTEP)); const i = Math.floor(x); return WL[i] + (WL[i + 1] - WL[i]) * (x - i); };
   function mAhead(m, d) {
-    const target = wlAt(m) + d; let lo = Math.max(0, Math.floor(m / WSTEP)), hi = WL.length - 1;
+    const target = wlAt(m) + d; let lo = 0, hi = WL.length - 1;
     if (WL[hi] <= target) return hi * WSTEP;
+    if (target <= 0) return 0;
     while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (WL[mid] < target) lo = mid; else hi = mid; }
     return (lo + (target - WL[lo]) / Math.max(1e-6, WL[hi] - WL[lo])) * WSTEP;
   }
@@ -333,6 +410,48 @@ export function createDirector({ camera, C, sim, world, funfair }) {
         const dv = Math.max(0, ...live.map((r) => r.div || 0));
         if (dv > 0.01) { const sm = smooth(ids, b, 1.2); const p2 = sm.c.clone().addScaledVector(sm.h, s.dist).addScaledVector(sm.r, 1.2); p2.y = sm.c.y + 1.35 + s.dist * 0.045; pos.lerp(p2, Math.min(1, dv * 1.5)); }
         fov = s.fov; break;
+      }
+      case 'chase': case 'shoulder': case 'hill': {
+        // behind the rearmost subject, looking up the course past them (rear three-quarter / over-the-shoulder / low
+        // crane up the Hill); axis-aligned, so calm even at the fast clock
+        const ids = groupOf(s), st = sim.stateAt(Math.max(0, b)); const live = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished);
+        const c = center(ids, b); const rear = live.length ? Math.min(...live.map((r) => r.m)) : c.m;
+        const sm = C.sample(mAhead(rear, -s.dist), undefined, tmpS);
+        const lat = s.type === 'shoulder' ? 1.1 : s.type === 'hill' ? 2.2 : 3.4;
+        const hgt = s.type === 'shoulder' ? 2.35 : s.type === 'hill' ? 0.75 : 2.0 + s.dist * 0.05;
+        pos = new THREE.Vector3(sm.x + sm.rx * lat * s.side, sm.y + hgt, sm.z + sm.rz * lat * s.side);
+        if (s.type === 'shoulder') { const f = C.sample(mAhead(rear, 22), undefined, {}); look = new THREE.Vector3(f.x, f.y + 1.3, f.z); }
+        else if (s.type === 'hill') { const f = C.sample(mAhead(rear, 18), undefined, {}); look = new THREE.Vector3(c.x * 0.6 + f.x * 0.4, Math.max(c.y + 1.3, f.y + 0.8), c.z * 0.6 + f.z * 0.4); }
+        else look = new THREE.Vector3(c.x, c.y + 1.15, c.z);
+        fov = s.fov; break;
+      }
+      case 'high3q': case 'breakaway': case 'hilltop': {
+        // in front and above: high three-quarter (battles at the slow clock), the breakaway shot looking back down the
+        // empty road behind the leader, or the top of the Hill looking down the climb
+        const ids = groupOf(s), st = sim.stateAt(Math.max(0, b)); const live = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished);
+        const c = center(ids, b); const front = live.length ? Math.max(...live.map((r) => r.m)) : c.m;
+        const sm = C.sample(Math.min(mAhead(front, s.dist), 5110), undefined, tmpS);
+        const lat = s.type === 'high3q' ? 7 : s.type === 'breakaway' ? 3 : 2.4, hgt = s.type === 'high3q' ? 5 : s.type === 'breakaway' ? 7.5 : 3.2;
+        pos = new THREE.Vector3(sm.x + sm.rx * lat * s.side, sm.y + hgt, sm.z + sm.rz * lat * s.side);
+        if (s.type === 'breakaway') { const bk = C.sample(mAhead(front, -7), undefined, {}); look = new THREE.Vector3(c.x * 0.55 + bk.x * 0.45, c.y + 0.5, c.z * 0.55 + bk.z * 0.45); }
+        else look = new THREE.Vector3(c.x, c.y + 1.1, c.z);
+        fov = s.fov; break;
+      }
+      case 'pack': {
+        // high rear three-quarter keeping the group in frame (the wide of the field)
+        const ids = groupOf(s), st = sim.stateAt(Math.max(0, b)); const live = ids.map((id) => st.byId[id]).filter((r) => r && !r.finished);
+        const c = center(ids, b); const rear = live.length ? Math.min(...live.map((r) => r.m)) : c.m;
+        const sm = C.sample(mAhead(rear, -s.dist), undefined, tmpS);
+        pos = new THREE.Vector3(sm.x + sm.rx * 6 * s.side, sm.y + 8, sm.z + sm.rz * 6 * s.side);
+        const f = C.sample(mAhead(c.m, 6), undefined, {});
+        look = new THREE.Vector3(c.x * 0.7 + f.x * 0.3, c.y + 0.6, c.z * 0.7 + f.z * 0.3); fov = s.fov; break;
+      }
+      case 'cutaway': {
+        // locked-off camera across the path from the feature (crowd / lap board), the runners about to run through
+        const f = s.feat; const sm = C.sample(f.m - 9, undefined, tmpS);
+        const tgt = C.sample(f.m + 3, undefined, {});
+        pos = new THREE.Vector3(sm.x - sm.rx * f.side * 5.5, sm.y + 1.5, sm.z - sm.rz * f.side * 5.5);
+        look = new THREE.Vector3(tgt.x + tgt.rx * f.side * f.off, tgt.y + 1.2, tgt.z + tgt.rz * f.side * f.off); fov = 40; break;
       }
       case 'finishcam': {
         // head-on dolly: FIN_PARK m ahead of the leading contender, parking FIN_PARK m beyond the line, so the winner
@@ -455,4 +574,4 @@ export function createDirector({ camera, C, sim, world, funfair }) {
 export function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 export const WIDE_SHOTS = new Set(['drone', 'heli']);
 // tracking shots in which runners are framed big (name tags + PiP map apply)
-export const TRACK_SHOTS = new Set(['side', 'headon', 'finishcam', 'placecam']);
+export const TRACK_SHOTS = new Set(['side', 'headon', 'chase', 'shoulder', 'hill', 'hilltop', 'high3q', 'breakaway', 'pack', 'finishcam', 'placecam']);

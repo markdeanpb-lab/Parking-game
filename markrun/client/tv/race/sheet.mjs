@@ -12,7 +12,7 @@ import fs from 'node:fs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/opt/node-tools/node_modules/playwright');
 const root = new URL('../../../', import.meta.url).pathname;
-const out = root + 'tests/out/3d2/'; fs.mkdirSync(out, { recursive: true });
+const out = root + (process.env.OUT || 'tests/out/3d2/'); fs.mkdirSync(out, { recursive: true });
 const args = process.argv.slice(2);
 const fixture = args[0] && args[0] !== '-' ? args[0] : '';
 const name = args[1] || (fixture || 'round');
@@ -51,7 +51,9 @@ function sheet(files, labels, outFile, cols = 4) {
 if (flag('race')) {
   const { dur, pre, fin } = await page.evaluate(() => ({ dur: window.view.durationS, pre: window.view.preRollS, fin: window.view._debug.sim.firstFinishB }));
   const times = [];
-  if (flag('few')) times.push(1.5, 30, 55, 85, fin - 6, fin + 4); // --few: 6 frames (theme variants)
+  const every = Number(val('every')) || 0;
+  if (every) { const last = await page.evaluate(() => window.view._debug.sim.lastFinishB); for (let t = 0; t <= Math.min(last + 3, fin + 12); t += every) times.push(t); } // --every=2.5: the whole race
+  else if (flag('few')) times.push(1.5, 30, 55, 85, fin - 6, fin + 4); // --few: 6 frames (theme variants)
   else {
     times.push(-6, 1.5);
     const a = 8, b = fin - 14; for (let i = 0; i < 11; i++) times.push(a + ((b - a) * i) / 10);
@@ -64,7 +66,8 @@ if (flag('race')) {
     const L = await label(); files.push(f); labels.push(`${t.toFixed(1)}s ${L.shot} h=${Math.round(L.frac * 100)}%`);
     console.log(f, labels.at(-1));
   }
-  sheet(files, labels, `${name}-sheet.jpg`, flag('few') ? 3 : 4);
+  if (every) execFileSync('montage', [...files.map((f, i) => ['-label', labels[i], out + f]).flat(), '-tile', '8x', '-geometry', '320x180+2+2', '-pointsize', '12', '-fill', 'white', '-background', '#111', '-font', 'DejaVu-Sans-Mono', out + `${name}-sheet.jpg`]);
+  else sheet(files, labels, `${name}-sheet.jpg`, flag('few') ? 3 : 4);
   void dur; void pre;
 }
 if (flag('finish')) {
