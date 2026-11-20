@@ -185,6 +185,7 @@ export function planHijinks({ racePlan, runners = [], facts = {}, backedBy = {},
     out.push(best);
   }
   out.sort((a, b) => a.t - b.t);
+  const usedMoney = new Set();
   return out.map((c, i) => {
     const K = HIJINK_KINDS[c.kind];
     const subj = UP(name(c.who)), money = backers(c.who), moneyO = c.other ? backers(c.other) : [];
@@ -198,11 +199,14 @@ export function planHijinks({ racePlan, runners = [], facts = {}, backedBy = {},
       consequence = { type: c.type, places: Math.max(1, Math.abs(post - pre)), other: c.other, from: pre, to: post, fromText: ord(pre), toText: ord(post), deltaS: dS };
     }
     const warn = `${subj}${money.length ? ` (${money.join(' & ')}'s pick)` : ''}: ${K.warn}`;
-    const after = !consequence ? null
-      : money.length && moneyO.length ? (c.type === 'gain' ? `${money[0]} is off the sofa! ${moneyO[0]} can't look!` : `${moneyO[0]} is off the sofa! ${money[0]} can't look!`)
-      : money.length ? (c.type === 'lose' ? pickLine(R, [`There goes ${money[0]}'s place!`, `${money[0]}'s money is wobbling!`, `Uh oh, ${money[0]}. That's a place gone.`]) : pickLine(R, [`${money[0]} will like THAT!`, `Up a place! ${money[0]} is out of the seat!`, `Kerching for ${money[0]}!`]))
-        : moneyO.length ? (c.type === 'lose' ? pickLine(R, [`And that's good news for ${moneyO[0]}.`, `${moneyO[0]} gratefully accepts.`]) : pickLine(R, [`Bad news for ${moneyO[0]}.`, `Sorry, ${moneyO[0]}.`]))
-          : null;
+    // the money line: who won and who lost the place, and who backed them (no line repeats within a race)
+    let after = null;
+    if (consequence) {
+      const [winR, loseR] = c.type === 'gain' ? [c.who, c.other] : [c.other, c.who];
+      const W = backers(winR)[0], Lp = backers(loseR)[0];
+      const pool = c.finale ? (W && Lp ? MONEY.finaleBoth : W ? MONEY.finaleWin : Lp ? MONEY.finaleLose : null) : W && Lp ? MONEY.both : W ? MONEY.win : Lp ? MONEY.lose : null;
+      if (pool) after = moneyLine(R, pool, usedMoney, { W, L: Lp, WR: name(winR), LR: name(loseR), G: GAG_NOUN[c.kind] || 'that' });
+    }
     return {
       id: `hj${i + 1}`, kind: c.kind, who: c.who, ...(c.other ? { other: c.other } : {}),
       raceS: { telegraph: r2(c.tel), at: r2(c.at), beat: r2(c.beat), until: r2(c.until), slow0: r2(c.beat - c.b0), slow1: r2(c.beat + c.b1) },
@@ -219,7 +223,37 @@ export function planHijinks({ racePlan, runners = [], facts = {}, backedBy = {},
   });
 }
 const r2 = (x) => Math.round(x * 100) / 100;
-const pickLine = (R, a) => a[Math.floor(R() * a.length)];
+// Jeff's money lines. {W} / {L}: the players whose runner won / lost the place; {WR} / {LR}: those runners; {G}: the gag.
+const GAG_NOUN = { goose_chase: 'the goose', banana: 'the banana skin', raincloud: 'the raincloud', rocket_shoes: 'the rocket shoes', wasps: 'the wasps', ice_cream: 'the ice-cream van',
+  leapfrog: 'the leapfrog', cartwheel: 'the cartwheel', hill_rope: 'the rope', pedal_legs: 'the bike legs', front_crawl: 'the front crawl', lap_counter: 'the stopwatch', flex_hill: 'the gun show',
+  incline_button: 'the incline button', foil_cape: 'the foil cape', marathon_legs: 'the jelly legs', bubble_wrap: 'the bubble wrap', lasso_reel: 'the lasso' };
+const MONEY = {
+  win: [ // only the place-winner is backed
+    '{W} will like THAT!', 'Kerching! {WR} is up a place and {W} is up off the sofa.', '{W}\'s pick is on the move. {W} is on the move too, round the living room.',
+    'Up a place for {WR}! {W}, you may celebrate. Quietly.', 'A favour from {G} for {W} there!', 'That\'s {W}\'s money working. Look at {WR} go!',
+    '{W} backed {WR} for exactly this.', 'Somebody tell {W}: {WR} is climbing!', '{WR} goes past and {W} goes "YES!"', 'Lovely stuff for {W}. Thank {G}!',
+    '{W} is doing sums already. {WR} is up a place.', 'A place for {WR}, a grin for {W}.'],
+  lose: [ // only the place-loser is backed
+    'There goes {L}\'s place!', '{L}\'s pick is going backwards. {L} is going pale.', 'Uh oh, {L}. {WR} is through.', '{L}\'s money is wobbling!',
+    '{G}! Of all things! Sorry, {L}.', '{LR} drops a place. {L} drops the remote.', '{L} has gone very quiet.', 'That\'s cost {L}. {LR} is down a place.',
+    '{L} would like a word with {G}.', 'Not what {L} paid for. {LR} slips back.', 'Hide behind a cushion, {L}. {LR} has lost a place.', '{LR} goes backwards and {L} goes "NO!"'],
+  both: [ // both runners in the pass are backed
+    '{W} is off the sofa! {L} can\'t look!', '{WR} goes past {LR}! That\'s one up for {W} and one down for {L}.', '{W} versus {L}, and {W} draws first blood.',
+    '{G}! {L} is furious, {W} is delighted.', 'The sofa is divided! {W} cheers, {L} groans.', '{W}\'s pick passes {L}\'s pick. Friendships are being tested.',
+    '{L} will want a word about {G}. {W} won\'t care.', 'Swing to {W}! {LR} is behind {WR} now.', '{W} up, {L} down. That\'s the sofa standings.',
+    'Oh, {L} won\'t forgive {G} for that. {W} will frame it.', '{WR} past {LR}. {W} is smug. {L} is not.'],
+  finaleBoth: ['{WR} has LASSOED the lead off {LR}! {W}, please sit down. {L}, breathe.', '{W}\'s runner just got lassoed into the lead. {W}, please sit down. {L}, look away now.',
+    'THE MOMENT! {WR} reels in {LR}! {W} is screaming, {L} is speechless!'],
+  finaleWin: ['{WR} has lassoed the lead! {W}, please sit down!', 'Lassoed into the lead! {W} is on the coffee table!'],
+  finaleLose: ['{LR} has been reeled in at the death! {L}, I\'m so sorry.', 'Lassoed! {L} can\'t believe it. {LR} has lost the lead!'],
+};
+function moneyLine(R, pool, used, v) {
+  const free = pool.map((t, i) => i).filter((i) => !used.has(pool[i]));
+  const i = (free.length ? free : pool.map((t, j) => j))[Math.floor(R() * (free.length || pool.length))];
+  used.add(pool[i]);
+  const t = pool[i].replace(/\{(W|L|WR|LR|G)\}/g, (m, k) => v[k] ?? '');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
 
 // slow windows (race seconds) for retimeForWindows: real time round each beat
 export function hijinkWindows(hijinks = []) {
