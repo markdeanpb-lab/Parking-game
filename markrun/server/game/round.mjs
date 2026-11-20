@@ -225,7 +225,7 @@ export function createRound({ hist, sess = null, players = [], roundNumber = 1, 
   // 8b. cutscenes (TV only, at race start): chosen from real data triggers by cutscenes.mjs. Freeze/replay pause the clock;
   //     nothing here changes a time. Defensive: if the planner is missing or throws, the race simply has no cutscenes.
   const csSeed = R.int(2 ** 31); // always drawn, so the rest of the round is identical with or without the planner
-  if (S.cutscenes !== false && typeof CUTSCENES?.planCutscenes === 'function') {
+  if (S.cutscenes === true && typeof CUTSCENES?.planCutscenes === 'function') { // OFF by default: the user scrapped the pausing cutaways (2026-11-20)
     try {
       const csRunners = plan.runners.map((pr) => {
         const i = ids.indexOf(pr.id), rr = runners[i];

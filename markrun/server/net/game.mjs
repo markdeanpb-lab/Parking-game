@@ -583,7 +583,7 @@ export class Game extends EventEmitter {
   // "Remember this one?" (yes/no); everyone else answers "Does he really?" (believe/doubt). The window closes when
   // everyone has answered or after T.MARK_ASK; a correct believe/doubt (matching Mark's answer) scores MARK_BONUS,
   // banked straight into the score and shown as pay.bonus in the payouts.
-  markPlayer() { const id = this.s.settings.runnerPlayerId; return id && this.player(id) ? id : null; }
+  markPlayer() { return null; } // memory moment removed (user feedback 2026-11-20); runnerPlayerId still drives the extra hot tip
   markAsk(roundId, runnerId, index = 0) {
     return this.run(() => {
       const mark = this.markPlayer();

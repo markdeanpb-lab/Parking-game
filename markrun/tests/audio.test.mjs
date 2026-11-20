@@ -94,39 +94,16 @@ async function toReveal(g, a, b) {
   return rid;
 }
 
-test('"Remember this one?": Mark answers, Jo believes or doubts, a correct call banks the bonus', async () => {
+test('"Remember this one?" was removed: even with someone ticked as Mark, no question is asked and no bonus is banked', async () => {
   const { g, a, b } = await newGame();
   const rid = await toReveal(g, a, b);
   const order = g.s.results.finishOrder.map((f) => f.runnerId);
-  const before = g.player(b.id).score;
-  // card 1: Mark remembers, Jo believes -> +bonus
+  const before = [g.player(a.id).score, g.player(b.id).score];
   await g.markAsk(rid, order.at(-1), 0);
-  let pv = g.phoneView(a.id), pj = g.phoneView(b.id);
-  assert.equal(pv.me.markPrompt.role, 'mark'); assert.equal(pj.me.markPrompt.role, 'guess');
-  assert.equal(g.tvView().markMoment.open.runnerId, order.at(-1));
-  await g.markAnswer(b.id, order.at(-1), 'yes'); // wrong answer type for Jo: ignored
-  await g.markAnswer(a.id, order.at(-1), 'yes');
-  assert.ok(g.s.markMoment.open, 'still waiting for Jo');
-  await g.markAnswer(b.id, order.at(-1), 'believe');
-  assert.equal(g.s.markMoment.open, null, 'closes as soon as everyone answered');
-  assert.deepEqual(g.s.markMoment.log[0].bonus, { [b.id]: MARK_BONUS });
-  assert.equal(g.player(b.id).score, before + MARK_BONUS);
-  assert.equal(g.s.results.payouts[b.id].bonus, MARK_BONUS);
-  assert.equal(g.s.history.at(-1).scores[b.id], g.player(b.id).score, 'history follows the score');
-  // card 2: Mark doesn't remember, Jo believes -> nothing
-  await g.markAsk(rid, order.at(-2), 1);
-  await g.markAnswer(a.id, order.at(-2), 'no');
-  await g.markAnswer(b.id, order.at(-2), 'believe');
-  assert.deepEqual(g.s.markMoment.log[1].bonus, {});
-  // card 3: nobody answers; asking for the next card closes it with no bonus
-  await g.markAsk(rid, order.at(-3), 2);
-  await g.markAsk(rid, order.at(-4), 3);
-  assert.equal(g.s.markMoment.log[2].mark, null);
-  assert.equal(g.s.markMoment.open.runnerId, order.at(-4));
-  // leaving the reveal stage closes the question
-  await g.stageDone(1);
-  assert.equal(g.s.markMoment.open, null);
+  assert.ok(!g.s.markMoment?.open, 'no memory question opens');
   assert.equal(g.phoneView(a.id).me.markPrompt, undefined);
+  assert.equal(g.phoneView(b.id).me.markPrompt, undefined);
+  assert.deepEqual([g.player(a.id).score, g.player(b.id).score], before);
   g.dispose();
 });
 

@@ -1577,7 +1577,8 @@ function resultsScreen(st) {
 const MARK_BONUS_PP = 25; // server/net/game.mjs MARK_BONUS
 const GENERIC_TITLE_RE = /^(morning|lunch|afternoon|evening|night)\s+(run|jog)$|^(run|parkrun)$|^finsbury( parkrun)?$/i;
 const ORD_WORDS = ['', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'];
-const markPlayerOf = (s) => { const id = s?.settings?.runnerPlayerId; return id ? s.players.find((p) => p.id === id) || null : null; };
+// The "Remember this one?" memory moment was removed at the user's request (too slow). "I'm Mark" still gives the other player an extra hot tip.
+const markPlayerOf = () => null;
 // Meteostat condition code (or the season word of the context line) -> icon + label
 function weatherBadge(x) {
   const w = x.weather || {};
